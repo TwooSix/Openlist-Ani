@@ -23,7 +23,7 @@
 2. 准备好RSS订阅连接
 
 ## 如何使用
-TODO
+参考[快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
 
 
 ## 效果展示
