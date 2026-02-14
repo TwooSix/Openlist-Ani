@@ -27,6 +27,6 @@
 
 
 ## 效果展示
-<div align=center>
-<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
-</div>
+| 重命名结果 | 智能助理 |
+| :---: | :---: |
+| <img src="imgs/show_pic1.jpg" width="400"/> | <img src="imgs/show_pic2.png" width="400"/> |
