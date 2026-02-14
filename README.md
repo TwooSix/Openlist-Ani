@@ -29,4 +29,4 @@
 ## 效果展示
 | 重命名结果 | 智能助理 |
 | :---: | :---: |
-| <img src="imgs/show_pic1.jpg" width="400"/> | <img src="imgs/show_pic2.png" width="400"/> |
+| <img src="https://github.com/TwooSix/Openlist-Ani/blob/master/imgs/show_pic1.png" width="400"/> | <img src="https://github.com/TwooSix/Openlist-Ani/blob/master/imgs/show_pic2.jpg" width="150"/> |
