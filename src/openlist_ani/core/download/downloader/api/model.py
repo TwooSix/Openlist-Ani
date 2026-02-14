@@ -23,6 +23,7 @@ class OfflineDownloadTool(StrEnum):
     ARIA2 = "aria2"
     QBITTORRENT = "qBittorrent"
     PIKPAK = "PikPak"
+    CLOUD_115 = "115 Cloud"
 
 
 def _parse_iso(dt: Optional[str]) -> Optional[datetime]:

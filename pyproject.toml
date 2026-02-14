@@ -1,6 +1,6 @@
 [project]
 name = "openlist-ani"
-version = "1.0.0.dev260214"
+version = "1.0.0.post2.dev260214"
 description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "TwoSix", email = "nitiaob@qq.com" }]
