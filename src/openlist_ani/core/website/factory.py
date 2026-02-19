@@ -1,4 +1,3 @@
-from typing import Optional
 from urllib.parse import urlparse
 
 from .aniapi import AniapiWebsite
@@ -79,51 +78,3 @@ class WebsiteFactory:
 
         except Exception as e:
             raise ValueError(f"Failed to parse URL '{url}': {e}") from e
-
-    @classmethod
-    def register(cls, domain: str, parser_class: type[WebsiteBase]) -> None:
-        """
-        Register a custom domain to parser mapping.
-
-        Args:
-            domain: Domain name (e.g., "example.com")
-            parser_class: WebsiteBase subclass to use for this domain
-
-        Examples:
-            >>> WebsiteFactory.register("example.com", CustomWebsite)
-        """
-        if not issubclass(parser_class, WebsiteBase):
-            raise TypeError(f"{parser_class} must be a subclass of WebsiteBase")
-
-        cls._DOMAIN_MAPPING[domain.lower()] = parser_class
-
-    @classmethod
-    def get_supported_domains(cls) -> list[str]:
-        """
-        Get list of explicitly supported domains.
-
-        Returns:
-            List of domain names that have specific parser mappings
-        """
-        return sorted(cls._DOMAIN_MAPPING.keys())
-
-    def detect_parser_type(self, url: str) -> Optional[str]:
-        """
-        Detect parser type for a given URL without creating instance.
-
-        Args:
-            url: RSS feed URL
-
-        Returns:
-            Parser class name, or None if detection fails
-
-        Examples:
-            >>> factory = WebsiteFactory()
-            >>> factory.detect_parser_type("https://mikanani.me/RSS/Bangumi")
-            'MikanWebsite'
-        """
-        try:
-            parser = self.create(url)
-            return type(parser).__name__
-        except Exception:
-            return None

@@ -1,4 +1,3 @@
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -83,41 +82,6 @@ class AniDatabase:
                 await db.commit()
             except aiosqlite.IntegrityError:
                 pass
-
-    async def get_resource_by_url(self, url: str) -> Optional[dict]:
-        """Get resource information by URL."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT id, url, title, anime_name, season, episode, fansub, 
-                           quality, languages, version, downloaded_at
-                    FROM resources 
-                    WHERE url = ?
-                    """,
-                    (url,),
-                )
-                row = await cursor.fetchone()
-                if row:
-                    return {
-                        "id": row[0],
-                        "url": row[1],
-                        "title": row[2],
-                        "anime_name": row[3],
-                        "season": row[4],
-                        "episode": row[5],
-                        "fansub": row[6],
-                        "quality": row[7],
-                        "languages": json.loads(row[8]) if row[8] else [],
-                        "version": row[9],
-                        "downloaded_at": row[10],
-                    }
-                return None
-        except (aiosqlite.Error, json.JSONDecodeError) as e:
-            from .logger import logger
-
-            logger.error(f"Error fetching resource by URL: {e}")
-            return None
 
     async def execute_sql_query(self, sql: str, params: tuple = ()) -> list[dict]:
         """Execute a SELECT SQL query and return results.
