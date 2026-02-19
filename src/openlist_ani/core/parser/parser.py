@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
@@ -34,12 +34,32 @@ async def parse_metadata(
         base_url=config.llm.openai_base_url,
         timeout=30.0,
     )
-    model = config.llm.openai_model
     tmdb_client = TMDBClient()
+    tools = get_tmdb_tools()
+    query_messages = _build_query_messages(entry.title)
 
-    tools = []
-    tools.extend(get_tmdb_tools())
+    try:
+        response_message = await _get_response_message(
+            client=client,
+            model=config.llm.openai_model,
+            messages=query_messages,
+            tools=tools,
+            tmdb_client=tmdb_client,
+        )
+        parse_result = _parse_result_from_message(response_message)
+        return parse_result
+    except asyncio.TimeoutError:
+        logger.error(f"LLM request timeout for: {entry.title}")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error in LLM response: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error during LLM parsing: {e}")
+        return None
 
+
+def _build_query_messages(title: str) -> list[dict[str, str]]:
     system_prompt = """You are an intelligent anime metadata parser.
 Your task is to parse information from the RSS feed entry title.
 Output the result in a valid JSON object matching the following structure:
@@ -67,71 +87,80 @@ CRITICAL RULES:
 7. Do not keep searching if TMDB mapping is clear - accept the verified results.
 """
 
-    messages = [
+    return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Feed Title: {entry.title}"},
+        {"role": "user", "content": f"Feed Title: {title}"},
     ]
 
-    try:
-        # Loop for tool calls
-        for _ in range(5):
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-            )
 
-            message = response.choices[0].message
+async def _get_response_message(
+    client: AsyncOpenAI,
+    model: str,
+    messages: list[Any],
+    tools: list[Any],
+    tmdb_client: TMDBClient,
+    max_rounds: int = 5,
+) -> Any:
+    for _ in range(max_rounds):
+        message = await _request_completion(
+            client=client,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
 
-            if not message.tool_calls:
-                messages.append(message)
-                break
-
+        if not message.tool_calls:
             messages.append(message)
-            for tool_call in message.tool_calls:
-                if tool_call.function.name == "search_tmdb":
-                    await handle_search_tmdb(tool_call, messages, tmdb_client)
-                elif tool_call.function.name == "verify_tmdb_season_episode":
-                    await handle_verify_tmdb(tool_call, messages, tmdb_client)
+            return message
 
-        # Should have final answer now
-        last_msg = messages[-1]
+        messages.append(message)
+        await _handle_tool_calls(message.tool_calls, messages, tmdb_client)
 
-        # If the last message is a dict, get final response from LLM
-        if isinstance(last_msg, dict):
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools,
-            )
-            last_msg = response.choices[0].message
-            messages.append(last_msg)
+    return await _request_completion(
+        client=client, model=model, messages=messages, tools=tools
+    )
 
-        elif hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-            pass
 
-        content = last_msg.content or ""
-        json_str = parse_json_from_markdown(content)
+async def _request_completion(
+    client: AsyncOpenAI,
+    model: str,
+    messages: list[Any],
+    tools: list[Any],
+    tool_choice: str | None = None,
+) -> Any:
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "tools": tools,
+    }
+    if tool_choice:
+        kwargs["tool_choice"] = tool_choice
 
-        if not json_str:
-            logger.error(f"LLM failed to return valid JSON. Output: {content}")
-            return None
+    response = await client.chat.completions.create(**kwargs)
+    return response.choices[0].message
 
-        try:
-            parse_result = ResourceTitleParseResult.model_validate_json(json_str)
-        except Exception as e:
-            logger.error(f"JSON validation failed: {e}. JSON: {json_str}")
-            return None
 
-        return parse_result
+async def _handle_tool_calls(
+    tool_calls: list[Any], messages: list[Any], tmdb_client: TMDBClient
+) -> None:
+    for tool_call in tool_calls:
+        if tool_call.function.name == "search_tmdb":
+            await handle_search_tmdb(tool_call, messages, tmdb_client)
+        elif tool_call.function.name == "verify_tmdb_season_episode":
+            await handle_verify_tmdb(tool_call, messages, tmdb_client)
 
-    except asyncio.TimeoutError:
-        logger.error(f"LLM request timeout for: {entry.title}")
+
+def _parse_result_from_message(message: Any) -> Optional[ResourceTitleParseResult]:
+    content = message.content or ""
+    json_str = parse_json_from_markdown(content)
+
+    if not json_str:
+        logger.error(f"LLM failed to return valid JSON. Output: {content}")
         return None
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in LLM response: {e}")
-        return None
+
+    try:
+        return ResourceTitleParseResult.model_validate_json(json_str)
     except Exception as e:
-        logger.error(f"Error during LLM parsing: {e}")
+        logger.error(f"JSON validation failed: {e}. JSON: {json_str}")
         return None

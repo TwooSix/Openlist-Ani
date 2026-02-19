@@ -37,6 +37,7 @@ class DownloadManager:
         self._events: dict[str, DownloadTask] = {}
         self._events_lock = asyncio.Lock()
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
         self._handlers: dict[DownloadState, Callable] = {
             DownloadState.PENDING: downloader.handle_pending,
@@ -53,14 +54,16 @@ class DownloadManager:
         logger.info(f"Initialized with {type(downloader).__name__}")
 
         # Auto-start pending tasks (recovered from state file)
-        for event in list(self._events.values()):
+        for event in self._events.values():
             # Only auto-start non-terminal states (PENDING, DOWNLOADING, etc.)
             if event.state not in (
                 DownloadState.COMPLETED,
                 DownloadState.FAILED,
                 DownloadState.CANCELLED,
             ):
-                asyncio.create_task(self._process_task(event))
+                task = asyncio.create_task(self._process_task(event))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
     @property
     def downloader(self) -> BaseDownloader:
@@ -149,7 +152,7 @@ class DownloadManager:
         Returns:
             True if the resource is currently downloading
         """
-        for task in list(self._events.values()):
+        for task in self._events.values():
             if task.resource_info.download_url == resource_info.download_url:
                 return True
         return False
@@ -180,25 +183,24 @@ class DownloadManager:
         """
         self._save_state()
 
-        # Execute callbacks
-        if success:
-            for cb in self._on_complete:
-                try:
-                    result = cb(task)
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception as e:
-                    logger.error(f"Callback error: {e}")
-        else:
-            for cb in self._on_error:
-                try:
-                    result = cb(task, task.error_message or "Unknown error")
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception as e:
-                    logger.error(f"Callback error: {e}")
+        await self._run_finalize_callbacks(task, success)
+        await self._remove_task_from_events(task, success)
 
-        # Remove task from events immediately
+    async def _run_finalize_callbacks(self, task: DownloadTask, success: bool) -> None:
+        """Execute finalization callbacks based on success state."""
+        callbacks = self._on_complete if success else self._on_error
+        error_message = task.error_message or "Unknown error"
+
+        for callback in callbacks:
+            try:
+                result = callback(task) if success else callback(task, error_message)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                logger.error(f"Callback error: {e}")
+
+    async def _remove_task_from_events(self, task: DownloadTask, success: bool) -> None:
+        """Remove finalized task from in-memory events map."""
         async with self._events_lock:
             if task.id in self._events:
                 del self._events[task.id]
@@ -233,25 +235,34 @@ class DownloadManager:
                 await self._handle_task_failure(task)
                 return
 
-            # Update state if next_state specified
-            if result.next_state:
-                task.update_state(result.next_state)
+            if not result.next_state:
+                logger.warning(
+                    f"Handler did not specify next state, keeping current state: {task.state}"
+                )
+                result.next_state = task.state
+
+            previous_state = task.state
+            task.update_state(result.next_state)
+            if task.state != previous_state:
                 self._save_state()
                 self._emit_state_change(task, result.next_state)
 
-                # Check if reached terminal state
-                if task.state in (DownloadState.COMPLETED, DownloadState.CANCELLED):
-                    await self._finalize_task(
-                        task, success=(task.state == DownloadState.COMPLETED)
-                    )
-                    return
+            # Check if reached terminal state
+            if task.state in (DownloadState.COMPLETED, DownloadState.CANCELLED):
+                await self._finalize_task(
+                    task, success=(task.state == DownloadState.COMPLETED)
+                )
+                return
 
-            # Continue processing or wait
-            if result.should_continue:
-                if result.delay_seconds > 0:
-                    await asyncio.sleep(result.delay_seconds)
-                await self._dispatch_state(task)
+            # Continue dispatching for next state
+            if result.delay_seconds > 0:
+                await asyncio.sleep(result.delay_seconds)
+            await self._dispatch_state(task)
 
+        except asyncio.CancelledError:
+            self._save_state()
+            logger.info(f"Task cancelled: {task.id}")
+            raise
         except Exception as e:
             logger.exception(f"Handler error [{task.state}]: {e}")
             task.mark_failed(str(e))

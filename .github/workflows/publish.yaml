@@ -27,9 +27,11 @@ jobs:
           uv sync --no-dev
 
       - name: Build and publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
           uv build
-          uv publish --token ${{ secrets.PYPI_TOKEN }}
+          uv publish
 
   build-and-push-docker:
     name: Build and Publish Docker Image

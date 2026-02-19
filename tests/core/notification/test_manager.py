@@ -292,7 +292,7 @@ class TestFromConfig:
         )
         mgr = NotificationManager.from_config(cfg)
         assert mgr is not None
-        assert mgr._batch_interval == 60.0
+        assert mgr._batch_interval == pytest.approx(60.0)
 
 
 # ---------------------------------------------------------------------------

@@ -15,8 +15,10 @@ class ResourceTitleParseResult(BaseModel):
         ...,
         description="The episode number. It should be int. If float, it means special episode",
     )
-    quality: Optional[VideoQuality] = Field(..., description="The quality of the video")
-    fansub: Optional[str] = Field(..., description="The fansub of the video")
+    quality: Optional[VideoQuality] = Field(
+        None, description="The quality of the video"
+    )
+    fansub: Optional[str] = Field(None, description="The fansub of the video")
     languages: List[LanguageType] = Field(
         ..., description="The subtitle language of the video"
     )

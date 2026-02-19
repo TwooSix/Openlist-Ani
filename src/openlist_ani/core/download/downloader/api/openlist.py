@@ -10,6 +10,8 @@ from .model import FileEntry, OfflineDownloadTool, OpenlistTask, OpenlistTaskSta
 
 
 class OpenListClient:
+    UNKNOWN_ERROR_MESSAGE = "Unknown error"
+
     def __init__(
         self,
         base_url: str,
@@ -121,7 +123,7 @@ class OpenListClient:
             logger.debug(f"Added offline download tasks for {urls} to {path}")
             return task_objs
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to add offline download: {msg}")
             return None
 
@@ -135,7 +137,7 @@ class OpenListClient:
         if data and data.get("code") == 200:
             return data.get("data")
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to get offline download tools: {msg}")
             return None
 
@@ -151,7 +153,7 @@ class OpenListClient:
             tasks = data.get("data") or []
             return [OpenlistTask.from_dict(t) for t in tasks]
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to fetch done offline download tasks: {msg}")
             return None
 
@@ -167,7 +169,7 @@ class OpenListClient:
             tasks = data.get("data") or []
             return [OpenlistTask.from_dict(t) for t in tasks]
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to fetch undone offline download tasks: {msg}")
             return None
 
@@ -209,7 +211,7 @@ class OpenListClient:
             logger.debug(f"Renamed {full_path} to {new_name}")
             return True
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to rename file: {msg}")
             return False
 
@@ -226,7 +228,7 @@ class OpenListClient:
             logger.debug(f"Created directory: {path}")
             return True
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to create directory: {msg}")
             return False
 
@@ -243,7 +245,7 @@ class OpenListClient:
             logger.debug(f"Moved {filenames} from {src_dir} to {dst_dir}")
             return True
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to move files: {msg}")
             return False
 
@@ -260,7 +262,7 @@ class OpenListClient:
             logger.debug(f"Removed {names} from {dir_path}")
             return True
         else:
-            msg = data.get("message") if data else "Unknown error"
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
             logger.error(f"Failed to remove path: {msg}")
             return False
 
@@ -274,16 +276,56 @@ class OpenListClient:
         """
         Monitor the directory for a new file to complete downloading.
         """
-        files = await self.list_files(path)
-        initial_files = {f.name for f in files} if files else set()
-
+        initial_files = await self._get_initial_filenames(path)
         start_time = time.time()
+
         logger.debug(f"Starting to monitor new files in: '{path}'")
 
-        # Check If download finished
+        task_ok = await self._wait_for_task_completion(
+            task_id=task_id,
+            path=path,
+            start_time=start_time,
+            timeout=timeout,
+            interval=interval,
+        )
+        if task_ok is False:
+            return None
+
+        new_file = await self._wait_for_new_file(
+            path=path,
+            initial_files=initial_files,
+            start_time=start_time,
+            timeout=timeout,
+            interval=interval,
+        )
+        if new_file is not None:
+            return new_file
+
+        logger.warning(f"Timeout monitoring download in {path}")
+        return None
+
+    async def _get_initial_filenames(self, path: str) -> set[str]:
+        files = await self.list_files(path)
+        if not files:
+            return set()
+        return {entry.name for entry in files}
+
+    async def _wait_for_task_completion(
+        self,
+        task_id: Optional[str],
+        path: str,
+        start_time: float,
+        timeout: int,
+        interval: int,
+    ) -> Optional[bool]:
+        if not task_id:
+            logger.debug("No task_id provided; skip task state polling")
+            return None
+
         logger.info(
             f"Waiting for download task {task_id} to complete...(temp path:{path})"
         )
+
         while time.time() - start_time < timeout:
             undone_tasks = await self.get_offline_download_undone()
             if undone_tasks is None:
@@ -292,57 +334,70 @@ class OpenListClient:
                 )
                 await asyncio.sleep(interval)
                 continue
-            undone_ids = {t.id for t in undone_tasks}
-            if task_id in undone_ids:
-                task_info = next((t for t in undone_tasks if t.id == task_id), None)
-                if task_info is not None:
-                    logger.debug(
-                        f"Task {task_id} still downloading: {task_info.progress}%"
-                    )
+
+            task_in_undone = next(
+                (task for task in undone_tasks if task.id == task_id), None
+            )
+            if task_in_undone is not None:
+                logger.debug(
+                    f"Task {task_id} still downloading: {task_in_undone.progress}%"
+                )
                 await asyncio.sleep(interval)
                 continue
-            else:
-                done_tasks = await self.get_offline_download_done()
-                if not done_tasks:
-                    logger.warning(
-                        "Failed to fetch done offline download tasks; will retry"
-                    )
-                    await asyncio.sleep(interval)
-                    continue
 
-                task_info = next((t for t in done_tasks if t.id == task_id), None)
-                if task_info is None:
-                    logger.warning(
-                        f"Task {task_id} not found in done tasks yet; will retry"
-                    )
-                    await asyncio.sleep(interval)
-                    continue
+            done_tasks = await self.get_offline_download_done()
+            if not done_tasks:
+                logger.warning(
+                    "Failed to fetch done offline download tasks; will retry"
+                )
+                await asyncio.sleep(interval)
+                continue
 
-                if task_info.state == OpenlistTaskState.Succeeded:
-                    logger.debug(f"Task {task_id} download completed successfully.")
-                    break
-                else:
-                    logger.error(
-                        f"Task {task_id} download failed with state: {task_info.state}"
-                    )
-                    return None
+            task_in_done = next(
+                (task for task in done_tasks if task.id == task_id), None
+            )
+            if task_in_done is None:
+                logger.warning(
+                    f"Task {task_id} not found in done tasks yet; will retry"
+                )
+                await asyncio.sleep(interval)
+                continue
 
-        # Check for new files
+            if task_in_done.state == OpenlistTaskState.Succeeded:
+                logger.debug(f"Task {task_id} download completed successfully.")
+                return True
+
+            logger.error(
+                f"Task {task_id} download failed with state: {task_in_done.state}"
+            )
+            return False
+
+        logger.warning(f"Timeout waiting for task completion: {task_id}")
+        return False
+
+    async def _wait_for_new_file(
+        self,
+        path: str,
+        initial_files: set[str],
+        start_time: float,
+        timeout: int,
+        interval: int,
+    ) -> Optional[str]:
         logger.debug(f"Monitoring directory for new files: {path}")
+
         while time.time() - start_time < timeout:
-            current_files_list = await self.list_files(path)
-            if not current_files_list:
+            current_files = await self.list_files(path)
+            if not current_files:
                 await asyncio.sleep(interval)
                 continue
 
-            for file_info in current_files_list:
-                name = file_info.name
-                if name.endswith(".aria2") or name.endswith(".downloading"):
+            for file_info in current_files:
+                filename = file_info.name
+                if filename.endswith(".aria2") or filename.endswith(".downloading"):
                     continue
+                if filename not in initial_files:
+                    return filename
 
-                if name not in initial_files:
-                    return name
             await asyncio.sleep(interval)
 
-        logger.warning(f"Timeout monitoring download in {path}")
         return None

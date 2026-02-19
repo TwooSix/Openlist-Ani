@@ -22,22 +22,22 @@ from openlist_ani.core.website.model import (
 
 
 def _make_resource(**kwargs) -> AnimeResourceInfo:
-    defaults = dict(
-        title="[SubGroup] Anime Name - 01 [1080p]",
-        download_url="magnet:?xt=urn:btih:abc123",
-        anime_name="Anime Name",
-        season=1,
-        episode=1,
-    )
+    defaults = {
+        "title": "[SubGroup] Anime Name - 01 [1080p]",
+        "download_url": "magnet:?xt=urn:btih:abc123",
+        "anime_name": "Anime Name",
+        "season": 1,
+        "episode": 1,
+    }
     defaults.update(kwargs)
     return AnimeResourceInfo(**defaults)
 
 
 def _make_task(**kwargs) -> DownloadTask:
-    defaults = dict(
-        resource_info=_make_resource(),
-        save_path="/downloads",
-    )
+    defaults = {
+        "resource_info": _make_resource(),
+        "save_path": "/downloads",
+    }
     defaults.update(kwargs)
     return DownloadTask(**defaults)
 

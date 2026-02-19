@@ -14,7 +14,7 @@ def _make_entry(title: str = "[SubGroup] Frieren - 05 [1080p]") -> AnimeResource
     return AnimeResourceInfo(title=title, download_url="magnet:?xt=urn:btih:abc123")
 
 
-def _make_chat_message(content: str, tool_calls=None):
+def _make_chat_message(content: str | None, tool_calls=None):
     """Build a mock ChatCompletionMessage."""
     msg = MagicMock()
     msg.content = content
@@ -202,7 +202,7 @@ class TestParseMetadata:
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,
             patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
-            patch("openlist_ani.core.parser.parser.TMDBClient") as MockTMDB,
+            patch("openlist_ani.core.parser.parser.TMDBClient"),
             patch("openlist_ani.core.parser.parser.handle_search_tmdb") as mock_handle,
         ):
             mock_config.llm.openai_api_key = "test-key"

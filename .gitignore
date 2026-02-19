@@ -16,6 +16,7 @@ data/
 # config
 *.toml
 !pyproject.toml
+.vscode/
 
 # test
 *.ipynb

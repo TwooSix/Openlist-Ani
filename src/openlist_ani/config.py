@@ -164,7 +164,7 @@ class ConfigManager:
 
         Dependency topology:
         - Core (always required): rss.urls, openlist.url, openlist.token
-        - LLM: openai_api_key is important for metadata extraction (warning)
+                - LLM (required): openai_api_key
         - Notification (if enabled): requires at least one properly configured bot
           - telegram bot: requires bot_token and user_id
           - pushplus bot: requires user_token
@@ -174,13 +174,20 @@ class ConfigManager:
         Returns:
             True if all required configuration is valid, False otherwise.
         """
-        # Force reload to get latest config before validation
         self.reload()
 
         errors: list[str] = []
         warnings: list[str] = []
 
-        # --- Core required config ---
+        self._validate_core_config(errors)
+        self._validate_llm_config(errors)
+        self._validate_notification_config(errors, warnings)
+        self._validate_assistant_config(errors)
+        self._log_validation_results(errors, warnings)
+
+        return len(errors) == 0
+
+    def _validate_core_config(self, errors: list[str]) -> None:
         if not self.rss.urls:
             errors.append("No RSS URLs configured. Please add RSS URLs in [rss] urls.")
 
@@ -193,67 +200,78 @@ class ConfigManager:
                 "Authentication will fail without a valid token."
             )
 
-        # --- LLM config (warning-level, not fatal) ---
+    def _validate_llm_config(self, errors: list[str]) -> None:
         if not self.llm.openai_api_key:
             errors.append("OpenAI API key is missing in [llm] openai_api_key. ")
 
-        # --- Notification config (conditional on enabled) ---
-        if self.notification.enabled:
-            if not self.notification.bots:
-                errors.append(
-                    "Notification is enabled but no bots are configured. "
-                    "Please add bot entries in [[notification.bots]]."
-                )
-            else:
-                for i, bot_cfg in enumerate(self.notification.bots):
-                    if not bot_cfg.enabled:
-                        continue
-                    bot_label = f"notification.bots[{i}] (type={bot_cfg.type})"
-                    if bot_cfg.type == "telegram":
-                        if not bot_cfg.config.get("bot_token"):
-                            errors.append(
-                                f"{bot_label}: 'bot_token' is required for Telegram bot."
-                            )
-                        if not bot_cfg.config.get("user_id"):
-                            errors.append(
-                                f"{bot_label}: 'user_id' is required for Telegram bot."
-                            )
-                    elif bot_cfg.type == "pushplus":
-                        if not bot_cfg.config.get("user_token"):
-                            errors.append(
-                                f"{bot_label}: 'user_token' is required for PushPlus bot."
-                            )
-                    else:
-                        warnings.append(
-                            f"{bot_label}: Unknown bot type '{bot_cfg.type}'."
-                        )
+    def _validate_notification_config(
+        self, errors: list[str], warnings: list[str]
+    ) -> None:
+        if not self.notification.enabled:
+            return
 
-        # --- Assistant config (conditional on enabled) ---
-        if self.assistant.enabled:
-            if not self.assistant.telegram.bot_token:
-                errors.append(
-                    "Assistant is enabled but Telegram bot token is missing. "
-                    "Please set [assistant.telegram] bot_token."
-                )
-            if not self.assistant.telegram.allowed_users:
-                errors.append(
-                    "Assistant is enabled but no allowed users are configured. "
-                    "Please set [assistant.telegram] allowed_users."
-                )
-            # Assistant depends on LLM
-            if not self.llm.openai_api_key:
-                errors.append(
-                    "Assistant is enabled but OpenAI API key is missing. "
-                    "Assistant requires LLM. Please set [llm] openai_api_key."
-                )
+        if not self.notification.bots:
+            errors.append(
+                "Notification is enabled but no bots are configured. "
+                "Please add bot entries in [[notification.bots]]."
+            )
+            return
 
-        # --- Log results ---
-        for w in warnings:
-            logger.warning(f"Config Warning: {w}")
-        for e in errors:
-            logger.error(f"Config Error: {e}")
+        for i, bot_cfg in enumerate(self.notification.bots):
+            if not bot_cfg.enabled:
+                continue
+            self._validate_notification_bot(i, bot_cfg, errors, warnings)
 
-        return len(errors) == 0
+    def _validate_notification_bot(
+        self,
+        index: int,
+        bot_cfg: BotConfig,
+        errors: list[str],
+        warnings: list[str],
+    ) -> None:
+        bot_label = f"notification.bots[{index}] (type={bot_cfg.type})"
+
+        if bot_cfg.type == "telegram":
+            if not bot_cfg.config.get("bot_token"):
+                errors.append(f"{bot_label}: 'bot_token' is required for Telegram bot.")
+            if not bot_cfg.config.get("user_id"):
+                errors.append(f"{bot_label}: 'user_id' is required for Telegram bot.")
+            return
+
+        if bot_cfg.type == "pushplus":
+            if not bot_cfg.config.get("user_token"):
+                errors.append(
+                    f"{bot_label}: 'user_token' is required for PushPlus bot."
+                )
+            return
+
+        warnings.append(f"{bot_label}: Unknown bot type '{bot_cfg.type}'.")
+
+    def _validate_assistant_config(self, errors: list[str]) -> None:
+        if not self.assistant.enabled:
+            return
+
+        if not self.assistant.telegram.bot_token:
+            errors.append(
+                "Assistant is enabled but Telegram bot token is missing. "
+                "Please set [assistant.telegram] bot_token."
+            )
+        if not self.assistant.telegram.allowed_users:
+            errors.append(
+                "Assistant is enabled but no allowed users are configured. "
+                "Please set [assistant.telegram] allowed_users."
+            )
+        if not self.llm.openai_api_key:
+            errors.append(
+                "Assistant is enabled but OpenAI API key is missing. "
+                "Assistant requires LLM. Please set [llm] openai_api_key."
+            )
+
+    def _log_validation_results(self, errors: list[str], warnings: list[str]) -> None:
+        for warning in warnings:
+            logger.warning(f"Config Warning: {warning}")
+        for error in errors:
+            logger.error(f"Config Error: {error}")
 
     def add_rss_url(self, url: str) -> None:
         """Add a new RSS URL to configuration."""
