@@ -79,19 +79,15 @@ class NotificationManager:
 
     async def stop(self) -> None:
         """Stop the batch notification worker and send any pending notifications."""
-        cancel_error: asyncio.CancelledError | None = None
         self._running = False
-        if self._batch_task:
-            self._batch_task.cancel()
-            try:
+        try:
+            if self._batch_task:
+                self._batch_task.cancel()
                 await self._batch_task
-            except asyncio.CancelledError as e:
-                cancel_error = e
-        # Send any remaining notifications
-        await self._send_batched_notifications()
-        logger.debug("Notification manager stopped")
-        if cancel_error is not None:
-            raise cancel_error
+        finally:
+            # Send any remaining notifications before propagating cancellation.
+            await self._send_batched_notifications()
+            logger.debug("Notification manager stopped")
 
     async def _batch_worker(self) -> None:
         """Background worker that periodically sends batched notifications."""

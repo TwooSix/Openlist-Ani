@@ -30,7 +30,7 @@ class AniAssistant:
 
     MAX_TOOL_ITERATIONS = 20
     HISTORY_FOCUS_PROMPT = "--- New user request below. Focus on addressing THIS request specifically. Previous conversation is provided only for context. ---"
-    SYSTEM_PROMPT = """You are a professional anime resource download assistant with access to several tools that you can combine to solve user requests.
+    DEFAULT_SYSTEM_PROMPT = """You are a professional anime resource download assistant with access to several tools that you can combine to solve user requests.
 
 ## Available Tools:
 
@@ -104,7 +104,7 @@ Answer user questions in a friendly and professional manner."""
         self.model = config.llm.openai_model
         self.tools = get_assistant_tools()
         self.max_history = config.assistant.max_history_messages
-        self.system_prompt = self.SYSTEM_PROMPT
+        self.system_prompt = self.DEFAULT_SYSTEM_PROMPT
         self.client = self._create_openai_client()
 
     async def process_message(

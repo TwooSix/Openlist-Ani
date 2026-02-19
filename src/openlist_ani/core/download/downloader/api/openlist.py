@@ -1,5 +1,4 @@
 import asyncio
-import time
 from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
@@ -270,38 +269,37 @@ class OpenListClient:
         self,
         path: str,
         task_id: str = None,
-        timeout: int = 3600,
+        timeout: int = 4 * 60 * 60,  # 4 hours
         interval: int = 60,  # seconds
     ) -> Optional[str]:
         """
         Monitor the directory for a new file to complete downloading.
         """
         initial_files = await self._get_initial_filenames(path)
-        start_time = time.time()
 
         logger.debug(f"Starting to monitor new files in: '{path}'")
 
-        task_ok = await self._wait_for_task_completion(
-            task_id=task_id,
-            path=path,
-            start_time=start_time,
-            timeout=timeout,
-            interval=interval,
-        )
-        if task_ok is False:
+        try:
+            async with asyncio.timeout(timeout):
+                task_ok = await self._wait_for_task_completion(
+                    task_id=task_id,
+                    path=path,
+                    interval=interval,
+                )
+                if task_ok is False:
+                    return None
+
+                new_file = await self._wait_for_new_file(
+                    path=path,
+                    initial_files=initial_files,
+                    interval=interval,
+                )
+                if new_file is not None:
+                    return new_file
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout monitoring download in {path}")
             return None
 
-        new_file = await self._wait_for_new_file(
-            path=path,
-            initial_files=initial_files,
-            start_time=start_time,
-            timeout=timeout,
-            interval=interval,
-        )
-        if new_file is not None:
-            return new_file
-
-        logger.warning(f"Timeout monitoring download in {path}")
         return None
 
     async def _get_initial_filenames(self, path: str) -> set[str]:
@@ -314,8 +312,6 @@ class OpenListClient:
         self,
         task_id: Optional[str],
         path: str,
-        start_time: float,
-        timeout: int,
         interval: int,
     ) -> Optional[bool]:
         if not task_id:
@@ -326,7 +322,7 @@ class OpenListClient:
             f"Waiting for download task {task_id} to complete...(temp path:{path})"
         )
 
-        while time.time() - start_time < timeout:
+        while True:
             undone_tasks = await self.get_offline_download_undone()
             if undone_tasks is None:
                 logger.warning(
@@ -372,20 +368,15 @@ class OpenListClient:
             )
             return False
 
-        logger.warning(f"Timeout waiting for task completion: {task_id}")
-        return False
-
     async def _wait_for_new_file(
         self,
         path: str,
         initial_files: set[str],
-        start_time: float,
-        timeout: int,
         interval: int,
     ) -> Optional[str]:
         logger.debug(f"Monitoring directory for new files: {path}")
 
-        while time.time() - start_time < timeout:
+        while True:
             current_files = await self.list_files(path)
             if not current_files:
                 await asyncio.sleep(interval)
@@ -399,5 +390,3 @@ class OpenListClient:
                     return filename
 
             await asyncio.sleep(interval)
-
-        return None
