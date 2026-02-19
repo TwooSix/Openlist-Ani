@@ -59,7 +59,7 @@ class TestLLMConfig:
         assert cfg.openai_api_key == ""
         assert "openai" in cfg.openai_base_url
         assert cfg.openai_model == "gpt-4o"
-        assert cfg.tmdb_api_key == ""
+        assert cfg.tmdb_api_key == "8ed20a12d9f37dcf9484a505c8be696c"
         assert cfg.tmdb_language == "zh-CN"
 
 
@@ -82,7 +82,7 @@ class TestNotificationConfig:
     def test_defaults(self):
         cfg = NotificationConfig()
         assert cfg.enabled is False
-        assert cfg.batch_interval == 300.0
+        assert cfg.batch_interval == pytest.approx(300.0)
         assert cfg.bots == []
 
 
@@ -164,7 +164,7 @@ class TestConfigManager:
     def test_creates_file_if_missing(self, tmp_path, monkeypatch):
         """ConfigManager should create config.toml if it doesn't exist."""
         monkeypatch.chdir(tmp_path)
-        mgr = ConfigManager("config.toml")
+        ConfigManager("config.toml")
         assert (tmp_path / "config.toml").exists()
 
     def test_loads_existing_file(self, tmp_path, monkeypatch):
@@ -495,7 +495,7 @@ class TestProxyEnvVars:
         ).model_dump()
         (tmp_path / "config.toml").write_text(toml_dumps(data), encoding="utf-8")
 
-        mgr = ConfigManager("config.toml")
+        ConfigManager("config.toml")
         assert os.environ.get("HTTP_PROXY") == "http://127.0.0.1:7890"
         assert os.environ.get("HTTPS_PROXY") == "http://127.0.0.1:7890"
 
@@ -510,9 +510,9 @@ class TestProxyEnvVars:
         monkeypatch.delenv("HTTP_PROXY", raising=False)
         monkeypatch.delenv("HTTPS_PROXY", raising=False)
 
-        mgr = ConfigManager("config.toml")
-        # proxy defaults are empty → should not set env
-        # (Don't assert they are missing since other tests may have set them)
+        ConfigManager("config.toml")
+        assert os.environ.get("HTTP_PROXY") is None
+        assert os.environ.get("HTTPS_PROXY") is None
 
     def test_data_property_triggers_reload(self, tmp_path, monkeypatch):
         """Accessing .data should check mtime and reload if changed."""

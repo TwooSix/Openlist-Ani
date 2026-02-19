@@ -87,6 +87,7 @@ async def run():
         await process_rss_updates(rss, manager)
     except asyncio.CancelledError:
         logger.info("Shutting down...")
+        raise
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
     finally:
@@ -98,5 +99,5 @@ async def run():
 def main() -> None:
     try:
         asyncio.run(run())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass

@@ -93,9 +93,8 @@ class OpenListDownloader(BaseDownloader):
 
         logger.debug(f"Creating temporary directory: {temp_path}")
         if not await self.client.mkdir(temp_path):
-            return StateTransition(
-                success=False,
-                error_message=f"Failed to create temporary directory: {temp_path}",
+            return StateTransition.fail(
+                f"Failed to create temporary directory: {temp_path}"
             )
 
         # Get initial files for later detection
@@ -119,102 +118,106 @@ class OpenListDownloader(BaseDownloader):
 
         if not tasks:
             await self._cleanup(task)
-            return StateTransition(
-                success=False,
-                error_message="Failed to create offline download task",
-            )
+            return StateTransition.fail("Failed to create offline download task")
 
         task.extra_data["task_id"] = tasks[0].id
         logger.debug(f"Download task created with ID: {tasks[0].id}")
 
-        return StateTransition(
-            success=True,
-            next_state=DownloadState.DOWNLOADING,
-            should_continue=True,
-        )
+        return StateTransition.transition(DownloadState.DOWNLOADING)
 
     async def handle_downloading(self, task: DownloadTask) -> StateTransition:
         """Handle DOWNLOADING state: monitor progress."""
         task_id = task.extra_data.get("task_id")
         if not task_id:
-            return StateTransition(
-                success=False,
-                error_message="No task ID available",
-            )
+            return StateTransition.fail("No task ID available")
 
-        # Check undone tasks
+        undone_result = await self._handle_task_in_undone(task, task_id)
+        if undone_result is not None:
+            return undone_result
+
+        done_result = await self._handle_task_in_done(task, task_id)
+        if done_result is not None:
+            return done_result
+
+        await self._cleanup(task)
+        return StateTransition.fail(f"Task {task_id} not found")
+
+    async def _handle_task_in_undone(
+        self, task: DownloadTask, task_id: str
+    ) -> Optional[StateTransition]:
+        """Return transition when task is found in undone list; otherwise None."""
         undone_tasks = await self.client.get_offline_download_undone()
         if undone_tasks is None:
-            # API error - retry after delay
-            return StateTransition(
-                success=True,
-                should_continue=True,
+            return StateTransition.poll(
+                state=DownloadState.DOWNLOADING,
                 delay_seconds=5.0,
             )
 
-        # Look for task in undone
         for api_task in undone_tasks:
-            if api_task.id == task_id:
-                progress = float(api_task.progress) if api_task.progress else None
-                if progress is not None:
-                    # Log progress at info level for key milestones
-                    if progress > 0 and int(progress) % 25 == 0:
-                        logger.info(
-                            f"Downloading [{format_anime_episode(task.resource_info.anime_name, task.resource_info.season, task.resource_info.episode)}]: {progress:.0f}%"
-                        )
-                    else:
-                        logger.debug(f"Progress: {progress:.1f}%")
-                # Still downloading - check again later
-                return StateTransition(
-                    success=True,
-                    should_continue=True,
-                    delay_seconds=5.0,
-                )
+            if api_task.id != task_id:
+                continue
 
-        # Not in undone - check done tasks
+            progress = float(api_task.progress) if api_task.progress else None
+            self._log_download_progress(task, progress)
+            return StateTransition.poll(
+                state=DownloadState.DOWNLOADING,
+                delay_seconds=5.0,
+            )
+
+        return None
+
+    async def _handle_task_in_done(
+        self, task: DownloadTask, task_id: str
+    ) -> Optional[StateTransition]:
+        """Return transition when task is found in done list; otherwise None."""
         done_tasks = await self.client.get_offline_download_done()
         if done_tasks is None:
-            # API error - retry after delay
-            return StateTransition(
-                success=True,
-                should_continue=True,
+            return StateTransition.poll(
+                state=DownloadState.DOWNLOADING,
                 delay_seconds=5.0,
             )
 
         for api_task in done_tasks:
-            if api_task.id == task_id:
-                if api_task.state == OpenlistTaskState.Succeeded:
-                    # Download completed - detect file
-                    logger.debug(
-                        f"Download finished, detecting file for: {task.resource_info.title}"
-                    )
-                    downloaded_filename = await self._detect_downloaded_file(task)
-                    if not downloaded_filename:
-                        await self._cleanup(task)
-                        return StateTransition(
-                            success=False,
-                            error_message="Download completed but no file found",
-                        )
-                    task.downloaded_filename = downloaded_filename
-                    return StateTransition(
-                        success=True,
-                        next_state=DownloadState.DOWNLOADED,
-                        should_continue=True,
-                    )
-                else:
-                    logger.error(f"Download failed with state: {api_task.state}")
-                    await self._cleanup(task)
-                    return StateTransition(
-                        success=False,
-                        error_message=f"Task failed with state: {api_task.state}",
-                    )
+            if api_task.id != task_id:
+                continue
+            return await self._build_done_transition(task, api_task.state)
 
-        # Task not found - may have been deleted
-        await self._cleanup(task)
-        return StateTransition(
-            success=False,
-            error_message=f"Task {task_id} not found",
+        return None
+
+    async def _build_done_transition(
+        self, task: DownloadTask, task_state: OpenlistTaskState
+    ) -> StateTransition:
+        """Build state transition for a finished offline download task."""
+        if task_state != OpenlistTaskState.Succeeded:
+            logger.error(f"Download failed with state: {task_state}")
+            await self._cleanup(task)
+            return StateTransition.fail(f"Task failed with state: {task_state}")
+
+        logger.debug(
+            f"Download finished, detecting file for: {task.resource_info.title}"
         )
+        downloaded_filename = await self._detect_downloaded_file(task)
+        if not downloaded_filename:
+            await self._cleanup(task)
+            return StateTransition.fail("Download completed but no file found")
+
+        task.downloaded_filename = downloaded_filename
+        return StateTransition.transition(DownloadState.DOWNLOADED)
+
+    def _log_download_progress(
+        self, task: DownloadTask, progress: Optional[float]
+    ) -> None:
+        """Log task progress using milestone info logs and debug fallback."""
+        if progress is None:
+            return
+
+        if progress > 0 and int(progress) % 25 == 0:
+            logger.info(
+                f"Downloading [{format_anime_episode(task.resource_info.anime_name, task.resource_info.season, task.resource_info.episode)}]: {progress:.0f}%"
+            )
+            return
+
+        logger.debug(f"Progress: {progress:.1f}%")
 
     async def _detect_downloaded_file(self, task: DownloadTask) -> Optional[str]:
         """Detect the downloaded file in the temp directory."""
@@ -242,37 +245,72 @@ class OpenListDownloader(BaseDownloader):
         """Handle DOWNLOADED state: rename and move file."""
         logger.debug(f"Post-processing: {task.resource_info.title}")
 
-        if not task.downloaded_filename:
-            await self._cleanup(task)
-            return StateTransition(
-                success=False,
-                error_message="No downloaded filename available",
-            )
+        validation_result = await self._validate_downloaded_task(task)
+        if validation_result is not None:
+            return validation_result
 
-        if not task.temp_path:
-            await self._cleanup(task)
-            return StateTransition(
-                success=False,
-                error_message="No temp_path available",
-            )
-
-        # Build final path
         anime_name = sanitize_filename(task.resource_info.anime_name or "Unknown")
         season = task.resource_info.season or 1
         episode = task.resource_info.episode or 1
+        final_dir_path = self._build_final_dir_path(task, anime_name, season)
+        final_filename = self._build_final_filename(task, anime_name, season, episode)
+
+        if not await self.client.mkdir(final_dir_path):
+            await self._cleanup(task)
+            return StateTransition.fail(f"Failed to create directory: {final_dir_path}")
+
+        file_to_move = await self._rename_temp_file_if_needed(task, final_filename)
+
+        logger.debug(
+            f"Moving file to final destination: {final_dir_path}/{file_to_move}"
+        )
+        if not await self.client.move_file(
+            task.temp_path, final_dir_path, [file_to_move]
+        ):
+            await self._cleanup(task)
+            return StateTransition.fail(f"Failed to move file to: {final_dir_path}")
+
+        task.final_path = f"{final_dir_path}/{file_to_move}"
+        return StateTransition.transition(DownloadState.POST_PROCESSING)
+
+    async def _validate_downloaded_task(
+        self, task: DownloadTask
+    ) -> Optional[StateTransition]:
+        """Validate required data for downloaded-state processing."""
+        if not task.downloaded_filename:
+            await self._cleanup(task)
+            return StateTransition.fail("No downloaded filename available")
+
+        if not task.temp_path:
+            await self._cleanup(task)
+            return StateTransition.fail("No temp_path available")
+
+        return None
+
+    def _build_final_dir_path(
+        self, task: DownloadTask, anime_name: str, season: int
+    ) -> str:
+        """Build final destination directory path."""
         season_dir = f"Season {season}"
         final_dir_path = f"{task.save_path.rstrip('/')}/{anime_name}/{season_dir}"
+        return final_dir_path
 
-        # Get extension from downloaded file
-        _, ext = os.path.splitext(task.downloaded_filename)
+    def _build_final_filename(
+        self,
+        task: DownloadTask,
+        anime_name: str,
+        season: int,
+        episode: int,
+    ) -> str:
+        """Build final filename using configured rename format and source extension."""
+        downloaded_filename = task.downloaded_filename or ""
+        _, ext = os.path.splitext(downloaded_filename)
         if ext == "":
-            ext = ".mp4"  # Default to .mp4 if no extension
+            ext = ".mp4"
 
-        # Build final filename using config format
         rename_context = vars(task.resource_info).copy()
         rename_context["anime_name"] = anime_name
-        if "title" in rename_context:
-            del rename_context["title"]
+        rename_context.pop("title", None)
         version = rename_context.pop("version", 1) or 1
 
         try:
@@ -284,54 +322,31 @@ class OpenListDownloader(BaseDownloader):
             )
             final_filename_stem = f"{anime_name} S{season:02d}E{episode:02d}"
 
-        # Append version suffix when version > 1
         if version > 1:
             final_filename_stem = f"{final_filename_stem} v{version}"
 
-        final_filename = f"{final_filename_stem}{ext}".strip()
+        return f"{final_filename_stem}{ext}".strip()
 
-        # Create final directory
-        if not await self.client.mkdir(final_dir_path):
-            await self._cleanup(task)
-            return StateTransition(
-                success=False,
-                error_message=f"Failed to create directory: {final_dir_path}",
-            )
+    async def _rename_temp_file_if_needed(
+        self, task: DownloadTask, final_filename: str
+    ) -> str:
+        """Rename file in temp directory when target name differs."""
+        downloaded_filename = task.downloaded_filename or ""
+        if final_filename == downloaded_filename:
+            return downloaded_filename
 
-        # Rename file in temp directory if needed
-        file_to_move = task.downloaded_filename
-        if final_filename != task.downloaded_filename:
-            logger.debug(f"Renaming file to: {final_filename}")
-            temp_file_path = f"{task.temp_path}/{task.downloaded_filename}"
-            if await self.client.rename_file(temp_file_path, final_filename):
-                file_to_move = final_filename
-                logger.debug("Waiting for remote server cache to refresh...")
-                await asyncio.sleep(5)
-                logger.debug(f"Renamed {task.downloaded_filename} to {final_filename}")
-            else:
-                logger.warning(
-                    f"Rename failed, will move with original name: {task.downloaded_filename}"
-                )
+        logger.debug(f"Renaming file to: {final_filename}")
+        temp_file_path = f"{task.temp_path}/{downloaded_filename}"
+        if await self.client.rename_file(temp_file_path, final_filename):
+            logger.debug("Waiting for remote server cache to refresh...")
+            await asyncio.sleep(5)
+            logger.debug(f"Renamed {downloaded_filename} to {final_filename}")
+            return final_filename
 
-        # Move file to final destination
-        logger.debug(
-            f"Moving file to final destination: {final_dir_path}/{file_to_move}"
+        logger.warning(
+            f"Rename failed, will move with original name: {downloaded_filename}"
         )
-        if not await self.client.move_file(
-            task.temp_path, final_dir_path, [file_to_move]
-        ):
-            await self._cleanup(task)
-            return StateTransition(
-                success=False,
-                error_message=f"Failed to move file to: {final_dir_path}",
-            )
-
-        task.final_path = f"{final_dir_path}/{file_to_move}"
-        return StateTransition(
-            success=True,
-            next_state=DownloadState.POST_PROCESSING,
-            should_continue=True,
-        )
+        return downloaded_filename
 
     async def handle_post_processing(self, task: DownloadTask) -> StateTransition:
         """Handle POST_PROCESSING state: cleanup temp directory and complete."""
@@ -339,11 +354,7 @@ class OpenListDownloader(BaseDownloader):
         logger.info(
             f"Download completed: {format_anime_episode(task.resource_info.anime_name, task.resource_info.season, task.resource_info.episode)}"
         )
-        return StateTransition(
-            success=True,
-            next_state=DownloadState.COMPLETED,
-            should_continue=False,
-        )
+        return StateTransition.transition(DownloadState.COMPLETED)
 
     async def _cleanup(self, task: DownloadTask) -> bool:
         """Clean up temporary directory."""

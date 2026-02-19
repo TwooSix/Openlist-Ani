@@ -16,13 +16,13 @@ from openlist_ani.core.website.model import AnimeResourceInfo
 
 
 def _make_resource(**kwargs) -> AnimeResourceInfo:
-    defaults = dict(
-        title="[SubGroup] Test - 01",
-        download_url="magnet:?xt=urn:btih:abc123",
-        anime_name="Test",
-        season=1,
-        episode=1,
-    )
+    defaults = {
+        "title": "[SubGroup] Test - 01",
+        "download_url": "magnet:?xt=urn:btih:abc123",
+        "anime_name": "Test",
+        "season": 1,
+        "episode": 1,
+    }
     defaults.update(kwargs)
     return AnimeResourceInfo(**defaults)
 
@@ -237,7 +237,7 @@ class TestDispatchState:
         downloader = _make_mock_downloader()
         call_count = 0
 
-        async def pending_with_retry(task):
+        def pending_with_retry(task):
             nonlocal call_count
             call_count += 1
             if call_count <= 1:
