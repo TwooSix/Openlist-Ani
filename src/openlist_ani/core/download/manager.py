@@ -53,6 +53,21 @@ class DownloadManager:
         self._load_state()
         logger.info(f"Initialized with {type(downloader).__name__}")
 
+        self._schedule_recovered_tasks_if_possible()
+
+    def _schedule_recovered_tasks_if_possible(self) -> None:
+        """Schedule recovered tasks only when running inside an active event loop."""
+        if not self._events:
+            return
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug(
+                "Skip auto-resume scheduling: no running event loop during DownloadManager initialization"
+            )
+            return
+
         # Auto-start pending tasks (recovered from state file)
         for event in self._events.values():
             # Only auto-start non-terminal states (PENDING, DOWNLOADING, etc.)
@@ -61,9 +76,9 @@ class DownloadManager:
                 DownloadState.FAILED,
                 DownloadState.CANCELLED,
             ):
-                task = asyncio.create_task(self._process_task(event))
-                self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
+                background_task = asyncio.create_task(self._process_task(event))
+                self._background_tasks.add(background_task)
+                background_task.add_done_callback(self._background_tasks.discard)
 
     @property
     def downloader(self) -> BaseDownloader:
@@ -242,10 +257,12 @@ class DownloadManager:
                 result.next_state = task.state
 
             previous_state = task.state
-            task.update_state(result.next_state)
-            if task.state != previous_state:
+            if result.next_state != previous_state:
+                task.update_state(result.next_state)
                 self._save_state()
                 self._emit_state_change(task, result.next_state)
+            else:
+                logger.debug(f"Polling in state: {task.state}")
 
             # Check if reached terminal state
             if task.state in (DownloadState.COMPLETED, DownloadState.CANCELLED):
