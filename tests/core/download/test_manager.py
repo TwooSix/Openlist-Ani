@@ -55,13 +55,19 @@ def _make_mock_downloader():
 class TestIsDownloading:
     """Verify DownloadManager.is_downloading correctly identifies active tasks."""
 
-    def test_resource_not_downloading(self):
-        mgr = DownloadManager(downloader=_make_mock_downloader())
+    def test_resource_not_downloading(self, tmp_path):
+        mgr = DownloadManager(
+            downloader=_make_mock_downloader(),
+            state_file=str(tmp_path / "state.json"),
+        )
         resource = _make_resource()
         assert mgr.is_downloading(resource) is False
 
-    def test_resource_is_downloading(self):
-        mgr = DownloadManager(downloader=_make_mock_downloader())
+    def test_resource_is_downloading(self, tmp_path):
+        mgr = DownloadManager(
+            downloader=_make_mock_downloader(),
+            state_file=str(tmp_path / "state.json"),
+        )
 
         resource = _make_resource(
             title="Active",
@@ -72,8 +78,11 @@ class TestIsDownloading:
 
         assert mgr.is_downloading(resource) is True
 
-    def test_different_url_not_matching(self):
-        mgr = DownloadManager(downloader=_make_mock_downloader())
+    def test_different_url_not_matching(self, tmp_path):
+        mgr = DownloadManager(
+            downloader=_make_mock_downloader(),
+            state_file=str(tmp_path / "state.json"),
+        )
 
         active = _make_resource(title="A", download_url="magnet:?xt=urn:btih:aaa")
         task = DownloadTask(resource_info=active, save_path="/tmp")
@@ -82,8 +91,10 @@ class TestIsDownloading:
         query = _make_resource(title="B", download_url="magnet:?xt=urn:btih:bbb")
         assert mgr.is_downloading(query) is False
 
-    def test_multiple_active_tasks(self):
-        mgr = DownloadManager(_make_mock_downloader())
+    def test_multiple_active_tasks(self, tmp_path):
+        mgr = DownloadManager(
+            _make_mock_downloader(), state_file=str(tmp_path / "state.json")
+        )
         for i in range(5):
             r = _make_resource(download_url=f"magnet:?xt=urn:btih:hash{i}")
             t = DownloadTask(resource_info=r, save_path="/dl")
@@ -169,6 +180,17 @@ class TestStatePersistence:
         mgr._save_state()
         assert state_file.exists()
 
+    def test_init_with_pending_state_without_running_loop(self, tmp_path):
+        """Init should not crash when recovered tasks exist but no running loop."""
+        state_file = tmp_path / "state.json"
+        task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
+        state_file.write_text(json.dumps({task.id: task.to_dict()}), encoding="utf-8")
+
+        mgr = DownloadManager(_make_mock_downloader(), state_file=str(state_file))
+
+        assert task.id in mgr._events
+        assert mgr._background_tasks == set()
+
 
 # ---------------------------------------------------------------------------
 # Callbacks
@@ -178,14 +200,18 @@ class TestStatePersistence:
 class TestCallbacks:
     """Verify on_complete and on_error callback registration."""
 
-    def test_register_on_complete(self):
-        mgr = DownloadManager(_make_mock_downloader())
+    def test_register_on_complete(self, tmp_path):
+        mgr = DownloadManager(
+            _make_mock_downloader(), state_file=str(tmp_path / "s.json")
+        )
         cb = MagicMock()
         mgr.on_complete(cb)
         assert cb in mgr._on_complete
 
-    def test_register_on_error(self):
-        mgr = DownloadManager(_make_mock_downloader())
+    def test_register_on_error(self, tmp_path):
+        mgr = DownloadManager(
+            _make_mock_downloader(), state_file=str(tmp_path / "s.json")
+        )
         cb = MagicMock()
         mgr.on_error(cb)
         assert cb in mgr._on_error
@@ -197,14 +223,18 @@ class TestCallbacks:
 
 
 class TestGetEvent:
-    def test_existing_event(self):
-        mgr = DownloadManager(_make_mock_downloader())
+    def test_existing_event(self, tmp_path):
+        mgr = DownloadManager(
+            _make_mock_downloader(), state_file=str(tmp_path / "s.json")
+        )
         task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
         mgr._events["id1"] = task
         assert mgr.get_event("id1") is task
 
-    def test_missing_event_returns_none(self):
-        mgr = DownloadManager(_make_mock_downloader())
+    def test_missing_event_returns_none(self, tmp_path):
+        mgr = DownloadManager(
+            _make_mock_downloader(), state_file=str(tmp_path / "s.json")
+        )
         assert mgr.get_event("nonexistent") is None
 
 
@@ -252,6 +282,26 @@ class TestDispatchState:
 
         await mgr._dispatch_state(task)
         assert task.state == DownloadState.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_same_state_polling_does_not_raise(self, tmp_path):
+        """Polling in the same state should not trigger invalid self-transition."""
+        downloader = _make_mock_downloader()
+        downloader.handle_downloading = AsyncMock(
+            side_effect=[
+                StateTransition.poll(DownloadState.DOWNLOADING, delay_seconds=0),
+                StateTransition.transition(DownloadState.DOWNLOADED),
+            ]
+        )
+
+        mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
+        task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
+        mgr._events[task.id] = task
+
+        await mgr._dispatch_state(task)
+
+        assert task.state == DownloadState.COMPLETED
+        assert downloader.handle_downloading.await_count == 2
 
     @pytest.mark.asyncio
     async def test_handler_exception_marks_failed(self, tmp_path):
