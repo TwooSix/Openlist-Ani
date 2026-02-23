@@ -81,12 +81,12 @@ class DownloadTask:
     max_retries: int = 3
 
     # Paths
-    save_path: str = ""  # Base save path
-    temp_path: Optional[str] = None  # Temporary download path
-    final_path: Optional[str] = None  # Final destination path
+    save_path: str = ""  # Base save directory
+    temp_path: Optional[str] = None  # Temporary download directory
+    final_path: Optional[str] = None  # save_path + filename_after_rename
 
     # Download tracking
-    downloaded_filename: Optional[str] = None  # Name of downloaded file
+    downloaded_filename: Optional[str] = None  # Original name of downloaded file
     initial_files: list[str] = field(
         default_factory=list
     )  # Files in temp dir before download

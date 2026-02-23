@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Optional
 
 
-class VideoQuality(str, Enum):
+class VideoQuality(StrEnum):
     k2160p = "2160p"
     k1080p = "1080p"
     k720p = "720p"
@@ -11,7 +11,7 @@ class VideoQuality(str, Enum):
     kUnknown = "unknown"
 
 
-class LanguageType(str, Enum):
+class LanguageType(StrEnum):
     kChs = "简"
     kCht = "繁"
     kJp = "日"

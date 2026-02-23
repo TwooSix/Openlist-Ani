@@ -228,11 +228,15 @@ class DownloadManager:
         # Check if task has reached a terminal state
         if task.state == DownloadState.COMPLETED:
             await self._finalize_task(task, success=True)
+            logger.info(f"Download completed: {task.final_path}")
             return
 
         if task.state == DownloadState.CANCELLED:
             await self._finalize_task(task, success=False)
             return
+
+        if task.state == DownloadState.PENDING:
+            logger.info(f"Starting download: {task.resource_info.title}")
 
         handler = self._handlers.get(task.state)
         if not handler:
@@ -263,13 +267,6 @@ class DownloadManager:
                 self._emit_state_change(task, result.next_state)
             else:
                 logger.debug(f"Polling in state: {task.state}")
-
-            # Check if reached terminal state
-            if task.state in (DownloadState.COMPLETED, DownloadState.CANCELLED):
-                await self._finalize_task(
-                    task, success=(task.state == DownloadState.COMPLETED)
-                )
-                return
 
             # Continue dispatching for next state
             if result.delay_seconds > 0:

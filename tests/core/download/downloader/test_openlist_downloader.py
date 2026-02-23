@@ -10,7 +10,11 @@ from openlist_ani.core.download.downloader.openlist_downloader import (
     sanitize_filename,
 )
 from openlist_ani.core.download.model.task import DownloadState, DownloadTask
-from openlist_ani.core.website.model import AnimeResourceInfo
+from openlist_ani.core.website.model import (
+    AnimeResourceInfo,
+    LanguageType,
+    VideoQuality,
+)
 
 # ---------------------------------------------------------------------------
 # sanitize_filename
@@ -260,3 +264,125 @@ class TestHandleDownloadedVersionSuffix:
         rename_call_args = d._client.rename_file.call_args
         new_filename = rename_call_args[0][1]
         assert new_filename == "MyAnime S01E03 [SubTeam] v2.mkv"
+
+
+# ---------------------------------------------------------------------------
+# _build_final_filename
+# ---------------------------------------------------------------------------
+
+
+class TestBuildFinalFilenameEnumFields:
+    """Regression tests: quality and languages must be embedded as plain strings.
+
+    Before the fix, (str, Enum) caused format() to produce repr-style output
+    such as "<VideoQuality.k1080p: '1080p'>" or
+    "[<LanguageType.kChs: '简'>, <LanguageType.kJp: '日'>]"
+    instead of "1080p" / "简日".
+    """
+
+    def _make_task_with_enums(
+        self,
+        quality: VideoQuality = VideoQuality.k1080p,
+        languages: list = None,
+        version: int = 1,
+    ) -> DownloadTask:
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 05 [1080p]",
+            download_url="magnet:?xt=test",
+            anime_name="MyAnime",
+            season=1,
+            episode=5,
+            quality=quality,
+            languages=languages or [LanguageType.kChs, LanguageType.kJp],
+            version=version,
+        )
+        task = DownloadTask(resource_info=info, save_path="/downloads")
+        task.state = DownloadState.DOWNLOADED
+        task.downloaded_filename = "source.mkv"
+        task.temp_path = f"/downloads/{task.id}"
+        return task
+
+    def _make_downloader_direct(self, rename_format: str) -> OpenListDownloader:
+        d = OpenListDownloader(
+            base_url="http://localhost:5244",
+            token="tok",
+            offline_download_tool="aria2",
+            rename_format=rename_format,
+        )
+        return d
+
+    def test_quality_in_format_is_plain_string(self):
+        """'{quality}' in rename_format must expand to '1080p', not the enum repr."""
+        d = self._make_downloader_direct(
+            "{anime_name} S{season:02d}E{episode:02d} {quality}"
+        )
+        task = self._make_task_with_enums(quality=VideoQuality.k1080p)
+        result = d._build_final_filename(task, "MyAnime", 1, 5)
+        assert result == "MyAnime S01E05 1080p.mkv"
+        assert "VideoQuality" not in result
+        assert "<" not in result
+
+    def test_quality_all_variants_in_format(self):
+        """Every VideoQuality value should expand to its plain string value."""
+        expected = {
+            VideoQuality.k2160p: "2160p",
+            VideoQuality.k1080p: "1080p",
+            VideoQuality.k720p: "720p",
+            VideoQuality.k480p: "480p",
+            VideoQuality.kUnknown: "unknown",
+        }
+        d = self._make_downloader_direct("{anime_name} [{quality}]")
+        for quality, value_str in expected.items():
+            task = self._make_task_with_enums(quality=quality)
+            result = d._build_final_filename(task, "A", 1, 1)
+            assert (
+                f"[{value_str}]" in result
+            ), f"Expected '[{value_str}]' in '{result}' for {quality!r}"
+
+    def test_languages_in_format_is_joined_plain_string(self):
+        """'{languages}' must expand to joined values like '简日', not a list repr."""
+        d = self._make_downloader_direct(
+            "{anime_name} S{season:02d}E{episode:02d} [{languages}]"
+        )
+        task = self._make_task_with_enums(
+            languages=[LanguageType.kChs, LanguageType.kJp]
+        )
+        result = d._build_final_filename(task, "MyAnime", 1, 5)
+        assert result == "MyAnime S01E05 [简日].mkv"
+        assert "LanguageType" not in result
+        assert "<" not in result
+
+    def test_languages_single_entry(self):
+        """A single-language list must expand to that language's value string."""
+        d = self._make_downloader_direct("{anime_name} [{languages}]")
+        task = self._make_task_with_enums(languages=[LanguageType.kCht])
+        result = d._build_final_filename(task, "Anime", 1, 1)
+        assert "[繁]" in result
+
+    def test_languages_empty_list(self):
+        """Empty languages list must expand to empty string without crashing."""
+        d = self._make_downloader_direct("{anime_name} [{languages}]")
+        task = self._make_task_with_enums(languages=[])
+        result = d._build_final_filename(task, "Anime", 1, 1)
+        assert "[]" not in result  # should be "[]".format(...) → "[]"
+        assert "LanguageType" not in result
+
+    def test_quality_and_languages_combined_in_format(self):
+        """Both fields together must both render as plain strings."""
+        d = self._make_downloader_direct("{anime_name} {quality} [{languages}]")
+        task = self._make_task_with_enums(
+            quality=VideoQuality.k1080p,
+            languages=[LanguageType.kChs, LanguageType.kCht],
+        )
+        result = d._build_final_filename(task, "MyAnime", 1, 3)
+        assert result == "MyAnime 1080p [简繁].mkv"
+
+    def test_no_quality_or_languages_in_format_still_works(self):
+        """Default format without {quality} or {languages} must be unaffected."""
+        d = self._make_downloader_direct("{anime_name} S{season:02d}E{episode:02d}")
+        task = self._make_task_with_enums(
+            quality=VideoQuality.k1080p,
+            languages=[LanguageType.kChs],
+        )
+        result = d._build_final_filename(task, "MyAnime", 1, 5)
+        assert result == "MyAnime S01E05.mkv"

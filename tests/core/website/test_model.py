@@ -39,3 +39,50 @@ class TestAnimeResourceInfo:
         info = AnimeResourceInfo(title="", download_url="")
         assert info.title == ""
         assert info.download_url == ""
+
+
+class TestEnumStringRepresentation:
+    """Verify VideoQuality and LanguageType format as plain value strings.
+
+    Regression tests for the bug where (str, Enum) was used instead of
+    StrEnum, causing format() to produce repr-style output such as
+    "<VideoQuality.k1080p: '1080p'>" instead of "1080p".
+    """
+
+    def test_video_quality_str_returns_value(self):
+        """str() must return the bare value string, not the enum repr."""
+        assert str(VideoQuality.k1080p) == "1080p"
+        assert str(VideoQuality.k2160p) == "2160p"
+        assert str(VideoQuality.k720p) == "720p"
+        assert str(VideoQuality.kUnknown) == "unknown"
+
+    def test_language_type_str_returns_value(self):
+        """str() must return the bare value string, not the enum repr."""
+        assert str(LanguageType.kChs) == "简"
+        assert str(LanguageType.kCht) == "繁"
+        assert str(LanguageType.kJp) == "日"
+        assert str(LanguageType.kEng) == "英"
+        assert str(LanguageType.kUnknown) == "未知"
+
+    def test_video_quality_in_format_string(self):
+        """f-string and .format() must embed the value, not the enum repr."""
+        q = VideoQuality.k1080p
+        assert f"{q}" == "1080p"
+        assert "{q}".format(q=q) == "1080p"
+        assert "quality={}".format(q) == "quality=1080p"
+
+    def test_language_type_in_format_string(self):
+        """f-string and .format() must embed the value, not the enum repr."""
+        lang = LanguageType.kChs
+        assert f"{lang}" == "简"
+        assert "{lang}".format(lang=lang) == "简"
+
+    def test_video_quality_equality_with_plain_string(self):
+        """StrEnum instances must compare equal to plain value strings."""
+        assert VideoQuality.k1080p == "1080p"
+        assert VideoQuality.kUnknown == "unknown"
+
+    def test_language_type_equality_with_plain_string(self):
+        """StrEnum instances must compare equal to plain value strings."""
+        assert LanguageType.kChs == "简"
+        assert LanguageType.kJp == "日"

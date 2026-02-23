@@ -103,9 +103,6 @@ class OpenListDownloader(BaseDownloader):
         task.temp_path = temp_path
 
         # Start offline download
-        logger.info(
-            f"Starting download: {format_anime_episode(task.resource_info.anime_name, task.resource_info.season, task.resource_info.episode)}"
-        )
         logger.debug(f"  Title: {task.resource_info.title}")
         logger.debug(f"  URL: {task.resource_info.download_url}")
         logger.debug(f"  Temp path: {temp_path}")
@@ -313,6 +310,14 @@ class OpenListDownloader(BaseDownloader):
         rename_context.pop("title", None)
         version = rename_context.pop("version", 1) or 1
 
+        quality = rename_context.get("quality")
+        if quality is not None:
+            rename_context["quality"] = str(quality)
+        if isinstance(rename_context.get("languages"), list):
+            rename_context["languages"] = "".join(
+                str(lang) for lang in rename_context["languages"]
+            )
+
         try:
             final_filename_stem = self._rename_format.format(**rename_context).strip()
         except Exception as e:
@@ -351,9 +356,6 @@ class OpenListDownloader(BaseDownloader):
     async def handle_post_processing(self, task: DownloadTask) -> StateTransition:
         """Handle POST_PROCESSING state: cleanup temp directory and complete."""
         await self._cleanup(task)
-        logger.info(
-            f"Download completed: {format_anime_episode(task.resource_info.anime_name, task.resource_info.season, task.resource_info.episode)}"
-        )
         return StateTransition.transition(DownloadState.COMPLETED)
 
     async def _cleanup(self, task: DownloadTask) -> bool:

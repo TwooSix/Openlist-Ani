@@ -29,8 +29,6 @@ async def process_rss_updates(rss: RSSManager, manager: DownloadManager) -> None
             if new_entries:
                 logger.info(f"Found {len(new_entries)} new entries from RSS feeds")
 
-                # Process entries with controlled concurrency
-                # Create tasks but don't overwhelm the event loop
                 tasks = [_download_entry(manager, entry) for entry in new_entries]
                 await asyncio.gather(*tasks, return_exceptions=True)
             else:
@@ -68,7 +66,7 @@ async def _download_entry(manager: DownloadManager, entry: AnimeResourceInfo) ->
         entry.season = meta.season
         entry.episode = meta.episode
         entry.quality = meta.quality
-        entry.fansub = meta.fansub
+        entry.fansub = meta.fansub if entry.fansub is None else entry.fansub
         entry.languages = meta.languages
         entry.version = meta.version
 
