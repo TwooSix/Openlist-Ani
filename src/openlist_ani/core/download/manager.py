@@ -15,14 +15,29 @@ from typing import TYPE_CHECKING, Callable
 from openlist_ani.logger import logger
 
 from ..website.model import AnimeResourceInfo
+from .downloader.base import HandlerResult, HandlerStatus
 from .model.task import DownloadState, DownloadTask
 
 if TYPE_CHECKING:
-    from .downloader.base import BaseDownloader, StateTransition
+    from .downloader.base import BaseDownloader
 
 
 class DownloadManager:
-    """Event dispatcher for download state machine."""
+
+    _NEXT_STATE: dict[DownloadState, DownloadState] = {
+        DownloadState.PENDING: DownloadState.DOWNLOADING,
+        DownloadState.DOWNLOADING: DownloadState.TRANSFERRING,
+        DownloadState.TRANSFERRING: DownloadState.CLEANING_UP,
+        DownloadState.CLEANING_UP: DownloadState.COMPLETED,
+    }
+
+    _TERMINAL_STATES = frozenset(
+        {
+            DownloadState.COMPLETED,
+            DownloadState.FAILED,
+            DownloadState.CANCELLED,
+        }
+    )
 
     def __init__(
         self,
@@ -40,10 +55,10 @@ class DownloadManager:
         self._background_tasks: set[asyncio.Task[None]] = set()
 
         self._handlers: dict[DownloadState, Callable] = {
-            DownloadState.PENDING: downloader.handle_pending,
-            DownloadState.DOWNLOADING: downloader.handle_downloading,
-            DownloadState.DOWNLOADED: downloader.handle_downloaded,
-            DownloadState.POST_PROCESSING: downloader.handle_post_processing,
+            DownloadState.PENDING: downloader.on_pending,
+            DownloadState.DOWNLOADING: downloader.on_downloading,
+            DownloadState.TRANSFERRING: downloader.on_transferring,
+            DownloadState.CLEANING_UP: downloader.on_cleaning_up,
         }
 
         self._on_state_change: list[Callable[[DownloadTask, DownloadState], None]] = []
@@ -173,13 +188,8 @@ class DownloadManager:
         return False
 
     async def _process_task(self, task: DownloadTask) -> None:
-        """Process task with concurrency control.
-
-        All tasks (recovered and new) go through this method,
-        ensuring unified handling and concurrent download limit.
-        """
         async with self._semaphore:
-            await self._dispatch_state(task)
+            await self._run_state_machine(task)
 
     def _emit_state_change(self, task: DownloadTask, new_state: DownloadState) -> None:
         """Trigger state change callbacks."""
@@ -223,88 +233,67 @@ class DownloadManager:
                     f"Task finalized and removed: {task.id} (success={success})"
                 )
 
-    async def _dispatch_state(self, task: DownloadTask) -> None:
-        """Dispatch task to state handler and process result."""
-        # Check if task has reached a terminal state
-        if task.state == DownloadState.COMPLETED:
-            await self._finalize_task(task, success=True)
-            logger.info(f"Download completed: {task.final_path}")
-            return
+    async def _run_state_machine(self, task: DownloadTask) -> None:
+        while task.state not in self._TERMINAL_STATES:
+            if task.state == DownloadState.PENDING:
+                logger.info(f"Starting download: {task.resource_info.title}")
 
-        if task.state == DownloadState.CANCELLED:
-            await self._finalize_task(task, success=False)
-            return
+            handler = self._handlers.get(task.state)
+            if not handler:
+                task.mark_failed(f"No handler for state: {task.state}")
+                break
 
-        if task.state == DownloadState.PENDING:
-            logger.info(f"Starting download: {task.resource_info.title}")
-
-        handler = self._handlers.get(task.state)
-        if not handler:
-            logger.error(f"No handler for state: {task.state}")
-            task.mark_failed(f"No handler for state {task.state}")
-            await self._handle_task_failure(task)
-            return
-
-        try:
-            result: StateTransition = await handler(task)
-
-            # Handle failure
-            if not result.success:
-                task.mark_failed(result.error_message or "Handler failed")
-                await self._handle_task_failure(task)
-                return
-
-            if not result.next_state:
-                logger.warning(
-                    f"Handler did not specify next state, keeping current state: {task.state}"
-                )
-                result.next_state = task.state
-
-            previous_state = task.state
-            if result.next_state != previous_state:
-                task.update_state(result.next_state)
+            try:
+                result: HandlerResult = await handler(task)
+            except asyncio.CancelledError:
                 self._save_state()
-                self._emit_state_change(task, result.next_state)
-            else:
-                logger.debug(f"Polling in state: {task.state}")
+                raise
+            except Exception as e:
+                logger.exception(f"Handler error [{task.state}]: {e}")
+                result = HandlerResult.fail(str(e))
 
-            # Continue dispatching for next state
-            if result.delay_seconds > 0:
-                await asyncio.sleep(result.delay_seconds)
-            await self._dispatch_state(task)
+            match result.status:
+                case HandlerStatus.DONE:
+                    next_state = self._NEXT_STATE[task.state]
+                    task.update_state(next_state)
+                    self._save_state()
+                    self._emit_state_change(task, next_state)
 
-        except asyncio.CancelledError:
-            self._save_state()
-            logger.info(f"Task cancelled: {task.id}")
-            raise
-        except Exception as e:
-            logger.exception(f"Handler error [{task.state}]: {e}")
-            task.mark_failed(str(e))
-            await self._handle_task_failure(task)
+                case HandlerStatus.POLL:
+                    await asyncio.sleep(result.poll_delay)
 
-    async def _handle_task_failure(self, task: DownloadTask) -> None:
-        """Handle task failure with automatic retry logic.
+                case HandlerStatus.FAILED:
+                    task.mark_failed(result.error_message or "Handler failed")
 
-        Args:
-            task: The failed task
-        """
-        self._save_state()
+        await self._handle_terminal_state(task)
 
-        # Try to retry if possible
-        if task.can_retry():
-            logger.warning(
-                f"Task failed (attempt {task.retry_count}/{task.max_retries}), will retry: {task.resource_info.title}"
-            )
-            task.retry()
-            self._save_state()
-            # Continue processing from PENDING state
-            await self._dispatch_state(task)
-        else:
-            # No more retries, finalize as failed
-            logger.error(
-                f"Task failed after {task.retry_count} retries: {task.resource_info.title}"
-            )
-            await self._finalize_task(task, success=False)
+    async def _handle_terminal_state(self, task: DownloadTask) -> None:
+        match task.state:
+            case DownloadState.COMPLETED:
+                logger.info(f"Download completed: {task.final_path}")
+                await self._finalize_task(task, success=True)
+
+            case DownloadState.FAILED:
+                if task.can_retry():
+                    logger.warning(
+                        f"Task failed (attempt {task.retry_count}/{task.max_retries}), "
+                        f"retrying: {task.resource_info.title}"
+                    )
+                    await self._downloader.on_failed(task)
+                    task.retry()
+                    self._save_state()
+                    await self._run_state_machine(task)
+                else:
+                    logger.error(
+                        f"Task failed after {task.retry_count} retries: "
+                        f"{task.resource_info.title}"
+                    )
+                    await self._downloader.on_failed(task)
+                    await self._finalize_task(task, success=False)
+
+            case DownloadState.CANCELLED:
+                await self._downloader.on_cancelled(task)
+                await self._finalize_task(task, success=False)
 
     async def download(self, resource_info: AnimeResourceInfo, save_path: str) -> bool:
         """Download anime resource."""

@@ -1,92 +1,60 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Optional
 
-from ..model.task import DownloadState, DownloadTask
+from ..model.task import DownloadTask
+
+
+class HandlerStatus(StrEnum):
+    DONE = "done"
+    POLL = "poll"
+    FAILED = "failed"
 
 
 @dataclass
-class StateTransition:
-    """Result of one state-handler execution in the download state machine.
-
-        Field semantics:
-        - success: Whether current handler logic succeeded.
-            If False, manager marks task as failed and enters retry/failure flow.
-        - next_state: Optional next state to switch to before deciding whether to continue.
-        - delay_seconds: Delay before continuing (typically used by polling states).
-        - error_message: Error reason used when success=False.
-
-    Prefer semantic constructors (ok, fail, poll, transition) for readability.
-    """
-
-    success: bool
-    next_state: Optional[DownloadState] = None
-    delay_seconds: float = 0  # Delay before continuing (for polling)
+class HandlerResult:
+    status: HandlerStatus
     error_message: Optional[str] = None
+    poll_delay: float = 0.0
 
     @classmethod
-    def ok(
-        cls,
-        *,
-        next_state: Optional[DownloadState] = None,
-    ) -> "StateTransition":
-        """Successful transition, optionally moving to a new state."""
-        return cls(
-            success=True,
-            next_state=next_state,
-        )
+    def done(cls) -> "HandlerResult":
+        return cls(status=HandlerStatus.DONE)
 
     @classmethod
-    def transition(
-        cls,
-        next_state: DownloadState,
-    ) -> "StateTransition":
-        """Successful state switch to `next_state`."""
-        return cls.ok(next_state=next_state)
+    def poll(cls, delay: float = 5.0) -> "HandlerResult":
+        return cls(status=HandlerStatus.POLL, poll_delay=delay)
 
     @classmethod
-    def poll(cls, state: DownloadState, delay_seconds: float) -> "StateTransition":
-        """Successful polling wait: re-dispatch in the same `state` later."""
-        return cls(
-            success=True,
-            next_state=state,
-            delay_seconds=delay_seconds,
-        )
-
-    @classmethod
-    def fail(cls, error_message: str) -> "StateTransition":
-        """Failed transition with error message."""
-        return cls(
-            success=False,
-            error_message=error_message,
-        )
+    def fail(cls, message: str) -> "HandlerResult":
+        return cls(status=HandlerStatus.FAILED, error_message=message)
 
 
 class BaseDownloader(ABC):
-    """Abstract base class for downloader implementations."""
 
     @property
     @abstractmethod
-    def downloader_type(self) -> str:
-        """Return the unique identifier for this downloader type."""
-        pass
+    def downloader_type(self) -> str: ...
 
     @abstractmethod
-    async def handle_pending(self, task: DownloadTask) -> StateTransition:
-        """Handle PENDING state: prepare and start download."""
-        pass
+    async def on_pending(self, task: DownloadTask) -> HandlerResult:
+        """Prepare and start the download."""
 
     @abstractmethod
-    async def handle_downloading(self, task: DownloadTask) -> StateTransition:
-        """Handle DOWNLOADING state: monitor progress."""
-        pass
+    async def on_downloading(self, task: DownloadTask) -> HandlerResult:
+        """Check download progress."""
 
     @abstractmethod
-    async def handle_downloaded(self, task: DownloadTask) -> StateTransition:
-        """Handle DOWNLOADED state: post-process."""
-        pass
+    async def on_transferring(self, task: DownloadTask) -> HandlerResult:
+        """Rename and move downloaded file to its final destination."""
 
     @abstractmethod
-    async def handle_post_processing(self, task: DownloadTask) -> StateTransition:
-        """Handle POST_PROCESSING state: cleanup and complete."""
+    async def on_cleaning_up(self, task: DownloadTask) -> HandlerResult:
+        """Clean up temp files/directories."""
+
+    async def on_failed(self, task: DownloadTask) -> None:
+        pass
+
+    async def on_cancelled(self, task: DownloadTask) -> None:
         pass

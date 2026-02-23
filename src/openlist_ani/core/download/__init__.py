@@ -32,7 +32,7 @@ Usage:
     await manager.download(resource_info, save_path)
 """
 
-from .downloader.base import BaseDownloader, StateTransition
+from .downloader.base import BaseDownloader, HandlerResult, HandlerStatus
 from .downloader.openlist_downloader import OpenListDownloader
 from .manager import DownloadManager
 from .model.task import (
@@ -42,15 +42,12 @@ from .model.task import (
 )
 
 __all__ = [
-    # Task model
     "DownloadTask",
     "DownloadState",
     "InvalidStateTransitionError",
-    # Downloader interface
     "BaseDownloader",
-    "StateTransition",
-    # Manager
+    "HandlerResult",
+    "HandlerStatus",
     "DownloadManager",
-    # Implementations
     "OpenListDownloader",
 ]

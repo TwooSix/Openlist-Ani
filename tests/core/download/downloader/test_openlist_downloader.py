@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from openlist_ani.core.download.downloader.base import HandlerStatus
 from openlist_ani.core.download.downloader.openlist_downloader import (
     OpenListDownloader,
     format_anime_episode,
@@ -147,7 +148,7 @@ class TestOpenListDownloaderInit:
 
 
 # ---------------------------------------------------------------------------
-# handle_downloaded – version suffix logic
+# on_transferring – version suffix logic
 # ---------------------------------------------------------------------------
 
 
@@ -169,7 +170,7 @@ def _make_downloader(rename_format="{anime_name} S{season:02d}E{episode:02d}"):
 
 
 def _make_task(version=1):
-    """Create a DownloadTask in DOWNLOADED state with given version."""
+    """Create a DownloadTask in TRANSFERRING state with given version."""
     info = AnimeResourceInfo(
         title="[SubGroup] MyAnime - 03 [1080p]",
         download_url="magnet:?xt=test",
@@ -182,13 +183,13 @@ def _make_task(version=1):
         resource_info=info,
         save_path="/downloads",
     )
-    task.state = DownloadState.DOWNLOADED
+    task.state = DownloadState.TRANSFERRING
     task.downloaded_filename = "something.mkv"
     task.temp_path = f"/downloads/{task.id}"
     return task
 
 
-class TestHandleDownloadedVersionSuffix:
+class TestTransferringVersionSuffix:
     """Test that version suffix is appended correctly during rename."""
 
     @pytest.mark.asyncio
@@ -200,10 +201,9 @@ class TestHandleDownloadedVersionSuffix:
         """version=1 should NOT add any version suffix."""
         d = _make_downloader()
         task = _make_task(version=1)
-        result = await d.handle_downloaded(task)
-        assert result.success
+        result = await d.on_transferring(task)
+        assert result.status == HandlerStatus.DONE
 
-        # The rename call should use a filename without 'v1'
         rename_call_args = d._client.rename_file.call_args
         new_filename = rename_call_args[0][1] if rename_call_args else None
         if new_filename:
@@ -219,8 +219,8 @@ class TestHandleDownloadedVersionSuffix:
         """version=2 should append ' v2' to the filename stem."""
         d = _make_downloader()
         task = _make_task(version=2)
-        result = await d.handle_downloaded(task)
-        assert result.success
+        result = await d.on_transferring(task)
+        assert result.status == HandlerStatus.DONE
 
         rename_call_args = d._client.rename_file.call_args
         new_filename = rename_call_args[0][1]
@@ -237,13 +237,11 @@ class TestHandleDownloadedVersionSuffix:
             rename_format="{anime_name} S{season:02d}E{episode:02d} 1231231{version}"
         )
         task = _make_task(version=2)
-        result = await d.handle_downloaded(task)
-        assert result.success
+        result = await d.on_transferring(task)
+        assert result.status == HandlerStatus.DONE
 
-        # format fails because version was removed from context → fallback used
         rename_call_args = d._client.rename_file.call_args
         new_filename = rename_call_args[0][1]
-        # Fallback: "MyAnime S01E03" + " v2" + ".mkv"
         assert new_filename == "MyAnime S01E03 v2.mkv"
 
     @pytest.mark.asyncio
@@ -258,8 +256,8 @@ class TestHandleDownloadedVersionSuffix:
         )
         task = _make_task(version=2)
         task.resource_info.fansub = "SubTeam"
-        result = await d.handle_downloaded(task)
-        assert result.success
+        result = await d.on_transferring(task)
+        assert result.status == HandlerStatus.DONE
 
         rename_call_args = d._client.rename_file.call_args
         new_filename = rename_call_args[0][1]
@@ -297,7 +295,7 @@ class TestBuildFinalFilenameEnumFields:
             version=version,
         )
         task = DownloadTask(resource_info=info, save_path="/downloads")
-        task.state = DownloadState.DOWNLOADED
+        task.state = DownloadState.TRANSFERRING
         task.downloaded_filename = "source.mkv"
         task.temp_path = f"/downloads/{task.id}"
         return task

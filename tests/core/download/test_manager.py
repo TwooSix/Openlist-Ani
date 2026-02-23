@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from openlist_ani.core.download.downloader.base import StateTransition
+from openlist_ani.core.download.downloader.base import HandlerResult
 from openlist_ani.core.download.manager import DownloadManager
 from openlist_ani.core.download.model.task import DownloadState, DownloadTask
 from openlist_ani.core.website.model import AnimeResourceInfo
@@ -30,20 +30,12 @@ def _make_resource(**kwargs) -> AnimeResourceInfo:
 def _make_mock_downloader():
     """Create a mock downloader with all required handler stubs."""
     d = MagicMock()
-    d.handle_pending = AsyncMock(
-        return_value=StateTransition(success=True, next_state=DownloadState.DOWNLOADING)
-    )
-    d.handle_downloading = AsyncMock(
-        return_value=StateTransition(success=True, next_state=DownloadState.DOWNLOADED)
-    )
-    d.handle_downloaded = AsyncMock(
-        return_value=StateTransition(
-            success=True, next_state=DownloadState.POST_PROCESSING
-        )
-    )
-    d.handle_post_processing = AsyncMock(
-        return_value=StateTransition(success=True, next_state=DownloadState.COMPLETED)
-    )
+    d.on_pending = AsyncMock(return_value=HandlerResult.done())
+    d.on_downloading = AsyncMock(return_value=HandlerResult.done())
+    d.on_transferring = AsyncMock(return_value=HandlerResult.done())
+    d.on_cleaning_up = AsyncMock(return_value=HandlerResult.done())
+    d.on_failed = AsyncMock()
+    d.on_cancelled = AsyncMock()
     return d
 
 
@@ -239,12 +231,12 @@ class TestGetEvent:
 
 
 # ---------------------------------------------------------------------------
-# _dispatch_state and download flow (async)
+# _run_state_machine and download flow (async)
 # ---------------------------------------------------------------------------
 
 
-class TestDispatchState:
-    """Verify the state dispatch loop and error handling."""
+class TestRunStateMachine:
+    """Verify the state machine loop and error handling."""
 
     @pytest.mark.asyncio
     async def test_full_success_flow(self, tmp_path):
@@ -255,10 +247,9 @@ class TestDispatchState:
         task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
         mgr._events[task.id] = task
 
-        await mgr._dispatch_state(task)
+        await mgr._run_state_machine(task)
 
         assert task.state == DownloadState.COMPLETED
-        # Task should be removed from events after completion
         assert task.id not in mgr._events
 
     @pytest.mark.asyncio
@@ -271,26 +262,26 @@ class TestDispatchState:
             nonlocal call_count
             call_count += 1
             if call_count <= 1:
-                return StateTransition(success=False, error_message="fail")
-            return StateTransition(success=True, next_state=DownloadState.DOWNLOADING)
+                return HandlerResult.fail("fail")
+            return HandlerResult.done()
 
-        downloader.handle_pending = AsyncMock(side_effect=pending_with_retry)
+        downloader.on_pending = AsyncMock(side_effect=pending_with_retry)
 
         mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
         task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
         mgr._events[task.id] = task
 
-        await mgr._dispatch_state(task)
+        await mgr._run_state_machine(task)
         assert task.state == DownloadState.COMPLETED
 
     @pytest.mark.asyncio
     async def test_same_state_polling_does_not_raise(self, tmp_path):
         """Polling in the same state should not trigger invalid self-transition."""
         downloader = _make_mock_downloader()
-        downloader.handle_downloading = AsyncMock(
+        downloader.on_downloading = AsyncMock(
             side_effect=[
-                StateTransition.poll(DownloadState.DOWNLOADING, delay_seconds=0),
-                StateTransition.transition(DownloadState.DOWNLOADED),
+                HandlerResult.poll(delay=0),
+                HandlerResult.done(),
             ]
         )
 
@@ -298,16 +289,16 @@ class TestDispatchState:
         task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
         mgr._events[task.id] = task
 
-        await mgr._dispatch_state(task)
+        await mgr._run_state_machine(task)
 
         assert task.state == DownloadState.COMPLETED
-        assert downloader.handle_downloading.await_count == 2
+        assert downloader.on_downloading.await_count == 2
 
     @pytest.mark.asyncio
     async def test_handler_exception_marks_failed(self, tmp_path):
         """Unhandled exception in handler should mark task as failed, not crash."""
         downloader = _make_mock_downloader()
-        downloader.handle_pending = AsyncMock(side_effect=RuntimeError("boom"))
+        downloader.on_pending = AsyncMock(side_effect=RuntimeError("boom"))
 
         mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
         task = DownloadTask.from_resource_info(
@@ -315,8 +306,7 @@ class TestDispatchState:
         )
         mgr._events[task.id] = task
 
-        # Should not raise
-        await mgr._dispatch_state(task)
+        await mgr._run_state_machine(task)
         assert task.state == DownloadState.FAILED
 
     @pytest.mark.asyncio
@@ -331,7 +321,7 @@ class TestDispatchState:
         task = DownloadTask.from_resource_info(_make_resource(), save_path="/dl")
         mgr._events[task.id] = task
 
-        await mgr._dispatch_state(task)
+        await mgr._run_state_machine(task)
         assert len(completed_tasks) == 1
         assert completed_tasks[0].resource_info.title == "[SubGroup] Test - 01"
 
@@ -339,9 +329,7 @@ class TestDispatchState:
     async def test_on_error_callback_called(self, tmp_path):
         """on_error callback should fire on final failure."""
         downloader = _make_mock_downloader()
-        downloader.handle_pending = AsyncMock(
-            return_value=StateTransition(success=False, error_message="fatal")
-        )
+        downloader.on_pending = AsyncMock(return_value=HandlerResult.fail("fatal"))
         mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
 
         errors = []
@@ -352,9 +340,24 @@ class TestDispatchState:
         )
         mgr._events[task.id] = task
 
-        await mgr._dispatch_state(task)
+        await mgr._run_state_machine(task)
         assert len(errors) == 1
         assert "fatal" in errors[0][1]
+
+    @pytest.mark.asyncio
+    async def test_on_failed_hook_called_on_failure(self, tmp_path):
+        """on_failed hook should be called when task fails."""
+        downloader = _make_mock_downloader()
+        downloader.on_pending = AsyncMock(return_value=HandlerResult.fail("err"))
+
+        mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
+        task = DownloadTask.from_resource_info(
+            _make_resource(), save_path="/dl", max_retries=0
+        )
+        mgr._events[task.id] = task
+
+        await mgr._run_state_machine(task)
+        downloader.on_failed.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_download_method(self, tmp_path):

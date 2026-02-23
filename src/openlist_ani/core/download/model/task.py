@@ -17,15 +17,13 @@ from ...website.model import AnimeResourceInfo
 
 
 class DownloadState(StrEnum):
-    """State machine states for download events."""
-
-    PENDING = "pending"  # Initial state, waiting to start
-    DOWNLOADING = "downloading"  # Download in progress
-    DOWNLOADED = "downloaded"  # Download complete, waiting for post-processing
-    POST_PROCESSING = "processing"  # Post-processing (rename, move, etc.)
-    COMPLETED = "completed"  # Successfully finished
-    FAILED = "failed"  # Failed state
-    CANCELLED = "cancelled"  # Cancelled by user
+    PENDING = "pending"
+    DOWNLOADING = "downloading"
+    TRANSFERRING = "transferring"
+    CLEANING_UP = "cleaning_up"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class InvalidStateTransitionError(Exception):
@@ -37,27 +35,27 @@ class InvalidStateTransitionError(Exception):
 STATE_TRANSITIONS = {
     DownloadState.PENDING: {
         DownloadState.DOWNLOADING,
-        DownloadState.CANCELLED,
         DownloadState.FAILED,
+        DownloadState.CANCELLED,
     },
     DownloadState.DOWNLOADING: {
-        DownloadState.DOWNLOADED,
+        DownloadState.TRANSFERRING,
         DownloadState.FAILED,
         DownloadState.CANCELLED,
     },
-    DownloadState.DOWNLOADED: {
-        DownloadState.POST_PROCESSING,
+    DownloadState.TRANSFERRING: {
+        DownloadState.CLEANING_UP,
         DownloadState.FAILED,
         DownloadState.CANCELLED,
     },
-    DownloadState.POST_PROCESSING: {
+    DownloadState.CLEANING_UP: {
         DownloadState.COMPLETED,
         DownloadState.FAILED,
         DownloadState.CANCELLED,
     },
-    DownloadState.COMPLETED: set(),  # Terminal state
-    DownloadState.FAILED: {DownloadState.PENDING},  # Can retry
-    DownloadState.CANCELLED: {DownloadState.PENDING},  # Can restart
+    DownloadState.COMPLETED: set(),
+    DownloadState.FAILED: {DownloadState.PENDING},
+    DownloadState.CANCELLED: {DownloadState.PENDING},
 }
 
 
@@ -153,12 +151,17 @@ class DownloadTask:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
+    _STATE_MIGRATION = {
+        "downloaded": DownloadState.TRANSFERRING,
+        "processing": DownloadState.CLEANING_UP,
+    }
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DownloadTask":
         """Create from dictionary."""
-        # Convert state string back to enum
         if isinstance(data.get("state"), str):
-            data["state"] = DownloadState(data["state"])
+            raw = data["state"]
+            data["state"] = cls._STATE_MIGRATION.get(raw, DownloadState(raw))
 
         # Convert resource_info dict back to AnimeResourceInfo object
         if isinstance(data.get("resource_info"), dict):
