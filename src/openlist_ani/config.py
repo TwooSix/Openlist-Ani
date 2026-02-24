@@ -48,7 +48,9 @@ class NotificationConfig(BaseModel):
     """Configuration for notification system."""
 
     enabled: bool = False
-    batch_interval: float = 300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    batch_interval: float = (
+        300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    )
     bots: List[BotConfig] = Field(default_factory=list)
 
 
@@ -72,7 +74,9 @@ class LogConfig(BaseModel):
 
     level: str = "INFO"  # Console log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
     file_level: str = "INFO"  # File log level
-    rotation: str = "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    rotation: str = (
+        "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    )
     retention: str = "1 week"  # How long to keep old logs
 
 
@@ -334,9 +338,9 @@ class ConfigManager:
         # Step 2: offline download tool validation
         tool: OfflineDownloadTool = self.openlist.offline_download_tool
         logger.info(f"Verifying offline download tool '{tool}'...")
-        available_tools: (
-            list[dict[str, Any]] | None
-        ) = await client.get_offline_download_tools()
+        available_tools: list[dict[str, Any]] | None = (
+            await client.get_offline_download_tools()
+        )
         if available_tools is None:
             logger.error("Failed to retrieve offline download tools from server.")
             return False

@@ -44,7 +44,7 @@ class DownloadManager:
         downloader: BaseDownloader,
         state_file: str = "data/pending_downloads.json",
         poll_interval: float = 60.0,
-        max_concurrent: int = 3,
+        max_concurrent: int = 8,
     ):
         self._downloader = downloader
         self.state_file = Path(state_file)
@@ -276,8 +276,7 @@ class DownloadManager:
             case DownloadState.FAILED:
                 if task.can_retry():
                     logger.warning(
-                        f"Task failed (attempt {task.retry_count}/{task.max_retries}), "
-                        f"retrying: {task.resource_info.title}"
+                        f"Task failed (attempt {task.retry_count}/{task.max_retries}), msg: {task.error_message}, retrying: {task.resource_info.title}"
                     )
                     await self._downloader.on_failed(task)
                     task.retry()
@@ -285,8 +284,7 @@ class DownloadManager:
                     await self._run_state_machine(task)
                 else:
                     logger.error(
-                        f"Task failed after {task.retry_count} retries: "
-                        f"{task.resource_info.title}"
+                        f"Task failed after {task.retry_count} retries, msg: {task.error_message}, title: {task.resource_info.title}"
                     )
                     await self._downloader.on_failed(task)
                     await self._finalize_task(task, success=False)

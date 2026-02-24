@@ -5,9 +5,10 @@ from .config import config
 from .core.download import DownloadManager, OpenListDownloader
 from .core.notification.manager import NotificationManager
 from .core.rss import RSSManager
+from .core.website.model import AnimeResourceInfo
 from .database import db
 from .logger import configure_logger, logger
-from .worker import process_rss_updates
+from .worker import download_dispatch_worker, rss_poll_worker
 
 
 async def run():
@@ -82,11 +83,28 @@ async def run():
 
     # Create RSS manager with reference to download manager
     rss = RSSManager(download_manager=manager)
+    rss_entry_queue: asyncio.Queue[AnimeResourceInfo] = asyncio.Queue()
+    active_downloads: set[asyncio.Task[None]] = set()
+
+    poll_task = asyncio.create_task(rss_poll_worker(rss, rss_entry_queue))
+    dispatch_task = asyncio.create_task(
+        download_dispatch_worker(manager, rss_entry_queue, active_downloads)
+    )
 
     try:
-        await process_rss_updates(rss, manager)
+        await asyncio.gather(poll_task, dispatch_task)
     except asyncio.CancelledError:
         logger.info("Shutting down...")
+        poll_task.cancel()
+        dispatch_task.cancel()
+        for task in tuple(active_downloads):
+            task.cancel()
+        await asyncio.gather(
+            poll_task,
+            dispatch_task,
+            *active_downloads,
+            return_exceptions=True,
+        )
         raise
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")

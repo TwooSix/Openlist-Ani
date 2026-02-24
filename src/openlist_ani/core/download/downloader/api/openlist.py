@@ -172,6 +172,44 @@ class OpenListClient:
             logger.error(f"Failed to fetch undone offline download tasks: {msg}")
             return None
 
+    async def get_offline_download_transfer_done(
+        self,
+    ) -> Optional[List[OpenlistTask]]:
+        """
+        Get list of completed offline download transfer tasks.
+        Endpoint: GET /api/task/offline_download_transfer/done
+        :return: List of OpenlistTask or None on error.
+        """
+        url = f"{self.base_url}/api/task/offline_download_transfer/done"
+        data = await self._get(url)
+        if data and data.get("code") == 200:
+            tasks = data.get("data") or []
+            return [OpenlistTask.from_dict(t) for t in tasks]
+        else:
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
+            logger.error(f"Failed to fetch done offline download transfer tasks: {msg}")
+            return None
+
+    async def get_offline_download_transfer_undone(
+        self,
+    ) -> Optional[List[OpenlistTask]]:
+        """
+        Get list of not-yet-completed offline download transfer tasks.
+        Endpoint: GET /api/task/offline_download_transfer/undone
+        :return: List of OpenlistTask or None on error.
+        """
+        url = f"{self.base_url}/api/task/offline_download_transfer/undone"
+        data = await self._get(url)
+        if data and data.get("code") == 200:
+            tasks = data.get("data") or []
+            return [OpenlistTask.from_dict(t) for t in tasks]
+        else:
+            msg = data.get("message") if data else self.UNKNOWN_ERROR_MESSAGE
+            logger.error(
+                f"Failed to fetch undone offline download transfer tasks: {msg}"
+            )
+            return None
+
     async def list_files(self, path: str) -> Optional[List[FileEntry]]:
         """List files in a directory."""
         if not self.token:

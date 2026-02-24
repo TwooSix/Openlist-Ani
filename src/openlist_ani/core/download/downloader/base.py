@@ -53,8 +53,6 @@ class BaseDownloader(ABC):
     async def on_cleaning_up(self, task: DownloadTask) -> HandlerResult:
         """Clean up temp files/directories."""
 
+    @abstractmethod
     async def on_failed(self, task: DownloadTask) -> None:
-        pass
-
-    async def on_cancelled(self, task: DownloadTask) -> None:
-        pass
+        """Post-process after a download has failed (e.g. clean up temp files)."""
