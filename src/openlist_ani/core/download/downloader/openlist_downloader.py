@@ -183,8 +183,6 @@ class OpenListDownloader(BaseDownloader):
                 return HandlerResult.poll(delay=download_result.poll_delay)
             case _StageStatus.FAILED:
                 return HandlerResult.fail(download_result.error_message)
-            case _StageStatus.COMPLETED | _StageStatus.SKIP:
-                pass
 
         transfer_result = await self._wait_transfer_task_if_exists(task)
         match transfer_result.status:
@@ -192,8 +190,6 @@ class OpenListDownloader(BaseDownloader):
                 return HandlerResult.poll(delay=transfer_result.poll_delay)
             case _StageStatus.FAILED:
                 return HandlerResult.fail(transfer_result.error_message)
-            case _StageStatus.COMPLETED | _StageStatus.SKIP:
-                pass
 
         downloaded_filename = await self._detect_downloaded_file(task)
         if not downloaded_filename:
