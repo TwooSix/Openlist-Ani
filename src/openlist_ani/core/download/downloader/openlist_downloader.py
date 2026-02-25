@@ -9,6 +9,8 @@ download functionality.
 import asyncio
 import os
 import re
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Optional
 
 from openlist_ani.logger import logger
@@ -58,6 +60,36 @@ def format_anime_episode(
     return f"{name} {season_str}{episode_str}"
 
 
+class _StageStatus(StrEnum):
+    COMPLETED = "completed"
+    IN_PROGRESS = "in_progress"
+    FAILED = "failed"
+    SKIP = "skip"
+
+
+@dataclass
+class _StageResult:
+    status: _StageStatus
+    error_message: Optional[str] = None
+    poll_delay: float = 5.0
+
+    @classmethod
+    def completed(cls) -> "_StageResult":
+        return cls(status=_StageStatus.COMPLETED)
+
+    @classmethod
+    def in_progress(cls, delay: float = 5.0) -> "_StageResult":
+        return cls(status=_StageStatus.IN_PROGRESS, poll_delay=delay)
+
+    @classmethod
+    def failed(cls, message: str) -> "_StageResult":
+        return cls(status=_StageStatus.FAILED, error_message=message)
+
+    @classmethod
+    def skip(cls) -> "_StageResult":
+        return cls(status=_StageStatus.SKIP)
+
+
 class OpenListDownloader(BaseDownloader):
     """
     Downloader implementation using OpenList's offline download API.
@@ -68,6 +100,9 @@ class OpenListDownloader(BaseDownloader):
     - Monitors download progress via task status
     - Renames and moves files to final location
     """
+
+    _TRANSFER_CHECK_MAX_RETRIES = 3
+    _TRANSFER_CHECK_INTERVAL_SECONDS = 5
 
     def __init__(
         self,
@@ -142,13 +177,23 @@ class OpenListDownloader(BaseDownloader):
         if not task_id:
             return HandlerResult.fail("No task ID available")
 
-        download_completed = await self._check_download_completed(task, task_id)
-        if isinstance(download_completed, HandlerResult):
-            return download_completed
+        download_result = await self._check_download_completed(task, task_id)
+        match download_result.status:
+            case _StageStatus.IN_PROGRESS:
+                return HandlerResult.poll(delay=download_result.poll_delay)
+            case _StageStatus.FAILED:
+                return HandlerResult.fail(download_result.error_message)
+            case _StageStatus.COMPLETED | _StageStatus.SKIP:
+                pass
 
         transfer_result = await self._wait_transfer_task_if_exists(task)
-        if isinstance(transfer_result, HandlerResult):
-            return transfer_result
+        match transfer_result.status:
+            case _StageStatus.IN_PROGRESS:
+                return HandlerResult.poll(delay=transfer_result.poll_delay)
+            case _StageStatus.FAILED:
+                return HandlerResult.fail(transfer_result.error_message)
+            case _StageStatus.COMPLETED | _StageStatus.SKIP:
+                pass
 
         downloaded_filename = await self._detect_downloaded_file(task)
         if not downloaded_filename:
@@ -159,10 +204,10 @@ class OpenListDownloader(BaseDownloader):
 
     async def _check_download_completed(
         self, task: DownloadTask, task_id: str
-    ) -> bool | HandlerResult:
+    ) -> _StageResult:
         undone_tasks = await self.client.get_offline_download_undone()
         if undone_tasks is None:
-            return HandlerResult.fail("Failed to fetch undone tasks")
+            return HandlerResult.fail("Failed to fetch undone download tasks")
 
         for api_task in undone_tasks:
             if api_task.id != task_id:
@@ -170,11 +215,11 @@ class OpenListDownloader(BaseDownloader):
 
             progress = float(api_task.progress) if api_task.progress else None
             self._log_progress(task, progress, is_transfer=False)
-            return HandlerResult.poll()
+            return _StageResult.in_progress()
 
         done_tasks = await self.client.get_offline_download_done()
         if done_tasks is None:
-            return HandlerResult.fail("Failed to fetch done tasks")
+            return HandlerResult.fail("Failed to fetch done download tasks")
 
         for api_task in done_tasks:
             if api_task.id != task_id:
@@ -182,25 +227,17 @@ class OpenListDownloader(BaseDownloader):
 
             if api_task.state != OpenlistTaskState.Succeeded:
                 logger.error(f"Download failed with state: {api_task.state}")
-                return HandlerResult.fail(f"Task failed with state: {api_task.state}")
-            return True
+                return _StageResult.failed(f"Task failed with state: {api_task.state}")
+            return _StageResult.completed()
 
-        return HandlerResult.fail(f"Task {task_id} not found")
+        return _StageResult.failed(f"Task {task_id} not found")
 
-    _TRANSFER_CHECK_MAX_RETRIES = 3
-    _TRANSFER_CHECK_INTERVAL_SECONDS = 5
-
-    async def _wait_transfer_task_if_exists(
-        self, task: DownloadTask
-    ) -> bool | HandlerResult:
+    async def _wait_transfer_task_if_exists(self, task: DownloadTask) -> _StageResult:
         task_uuid = task.id
         for attempt in range(self._TRANSFER_CHECK_MAX_RETRIES):
             result = await self._check_transfer_once(task, task_uuid)
-            if isinstance(result, HandlerResult):
+            if result.status != _StageStatus.SKIP:
                 return result
-
-            if result is True:
-                return True
 
             if attempt < self._TRANSFER_CHECK_MAX_RETRIES - 1:
                 await asyncio.sleep(self._TRANSFER_CHECK_INTERVAL_SECONDS)
@@ -209,59 +246,41 @@ class OpenListDownloader(BaseDownloader):
             f"No transfer task found for uuid {task_uuid} after "
             f"{self._TRANSFER_CHECK_MAX_RETRIES} checks, skip transfer wait"
         )
-        return False
+        return _StageResult.skip()
 
     async def _check_transfer_once(
         self, task: DownloadTask, task_uuid: str
-    ) -> bool | HandlerResult:
-        """Check undone and done transfer lists once.
-
-        Returns:
-            HandlerResult on a definitive outcome (poll / fail),
-            True when the transfer completed successfully,
-            False when no matching task was found in either list.
-        """
-        undone_result = await self._find_undone_transfer(task, task_uuid)
-        if isinstance(undone_result, HandlerResult):
-            return undone_result
-
-        return await self._find_done_transfer(task_uuid)
-
-    async def _find_undone_transfer(
-        self, task: DownloadTask, task_uuid: str
-    ) -> bool | HandlerResult:
-        """Return ``HandlerResult`` if a running transfer matches or API fails, else ``None``."""
+    ) -> _StageResult:
         undone_tasks = await self.client.get_offline_download_transfer_undone()
         if undone_tasks is None:
             return HandlerResult.fail("Failed to fetch undone transfer tasks")
 
-        matching = next((t for t in undone_tasks if task_uuid in t.name), None)
-        if matching is None:
-            return False
+        matching_undone = next((t for t in undone_tasks if task_uuid in t.name), None)
+        if matching_undone is not None:
+            logger.debug(
+                f"Transfer task found and running for uuid {task_uuid}: "
+                f"{matching_undone.name}"
+            )
+            progress = (
+                float(matching_undone.progress) if matching_undone.progress else None
+            )
+            self._log_progress(task, progress, is_transfer=True)
+            return _StageResult.in_progress()
 
-        logger.debug(
-            f"Transfer task found and running for uuid {task_uuid}: {matching.name}"
-        )
-        progress = float(matching.progress) if matching.progress else None
-        self._log_progress(task, progress, is_transfer=True)
-        return HandlerResult.poll()
-
-    async def _find_done_transfer(self, task_uuid: str) -> bool | HandlerResult:
-        """Return ``True`` on success, ``HandlerResult.fail`` on error, ``False`` if not found."""
         done_tasks = await self.client.get_offline_download_transfer_done()
         if done_tasks is None:
             return HandlerResult.fail("Failed to fetch done transfer tasks")
 
-        matching = next((t for t in done_tasks if task_uuid in t.name), None)
-        if matching is None:
-            return False
+        matching_done = next((t for t in done_tasks if task_uuid in t.name), None)
+        if matching_done is not None:
+            if matching_done.state != OpenlistTaskState.Succeeded:
+                logger.error(f"Transfer failed with state: {matching_done.state}")
+                return _StageResult.failed(
+                    f"Transfer failed with state: {matching_done.state}"
+                )
+            return _StageResult.completed()
 
-        if matching.state != OpenlistTaskState.Succeeded:
-            return HandlerResult.fail(
-                f"Transfer task failed with state: {matching.state}"
-            )
-        logger.debug(f"Transfer task finished for uuid {task_uuid}: {matching.name}")
-        return True
+        return _StageResult.skip()
 
     def _log_progress(
         self, task: DownloadTask, progress: Optional[float], is_transfer: bool = False
