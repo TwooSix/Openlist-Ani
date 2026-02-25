@@ -100,7 +100,11 @@ class OpenListClient:
             return False
 
     async def add_offline_download(
-        self, urls: List[str], path: str, tool: Union[str, OfflineDownloadTool]
+        self,
+        urls: List[str],
+        path: str,
+        tool: Union[str, OfflineDownloadTool],
+        delete_policy: str = "delete_always",
     ) -> Optional[List[OpenlistTask]]:
         """
         Add offline download tasks.
@@ -113,7 +117,12 @@ class OpenListClient:
             return None
 
         url = f"{self.base_url}/api/fs/add_offline_download"
-        payload = {"urls": urls, "path": path, "tool": str(tool)}
+        payload = {
+            "urls": urls,
+            "path": path,
+            "tool": str(tool),
+            "delete_policy": delete_policy,
+        }
 
         data = await self._post(url, payload)
         if data and data.get("code") == 200:
