@@ -21,7 +21,12 @@ class SearchAnimeTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Search for anime resources on specified website. Returns list of resources with download URLs and metadata."
+        return (
+            "Search for anime resources on specified website (mikan/dmhy/acgrip). "
+            "Returns list of resources with download URLs, metadata, and download status. "
+            "Use this when user wants to download but no URL is provided, or to find specific episodes/fansubs. "
+            "After getting results, use download_resource with the URL from search results."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:

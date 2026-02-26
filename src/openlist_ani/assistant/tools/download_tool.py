@@ -42,7 +42,13 @@ class DownloadResourceTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Download a single anime resource. Requires the download URL (magnet/torrent link). Will parse metadata, check if already downloaded, and start download if not. Note: this tool blocks until the download fully completes (or fails). A success return value means the file has been fully downloaded and recorde."
+        return (
+            "Download a single anime resource using its download URL (magnet/torrent link). "
+            "Parses metadata, checks download history, and starts download. "
+            "Blocks until download completes or fails. "
+            "Requires a URL from search_anime_resources or parse_rss results. "
+            "NEVER download resources already marked as downloaded."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -97,7 +103,9 @@ class DownloadResourceTool(BaseTool):
 
             # Parse metadata
             try:
-                meta = await parse_metadata(entry)
+                parse_results = await parse_metadata([entry])
+                parse_result = parse_results[0]
+                meta = parse_result.result if parse_result.success else None
                 if meta:
                     entry.anime_name = meta.anime_name
                     entry.season = meta.season

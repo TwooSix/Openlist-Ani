@@ -1,5 +1,6 @@
-"""Tests for worker._download_entry edge cases."""
+"""Tests for worker module (batch dispatch)."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -13,65 +14,149 @@ def _make_resource(
     return AnimeResourceInfo(title=title, download_url=download_url)
 
 
-class TestDownloadEntry:
-    """Test worker._download_entry edge cases."""
+def _parse_ok(
+    anime_name="Anime",
+    season=1,
+    episode=1,
+    quality=VideoQuality.k1080p,
+    fansub=None,
+    languages=None,
+    version=1,
+):
+    return SimpleNamespace(
+        success=True,
+        result=SimpleNamespace(
+            anime_name=anime_name,
+            season=season,
+            episode=episode,
+            quality=quality,
+            fansub=fansub,
+            languages=languages or [],
+            version=version,
+        ),
+        error=None,
+    )
 
-    async def test_metadata_parse_failure_does_not_crash(self):
-        """When parse_metadata returns None, should skip gracefully."""
-        from openlist_ani.worker import _download_entry
 
-        entry = _make_resource(title="Bad Anime - 01")
+def _parse_fail(error="failed"):
+    return SimpleNamespace(success=False, result=None, error=error)
+
+
+async def _run_dispatch_once(queue, mock_manager, batch_return_value, timeout=0.1):
+    """Run download_dispatch_worker until it processes one batch, then cancel."""
+    from openlist_ani.worker import download_dispatch_worker
+
+    active: set[asyncio.Task] = set()
+
+    with (
+        patch(
+            "openlist_ani.worker.parse_metadata",
+            new_callable=AsyncMock,
+            return_value=batch_return_value,
+        ) as mock_parse,
+        patch("openlist_ani.worker.config") as mock_config,
+    ):
+        mock_config.openlist.download_path = "/downloads"
+
+        task = asyncio.create_task(
+            download_dispatch_worker(mock_manager, queue, active)
+        )
+        await asyncio.sleep(timeout)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    return mock_parse
+
+
+class TestDownloadDispatchWorker:
+
+    async def test_single_entry_dispatched(self):
+        entry = _make_resource(title="Anime - 01")
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
+
         mock_manager = AsyncMock()
+        mock_manager.is_downloading = lambda e: False
 
+        mock_parse = await _run_dispatch_once(queue, mock_manager, [_parse_ok()])
+
+        mock_parse.assert_awaited_once()
+        assert entry.anime_name == "Anime"
+
+    async def test_skip_already_downloading(self):
+        entry = _make_resource(title="Dup - 01")
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
+
+        mock_manager = AsyncMock()
+        mock_manager.is_downloading = lambda e: True
+
+        from openlist_ani.worker import download_dispatch_worker
+
+        active: set[asyncio.Task] = set()
         with patch(
-            "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
+            "openlist_ani.worker.parse_metadata",
+            new_callable=AsyncMock,
         ) as mock_parse:
-            mock_parse.return_value = None
-            await _download_entry(mock_manager, entry)
+            task = asyncio.create_task(
+                download_dispatch_worker(mock_manager, queue, active)
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
-        mock_manager.download.assert_not_awaited()
+        mock_parse.assert_not_awaited()
 
-    async def test_metadata_parse_exception_does_not_crash(self):
-        """Exception in parse_metadata should be caught."""
-        from openlist_ani.worker import _download_entry
+    async def test_multiple_entries_batched(self):
+        entries = [_make_resource(title=f"Anime - {i:02d}") for i in range(3)]
+        queue: asyncio.Queue = asyncio.Queue()
+        for e in entries:
+            await queue.put(e)
 
-        entry = _make_resource(title="Crash Anime - 01")
         mock_manager = AsyncMock()
+        mock_manager.is_downloading = lambda e: False
 
-        with patch(
-            "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
-        ) as mock_parse:
-            mock_parse.side_effect = RuntimeError("parse boom")
-            await _download_entry(mock_manager, entry)
+        results = [_parse_ok(episode=i) for i in range(3)]
+        mock_parse = await _run_dispatch_once(queue, mock_manager, results)
 
-        mock_manager.download.assert_not_awaited()
+        mock_parse.assert_awaited_once()
+        assert len(mock_parse.call_args[0][0]) == 3
 
-    async def test_none_season_episode_formatting(self):
-        """When season/episode are None, formatting must not crash."""
-        from openlist_ani.worker import _download_entry
+    async def test_metadata_failure_skips_entry(self):
+        entries = [_make_resource(title="A - 01"), _make_resource(title="B - 02")]
+        queue: asyncio.Queue = asyncio.Queue()
+        for e in entries:
+            await queue.put(e)
 
-        entry = _make_resource(title="Anime - SP")
         mock_manager = AsyncMock()
+        mock_manager.is_downloading = lambda e: False
 
-        meta = SimpleNamespace(
-            anime_name="Anime",
-            season=None,
-            episode=None,
-            quality=VideoQuality.k1080p,
-            fansub="SubGroup",
-            languages=[],
-            version=1,
+        await _run_dispatch_once(
+            queue,
+            mock_manager,
+            [_parse_fail("parse error"), _parse_ok(anime_name="B", episode=2)],
         )
 
-        with (
-            patch(
-                "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
-            ) as mock_parse,
-            patch("openlist_ani.worker.config") as mock_config,
-        ):
-            mock_parse.return_value = meta
-            mock_config.openlist.download_path = "/downloads"
-            await _download_entry(mock_manager, entry)
+        assert entries[0].anime_name is None
+        assert entries[1].anime_name == "B"
+
+    async def test_none_season_episode_formatting(self):
+        entry = _make_resource(title="Anime - SP")
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
+
+        mock_manager = AsyncMock()
+        mock_manager.is_downloading = lambda e: False
+
+        await _run_dispatch_once(
+            queue, mock_manager, [_parse_ok(season=None, episode=None)]
+        )
 
         mock_manager.download.assert_awaited_once()
 
@@ -80,126 +165,57 @@ class TestDownloadEntry:
     # -----------------------------------------------------------------------
 
     async def test_fansub_from_llm_when_website_has_none(self):
-        """When entry.fansub is None (website didn't provide it), LLM result is used."""
-        from openlist_ani.worker import _download_entry
-
         entry = _make_resource()
-        assert entry.fansub is None  # website produced no fansub
+        assert entry.fansub is None
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
 
         mock_manager = AsyncMock()
-        meta = SimpleNamespace(
-            anime_name="Anime",
-            season=1,
-            episode=1,
-            quality=VideoQuality.k1080p,
-            fansub="LLM_SubGroup",
-            languages=[],
-            version=1,
-        )
+        mock_manager.is_downloading = lambda e: False
 
-        with (
-            patch(
-                "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
-            ) as mock_parse,
-            patch("openlist_ani.worker.config") as mock_config,
-        ):
-            mock_parse.return_value = meta
-            mock_config.openlist.download_path = "/downloads"
-            await _download_entry(mock_manager, entry)
+        await _run_dispatch_once(
+            queue, mock_manager, [_parse_ok(fansub="LLM_SubGroup")]
+        )
 
         assert entry.fansub == "LLM_SubGroup"
-        mock_manager.download.assert_awaited_once()
 
     async def test_fansub_from_website_overrides_llm(self):
-        """When entry.fansub is already set (e.g. from mikan), it must NOT be
-        overwritten by the LLM result even if LLM returns a different value."""
-        from openlist_ani.worker import _download_entry
-
-        entry = _make_resource()
-        entry.fansub = "Mikan_SubGroup"  # simulates value parsed by mikan website
-
-        mock_manager = AsyncMock()
-        meta = SimpleNamespace(
-            anime_name="Anime",
-            season=1,
-            episode=1,
-            quality=VideoQuality.k1080p,
-            fansub="LLM_SubGroup",  # LLM returns a different fansub
-            languages=[],
-            version=1,
-        )
-
-        with (
-            patch(
-                "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
-            ) as mock_parse,
-            patch("openlist_ani.worker.config") as mock_config,
-        ):
-            mock_parse.return_value = meta
-            mock_config.openlist.download_path = "/downloads"
-            await _download_entry(mock_manager, entry)
-
-        assert entry.fansub == "Mikan_SubGroup"
-        mock_manager.download.assert_awaited_once()
-
-    async def test_fansub_from_website_preserved_when_llm_returns_none(self):
-        """Website-parsed fansub is kept even when LLM returns None for fansub."""
-        from openlist_ani.worker import _download_entry
-
         entry = _make_resource()
         entry.fansub = "Mikan_SubGroup"
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
 
         mock_manager = AsyncMock()
-        meta = SimpleNamespace(
-            anime_name="Anime",
-            season=1,
-            episode=1,
-            quality=VideoQuality.k1080p,
-            fansub=None,  # LLM couldn't detect fansub
-            languages=[],
-            version=1,
-        )
+        mock_manager.is_downloading = lambda e: False
 
-        with (
-            patch(
-                "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
-            ) as mock_parse,
-            patch("openlist_ani.worker.config") as mock_config,
-        ):
-            mock_parse.return_value = meta
-            mock_config.openlist.download_path = "/downloads"
-            await _download_entry(mock_manager, entry)
+        await _run_dispatch_once(
+            queue, mock_manager, [_parse_ok(fansub="LLM_SubGroup")]
+        )
 
         assert entry.fansub == "Mikan_SubGroup"
-        mock_manager.download.assert_awaited_once()
 
-    async def test_fansub_remains_none_when_both_are_none(self):
-        """When neither website nor LLM provides a fansub, entry.fansub stays None."""
-        from openlist_ani.worker import _download_entry
-
+    async def test_fansub_from_website_preserved_when_llm_returns_none(self):
         entry = _make_resource()
-        assert entry.fansub is None
+        entry.fansub = "Mikan_SubGroup"
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
 
         mock_manager = AsyncMock()
-        meta = SimpleNamespace(
-            anime_name="Anime",
-            season=1,
-            episode=1,
-            quality=VideoQuality.k1080p,
-            fansub=None,
-            languages=[],
-            version=1,
-        )
+        mock_manager.is_downloading = lambda e: False
 
-        with (
-            patch(
-                "openlist_ani.worker.parse_metadata", new_callable=AsyncMock
-            ) as mock_parse,
-            patch("openlist_ani.worker.config") as mock_config,
-        ):
-            mock_parse.return_value = meta
-            mock_config.openlist.download_path = "/downloads"
-            await _download_entry(mock_manager, entry)
+        await _run_dispatch_once(queue, mock_manager, [_parse_ok(fansub=None)])
+
+        assert entry.fansub == "Mikan_SubGroup"
+
+    async def test_fansub_remains_none_when_both_are_none(self):
+        entry = _make_resource()
+        assert entry.fansub is None
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(entry)
+
+        mock_manager = AsyncMock()
+        mock_manager.is_downloading = lambda e: False
+
+        await _run_dispatch_once(queue, mock_manager, [_parse_ok(fansub=None)])
 
         assert entry.fansub is None
-        mock_manager.download.assert_awaited_once()
