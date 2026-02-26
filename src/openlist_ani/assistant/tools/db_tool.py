@@ -19,7 +19,15 @@ class ExecuteSqlTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Execute a SQL SELECT query on the download history database with pagination support. Use this to check download history, find latest episodes, or query any information about downloaded resources. Only SELECT queries are allowed for safety. Results are paginated - if you need all results, request subsequent pages using the page parameter."
+        return (
+            "Execute a SQL SELECT query on the download history database (table: resources). "
+            "Use to check download history, find latest episodes, or query downloaded resources. "
+            "Only SELECT queries allowed. Results are paginated — request next page if has_next_page is true. "
+            "Do NOT add LIMIT/OFFSET. "
+            "Examples: "
+            "Latest: SELECT anime_name, MAX(episode), season FROM resources WHERE anime_name LIKE '%name%' GROUP BY anime_name ORDER BY downloaded_at DESC; "
+            "Recent: SELECT anime_name, season, episode, fansub, downloaded_at FROM resources ORDER BY downloaded_at DESC"
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -130,9 +138,9 @@ class ExecuteSqlTool(BaseTool):
             }
 
             if has_next:
-                response["pagination"]["hint"] = (
-                    f"⚠️ There are more results! Call this function again with page={page + 1} to see the next page."
-                )
+                response["pagination"][
+                    "hint"
+                ] = f"⚠️ There are more results! Call this function again with page={page + 1} to see the next page."
 
             return json.dumps(response, ensure_ascii=False, default=str)
 

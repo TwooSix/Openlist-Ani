@@ -1,11 +1,11 @@
 """Tests for openlist_ani.core.parser.parser module (parse_metadata)."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from openlist_ani.core.parser.model import ResourceTitleParseResult
+from openlist_ani.core.parser.model import ParseResult, ResourceTitleParseResult
 from openlist_ani.core.parser.parser import parse_metadata
 from openlist_ani.core.website.model import AnimeResourceInfo
 
@@ -14,236 +14,219 @@ def _make_entry(title: str = "[SubGroup] Frieren - 05 [1080p]") -> AnimeResource
     return AnimeResourceInfo(title=title, download_url="magnet:?xt=urn:btih:abc123")
 
 
-def _make_chat_message(content: str | None, tool_calls=None):
-    """Build a mock ChatCompletionMessage."""
-    msg = MagicMock()
-    msg.content = content
-    msg.tool_calls = tool_calls
-    return msg
-
-
-def _make_chat_response(message):
-    resp = MagicMock()
-    resp.choices = [MagicMock()]
-    resp.choices[0].message = message
-    return resp
-
-
-VALID_JSON_RESPONSE = json.dumps(
-    {
-        "anime_name": "Frieren",
-        "season": 1,
-        "episode": 5,
-        "quality": "1080p",
-        "fansub": "SubGroup",
-        "languages": ["简", "日"],
-        "version": 1,
-        "tmdb_id": 209867,
-    }
+VALID_BATCH_JSON = json.dumps(
+    [
+        {
+            "index": 1,
+            "status": "success",
+            "anime_name": "Frieren",
+            "season": 1,
+            "episode": 5,
+            "quality": "1080p",
+            "fansub": "SubGroup",
+            "languages": ["简", "日"],
+            "version": 1,
+            "tmdb_id": 209867,
+        }
+    ]
 )
+
+VALID_PARSE_RESULTS = [
+    ParseResult(
+        success=True,
+        result=ResourceTitleParseResult(
+            anime_name="Frieren",
+            season=1,
+            episode=5,
+            quality="1080p",
+            fansub="SubGroup",
+            languages=["简", "日"],
+            version=1,
+            tmdb_id=209867,
+        ),
+    )
+]
 
 
 class TestParseMetadata:
-    """Test parse_metadata async function with mocked LLM and TMDB."""
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_api_key(self):
-        entry = _make_entry()
+    async def test_returns_failed_when_no_api_key(self):
+        entries = [_make_entry()]
         with patch("openlist_ani.core.parser.parser.config") as mock_config:
             mock_config.llm.openai_api_key = ""
-            result = await parse_metadata(entry)
-        assert result is None
+            results = await parse_metadata(entries)
+        assert len(results) == 1
+        assert not results[0].success
+        assert results[0].error is not None
 
     @pytest.mark.asyncio
-    async def test_successful_parse_no_tool_calls(self):
-        """LLM returns valid JSON directly without tool calls."""
-        entry = _make_entry()
-
-        message = _make_chat_message(content=f"```json\n{VALID_JSON_RESPONSE}\n```")
-        response = _make_chat_response(message)
+    async def test_successful_parse(self):
+        entries = [_make_entry()]
 
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
+            patch(
+                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
+                new_callable=AsyncMock,
+                return_value=list(VALID_PARSE_RESULTS),
+            ),
+            patch(
+                "openlist_ani.core.parser.parser.TMDBResolver",
+            ) as MockResolver,
+            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
+            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"
             mock_config.llm.openai_model = "gpt-4"
 
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=response)
-            MockOpenAI.return_value = mock_client
-
-            result = await parse_metadata(entry)
-
-        assert result is not None
-        assert isinstance(result, ResourceTitleParseResult)
-        assert result.anime_name == "Frieren"
-        assert result.season == 1
-        assert result.episode == 5
-
-    @pytest.mark.asyncio
-    async def test_returns_none_on_invalid_json(self):
-        """LLM returns non-JSON content."""
-        entry = _make_entry()
-
-        message = _make_chat_message(content="I don't know the answer.")
-        response = _make_chat_response(message)
-
-        with (
-            patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
-        ):
-            mock_config.llm.openai_api_key = "test-key"
-            mock_config.llm.openai_base_url = "https://api.example.com"
-            mock_config.llm.openai_model = "gpt-4"
-
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=response)
-            MockOpenAI.return_value = mock_client
-
-            result = await parse_metadata(entry)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_on_validation_failure(self):
-        """LLM returns JSON but with invalid schema."""
-        invalid_json = json.dumps({"anime_name": "Test"})  # missing required fields
-        entry = _make_entry()
-
-        message = _make_chat_message(content=invalid_json)
-        response = _make_chat_response(message)
-
-        with (
-            patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
-        ):
-            mock_config.llm.openai_api_key = "test-key"
-            mock_config.llm.openai_base_url = "https://api.example.com"
-            mock_config.llm.openai_model = "gpt-4"
-
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=response)
-            MockOpenAI.return_value = mock_client
-
-            result = await parse_metadata(entry)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_on_timeout(self):
-        """Timeout during LLM call should return None, not crash."""
-        import asyncio
-
-        entry = _make_entry()
-
-        with (
-            patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
-        ):
-            mock_config.llm.openai_api_key = "test-key"
-            mock_config.llm.openai_base_url = "https://api.example.com"
-            mock_config.llm.openai_model = "gpt-4"
-
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(
-                side_effect=asyncio.TimeoutError()
+            mock_resolver = AsyncMock()
+            mock_resolver.resolve_and_validate = AsyncMock(
+                side_effect=lambda parsed: parsed
             )
-            MockOpenAI.return_value = mock_client
+            MockResolver.return_value = mock_resolver
 
-            result = await parse_metadata(entry)
+            results = await parse_metadata(entries)
 
-        assert result is None
+        assert len(results) == 1
+        assert results[0].success
+        assert isinstance(results[0].result, ResourceTitleParseResult)
+        assert results[0].result.anime_name == "Frieren"
+        assert results[0].result.season == 1
+        assert results[0].result.episode == 5
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_generic_exception(self):
-        """Unexpected exception should be caught, return None."""
-        entry = _make_entry()
+    async def test_returns_failed_on_invalid_json(self):
+        entries = [_make_entry()]
 
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
+            patch(
+                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
+                new_callable=AsyncMock,
+                return_value=[
+                    ParseResult(success=False, error="LLM returned no valid JSON array")
+                ],
+            ),
+            patch(
+                "openlist_ani.core.parser.parser.TMDBResolver",
+            ) as MockResolver,
+            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
+            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"
             mock_config.llm.openai_model = "gpt-4"
 
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(
-                side_effect=RuntimeError("connection failed")
+            mock_resolver = AsyncMock()
+            mock_resolver.resolve_and_validate = AsyncMock(
+                side_effect=lambda parsed: parsed
             )
-            MockOpenAI.return_value = mock_client
+            MockResolver.return_value = mock_resolver
 
-            result = await parse_metadata(entry)
+            results = await parse_metadata(entries)
 
-        assert result is None
+        assert len(results) == 1
+        assert not results[0].success
 
     @pytest.mark.asyncio
-    async def test_handles_tool_calls_then_final_answer(self):
-        """LLM makes a tool call, then returns final JSON."""
-        entry = _make_entry()
-
-        # First response: tool call
-        tool_call = MagicMock()
-        tool_call.function.name = "search_tmdb"
-        tool_call.function.arguments = json.dumps({"query": "Frieren"})
-        tool_call.id = "call_001"
-
-        first_message = _make_chat_message(content=None, tool_calls=[tool_call])
-        first_response = _make_chat_response(first_message)
-
-        # Second response: final JSON
-        final_message = _make_chat_message(
-            content=f"```json\n{VALID_JSON_RESPONSE}\n```"
-        )
-        final_response = _make_chat_response(final_message)
+    async def test_returns_failed_on_exception(self):
+        entries = [_make_entry()]
 
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
-            patch("openlist_ani.core.parser.parser.TMDBClient"),
-            patch("openlist_ani.core.parser.parser.handle_search_tmdb") as mock_handle,
+            patch(
+                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
+                new_callable=AsyncMock,
+                return_value=[ParseResult(success=False, error="connection failed")],
+            ),
+            patch(
+                "openlist_ani.core.parser.parser.TMDBResolver",
+            ) as MockResolver,
+            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
+            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"
             mock_config.llm.openai_model = "gpt-4"
 
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(
-                side_effect=[first_response, final_response]
+            mock_resolver = AsyncMock()
+            mock_resolver.resolve_and_validate = AsyncMock(
+                side_effect=lambda parsed: parsed
             )
-            MockOpenAI.return_value = mock_client
+            MockResolver.return_value = mock_resolver
 
-            mock_handle.return_value = (
-                None  # handle_search_tmdb modifies messages in place
-            )
+            results = await parse_metadata(entries)
 
-            result = await parse_metadata(entry)
-
-        assert result is not None
-        assert result.anime_name == "Frieren"
+        assert len(results) == 1
+        assert not results[0].success
+        assert "connection failed" in results[0].error
 
     @pytest.mark.asyncio
-    async def test_llm_returns_empty_content(self):
-        """LLM returns message with content=None and no tool calls."""
-        entry = _make_entry()
-
-        message = _make_chat_message(content=None)
-        response = _make_chat_response(message)
+    async def test_resolve_and_validate_called_after_parse(self):
+        entries = [_make_entry()]
 
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch("openlist_ani.core.parser.parser.AsyncOpenAI") as MockOpenAI,
+            patch(
+                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
+                new_callable=AsyncMock,
+                return_value=list(VALID_PARSE_RESULTS),
+            ),
+            patch(
+                "openlist_ani.core.parser.parser.TMDBResolver",
+            ) as MockResolver,
+            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
+            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"
             mock_config.llm.openai_model = "gpt-4"
 
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=response)
-            MockOpenAI.return_value = mock_client
+            mock_resolver = AsyncMock()
+            mock_resolver.resolve_and_validate = AsyncMock(
+                side_effect=lambda parsed: parsed
+            )
+            MockResolver.return_value = mock_resolver
 
-            result = await parse_metadata(entry)
+            results = await parse_metadata(entries)
 
-        assert result is None
+        assert len(results) == 1
+        assert results[0].success
+        assert results[0].result.anime_name == "Frieren"
+        mock_resolver.resolve_and_validate.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_content_returns_failed(self):
+        entries = [_make_entry()]
+
+        with (
+            patch("openlist_ani.core.parser.parser.config") as mock_config,
+            patch(
+                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
+                new_callable=AsyncMock,
+                return_value=[
+                    ParseResult(success=False, error="LLM returned no valid JSON array")
+                ],
+            ),
+            patch(
+                "openlist_ani.core.parser.parser.TMDBResolver",
+            ) as MockResolver,
+            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
+            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
+        ):
+            mock_config.llm.openai_api_key = "test-key"
+            mock_config.llm.openai_base_url = "https://api.example.com"
+            mock_config.llm.openai_model = "gpt-4"
+
+            mock_resolver = AsyncMock()
+            mock_resolver.resolve_and_validate = AsyncMock(
+                side_effect=lambda parsed: parsed
+            )
+            MockResolver.return_value = mock_resolver
+
+            results = await parse_metadata(entries)
+
+        assert len(results) == 1
+        assert not results[0].success

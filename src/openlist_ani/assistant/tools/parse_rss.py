@@ -20,7 +20,11 @@ class ParseRssTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Parse an RSS feed URL and extract all resource information including titles, download URLs, and metadata. Use this when user provides an RSS link."
+        return (
+            "Parse an RSS feed URL and extract all resource information including titles, "
+            "download URLs, and metadata. Use this when user provides an RSS link. "
+            "After parsing, use download_resource for each desired resource."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
