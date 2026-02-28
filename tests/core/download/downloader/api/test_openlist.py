@@ -81,7 +81,7 @@ class TestOfflineDownloadTransferTaskApis:
                     {
                         "id": "transfer-1",
                         "name": "transfer for uuid 123",
-                        "state": OpenlistTaskState.Succeeded.value,
+                        "state": OpenlistTaskState.SUCCEEDED.value,
                     }
                 ],
             }
@@ -92,7 +92,7 @@ class TestOfflineDownloadTransferTaskApis:
         assert result is not None
         assert len(result) == 1
         assert result[0].id == "transfer-1"
-        assert result[0].state == OpenlistTaskState.Succeeded
+        assert result[0].state == OpenlistTaskState.SUCCEEDED
         mock_get.assert_called_once_with(
             "http://localhost:5244/api/task/offline_download_transfer/done"
         )
@@ -106,7 +106,7 @@ class TestOfflineDownloadTransferTaskApis:
                     {
                         "id": "transfer-2",
                         "name": "transfer for uuid 456",
-                        "state": OpenlistTaskState.Running.value,
+                        "state": OpenlistTaskState.RUNNING.value,
                     }
                 ],
             }
@@ -117,7 +117,7 @@ class TestOfflineDownloadTransferTaskApis:
         assert result is not None
         assert len(result) == 1
         assert result[0].id == "transfer-2"
-        assert result[0].state == OpenlistTaskState.Running
+        assert result[0].state == OpenlistTaskState.RUNNING
         mock_get.assert_called_once_with(
             "http://localhost:5244/api/task/offline_download_transfer/undone"
         )

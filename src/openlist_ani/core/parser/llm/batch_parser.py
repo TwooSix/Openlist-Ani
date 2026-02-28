@@ -2,7 +2,7 @@ import json
 
 from ....logger import logger
 from ..model import ParseResult, ResourceTitleParseResult
-from ..prompts import BATCH_SYSTEM_PROMPT, build_batch_user_message
+from ..prompts import build_batch_user_message, BATCH_SYSTEM_PROMPT
 from ..utils import parse_json_array_from_markdown
 from .client import LLMClient
 
@@ -15,7 +15,7 @@ async def parse_title_batch_via_llm(
         {"role": "user", "content": build_batch_user_message(titles)},
     ]
     try:
-        content = await llm.chat_completion(messages)
+        content = await llm.complete_chat(messages)
         return extract_batch_results(content, len(titles))
     except Exception as e:
         logger.error(f"Batch LLM parsing failed: {e}")
@@ -55,21 +55,21 @@ def extract_batch_results(content: str, expected_count: int) -> list[ParseResult
         if isinstance(item, dict) and "index" in item:
             item_map[item["index"]] = item
 
-    results: list[ParseResult] = []
-    for i in range(expected_count):
-        item = item_map.get(i + 1)
-        if item and item.get("status") == "success":
-            try:
-                result = ResourceTitleParseResult.model_validate(item)
-                results.append(ParseResult(success=True, result=result))
-            except Exception as e:
-                logger.warning(f"Batch item {i + 1} validation failed: {e}")
-                results.append(
-                    ParseResult(success=False, error=f"Validation failed: {e}")
-                )
-        else:
-            reason = item.get("reason", "unknown") if item else "missing from response"
-            logger.debug(f"Batch item {i + 1} failed: {reason}")
-            results.append(ParseResult(success=False, error=reason))
+    return [
+        _build_single_result(item_map.get(i + 1), i + 1) for i in range(expected_count)
+    ]
 
-    return results
+
+def _build_single_result(item: dict | None, index: int) -> ParseResult:
+    """Build a ParseResult from a single batch item."""
+    if item and item.get("status") == "success":
+        try:
+            result = ResourceTitleParseResult.model_validate(item)
+            return ParseResult(success=True, result=result)
+        except Exception as e:
+            logger.warning(f"Batch item {index} validation failed: {e}")
+            return ParseResult(success=False, error=f"Validation failed: {e}")
+
+    reason = item.get("reason", "unknown") if item else "missing from response"
+    logger.debug(f"Batch item {index} failed: {reason}")
+    return ParseResult(success=False, error=reason)

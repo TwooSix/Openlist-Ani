@@ -1,5 +1,6 @@
 """Tests for DownloadManager — is_downloading, state persistence, callbacks, and dispatch."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -394,6 +395,7 @@ class TestFinalizeTask:
         results = []
 
         async def async_cb(t):
+            await asyncio.sleep(0)
             results.append(t.id)
 
         mgr.on_complete(async_cb)

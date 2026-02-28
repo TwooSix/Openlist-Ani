@@ -1,7 +1,6 @@
 """Shared test helpers and fixtures."""
 
 from types import SimpleNamespace
-from typing import Optional
 
 from openlist_ani.core.website.model import AnimeResourceInfo
 
@@ -9,8 +8,8 @@ from openlist_ani.core.website.model import AnimeResourceInfo
 def make_entry(
     title: str = "Test Anime - 01",
     download_url: str = "magnet:?xt=urn:btih:abc123",
-    enclosures: Optional[list] = None,
-    link: Optional[str] = None,
+    enclosures: list | None = None,
+    link: str | None = None,
 ) -> SimpleNamespace:
     """Helper to build a feedparser-like entry object."""
     entry = SimpleNamespace(title=title, link=link or "")

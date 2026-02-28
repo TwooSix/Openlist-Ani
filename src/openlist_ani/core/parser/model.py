@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -15,24 +15,22 @@ class ResourceTitleParseResult(BaseModel):
         ...,
         description="The episode number. It should be int. If float, it means special episode, default to be 1",
     )
-    quality: Optional[VideoQuality] = Field(
-        None, description="The quality of the video"
-    )
-    fansub: Optional[str] = Field(None, description="The fansub of the video")
-    languages: List[LanguageType] = Field(
+    quality: VideoQuality | None = Field(None, description="The quality of the video")
+    fansub: str | None = Field(None, description="The fansub of the video")
+    languages: list[LanguageType] = Field(
         ..., description="The subtitle language of the video"
     )
     version: int = Field(
         ..., description="The version of the video's subtitle, default to be 1"
     )
-    tmdb_id: Optional[int] = Field(None, description="The TMDB ID of the anime found")
+    tmdb_id: int | None = Field(None, description="The TMDB ID of the anime found")
 
 
 class ParseResult(BaseModel):
     success: bool
-    result: Optional[ResourceTitleParseResult] = None
-    error: Optional[str] = None
-    resource_title: Optional[str] = None
+    result: ResourceTitleParseResult | None = None
+    error: str | None = None
+    resource_title: str | None = None
 
 
 class TMDBMatch(BaseModel):
@@ -48,13 +46,15 @@ class SeasonInfo(BaseModel):
 
     @staticmethod
     def from_raw_list(raw_seasons: list[dict[str, Any]]) -> list["SeasonInfo"]:
+        int_field_defaults: dict[str, int | str] = {
+            "season_number": 0,
+            "episode_count": 0,
+            "name": "",
+        }
         return sorted(
             [
                 SeasonInfo(
-                    **{
-                        k: s.get(k, "")
-                        for k in ("season_number", "episode_count", "name")
-                    }
+                    **{k: s.get(k, default) for k, default in int_field_defaults.items()}
                 )
                 for s in raw_seasons
             ],
@@ -72,12 +72,12 @@ class CourGroup(BaseModel):
 
 class TMDBCandidate(BaseModel):
     id: int
-    name: Optional[str] = None
-    original_name: Optional[str] = None
-    first_air_date: Optional[str] = None
+    name: str | None = None
+    original_name: str | None = None
+    first_air_date: str | None = None
     overview: str = ""
-    genre_ids: list[int] = []
-    origin_country: list[str] = []
+    genre_ids: list[int] = Field(default_factory=list)
+    origin_country: list[str] = Field(default_factory=list)
 
 
 class EpisodeMapping(BaseModel):

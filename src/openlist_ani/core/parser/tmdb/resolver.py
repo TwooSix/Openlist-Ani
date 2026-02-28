@@ -8,7 +8,14 @@ from ..constants import (
 )
 from ..llm.client import LLMClient
 from ..llm.tmdb_selector import generate_tmdb_queries, select_tmdb_candidate
-from ..model import EpisodeMapping, ParseResult, SeasonInfo, TMDBCandidate, TMDBMatch
+from ..model import (
+    EpisodeMapping,
+    ParseResult,
+    ResourceTitleParseResult,
+    SeasonInfo,
+    TMDBCandidate,
+    TMDBMatch,
+)
 from ..tmdb.api import TMDBClient
 from .episode_mapper import EpisodeMapper, MappingContext
 
@@ -16,7 +23,7 @@ _CACHE_MISS = object()
 
 
 class _VerifyCache:
-    def __init__(self):
+    def __init__(self) -> None:
         self._store: dict[tuple[int, int, int], EpisodeMapping | None] = {}
 
     def get(self, key: tuple[int, int, int]) -> EpisodeMapping | None | object:
@@ -33,18 +40,17 @@ class TMDBResolver:
         tmdb_client: TMDBClient,
         episode_mapper: EpisodeMapper | None = None,
         max_concurrency: int = TMDB_RESOLVE_CONCURRENCY,
-    ):
+    ) -> None:
         self._llm = llm_client
         self._tmdb = tmdb_client
         self._mapper = episode_mapper or EpisodeMapper()
         self._semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def resolve_and_validate(
-        self, results: list[ParseResult]
-    ) -> list[ParseResult]:
+    async def resolve_and_validate(self, results: list[ParseResult]) -> None:
+        """Resolve TMDB IDs and validate episodes for parse results in-place."""
         successful_items = [r for r in results if r.success and r.result]
         if not successful_items:
-            return results
+            return
 
         unique_names = {
             item.result.anime_name.strip()
@@ -57,63 +63,80 @@ class TMDBResolver:
         verify_cache = _VerifyCache()
 
         for item in successful_items:
-            parse_result = item.result
-            if not parse_result:
-                continue
+            await self._process_single_item(item, resolved_map, verify_cache)
 
-            original_name = parse_result.anime_name.strip()
-            parse_result.tmdb_id = None
+    async def _process_single_item(
+        self,
+        item: ParseResult,
+        resolved_map: dict[str, TMDBMatch],
+        verify_cache: _VerifyCache,
+    ) -> None:
+        """Process a single parse result: resolve TMDB ID and verify episode."""
+        parse_result = item.result
+        if not parse_result:
+            return
 
-            resolved = resolved_map.get(original_name)
-            if resolved:
-                parse_result.tmdb_id = resolved.tmdb_id
-                parse_result.anime_name = resolved.anime_name
+        original_name = parse_result.anime_name.strip()
+        parse_result.tmdb_id = None
 
-            if not parse_result.tmdb_id:
-                logger.debug(
-                    f"TMDB unresolved for parsed anime '{original_name}', marking parse as failed"
-                )
-                item.success = False
-                item.error = "TMDB match not found for parsed anime name"
-                item.result = None
-                continue
+        resolved = resolved_map.get(original_name)
+        if resolved:
+            parse_result.tmdb_id = resolved.tmdb_id
+            parse_result.anime_name = resolved.anime_name
 
-            verify_key = (
-                parse_result.tmdb_id,
-                parse_result.season,
-                parse_result.episode,
+        if not parse_result.tmdb_id:
+            logger.debug(
+                f"TMDB unresolved for parsed anime '{original_name}', marking parse as failed"
             )
-            cached = verify_cache.get(verify_key)
-            if cached is _CACHE_MISS:
-                # auto align season/episode to TMDB.
-                mapping = await self._verify_episode(
-                    tmdb_id=parse_result.tmdb_id,
-                    season=parse_result.season,
-                    episode=parse_result.episode,
-                    anime_name=parse_result.anime_name,
-                    resource_title=item.resource_title or "",
-                )
-                verify_cache.put(verify_key, mapping)
-            else:
-                mapping = cached  # type: ignore[assignment]
+            item.success = False
+            item.error = "TMDB match not found for parsed anime name"
+            item.result = None
+            return
 
-            if mapping is None:
-                logger.debug(
-                    f"TMDB season/episode mapping failed for '{parse_result.anime_name}' "
-                    f"S{parse_result.season:02d}E{parse_result.episode:02d}, marking as failed"
-                )
-                item.success = False
-                item.error = (
-                    f"TMDB season/episode mapping failed: "
-                    f"S{parse_result.season:02d}E{parse_result.episode:02d} "
-                    f"has no authoritative match in TMDB (id={parse_result.tmdb_id})"
-                )
-                item.result = None
-            else:
-                parse_result.season = mapping.season
-                parse_result.episode = mapping.episode
+        mapping = await self._get_or_verify_mapping(item, parse_result, verify_cache)
 
-        return results
+        if mapping is None:
+            logger.debug(
+                f"TMDB season/episode mapping failed for '{parse_result.anime_name}' "
+                f"S{parse_result.season:02d}E{parse_result.episode:02d}, marking as failed"
+            )
+            item.success = False
+            item.error = (
+                f"TMDB season/episode mapping failed: "
+                f"S{parse_result.season:02d}E{parse_result.episode:02d} "
+                f"has no authoritative match in TMDB (id={parse_result.tmdb_id})"
+            )
+            item.result = None
+        else:
+            parse_result.season = mapping.season
+            parse_result.episode = mapping.episode
+
+    async def _get_or_verify_mapping(
+        self,
+        item: ParseResult,
+        parse_result: ResourceTitleParseResult,
+        verify_cache: _VerifyCache,
+    ) -> EpisodeMapping | None:
+        """Get cached mapping or verify episode against TMDB."""
+        verify_key = (
+            parse_result.tmdb_id,
+            parse_result.season,
+            parse_result.episode,
+        )
+        cached = verify_cache.get(verify_key)
+        if cached is not _CACHE_MISS:
+            return cached  # type: ignore[return-value]
+
+        # auto align season/episode to TMDB.
+        mapping = await self._verify_episode(
+            tmdb_id=parse_result.tmdb_id,
+            season=parse_result.season,
+            episode=parse_result.episode,
+            anime_name=parse_result.anime_name,
+            resource_title=item.resource_title or "",
+        )
+        verify_cache.put(verify_key, mapping)
+        return mapping
 
     async def resolve_tmdb_id(self, anime_name: str) -> TMDBMatch | None:
         queries = await generate_tmdb_queries(self._llm, anime_name)

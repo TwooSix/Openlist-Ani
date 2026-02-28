@@ -3,7 +3,7 @@ Parse RSS feed tool.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from ...core.website import WebsiteFactory
 from ...database import db
@@ -27,7 +27,7 @@ class ParseRssTool(BaseTool):
         )
 
     @property
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

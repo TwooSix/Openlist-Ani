@@ -18,7 +18,7 @@ def _parse_ok(
     anime_name="Anime",
     season=1,
     episode=1,
-    quality=VideoQuality.k1080p,
+    quality=VideoQuality.Q1080P,
     fansub=None,
     languages=None,
     version=1,
@@ -42,9 +42,9 @@ def _parse_fail(error="failed"):
     return SimpleNamespace(success=False, result=None, error=error)
 
 
-async def _run_dispatch_once(queue, mock_manager, batch_return_value, timeout=0.1):
-    """Run download_dispatch_worker until it processes one batch, then cancel."""
-    from openlist_ani.worker import download_dispatch_worker
+async def _run_dispatch_once(queue, mock_manager, batch_return_value):
+    """Run dispatch_downloads until it processes one batch, then cancel."""
+    from openlist_ani.worker import dispatch_downloads
 
     active: set[asyncio.Task] = set()
 
@@ -58,14 +58,10 @@ async def _run_dispatch_once(queue, mock_manager, batch_return_value, timeout=0.
     ):
         mock_config.openlist.download_path = "/downloads"
 
-        task = asyncio.create_task(
-            download_dispatch_worker(mock_manager, queue, active)
-        )
-        await asyncio.sleep(timeout)
-        task.cancel()
         try:
-            await task
-        except asyncio.CancelledError:
+            async with asyncio.timeout(0.1):
+                await dispatch_downloads(mock_manager, queue, active)
+        except TimeoutError:
             pass
 
     return mock_parse
@@ -94,21 +90,17 @@ class TestDownloadDispatchWorker:
         mock_manager = AsyncMock()
         mock_manager.is_downloading = lambda e: True
 
-        from openlist_ani.worker import download_dispatch_worker
+        from openlist_ani.worker import dispatch_downloads
 
         active: set[asyncio.Task] = set()
         with patch(
             "openlist_ani.worker.parse_metadata",
             new_callable=AsyncMock,
         ) as mock_parse:
-            task = asyncio.create_task(
-                download_dispatch_worker(mock_manager, queue, active)
-            )
-            await asyncio.sleep(0.1)
-            task.cancel()
             try:
-                await task
-            except asyncio.CancelledError:
+                async with asyncio.timeout(0.1):
+                    await dispatch_downloads(mock_manager, queue, active)
+            except TimeoutError:
                 pass
 
         mock_parse.assert_not_awaited()
@@ -126,7 +118,7 @@ class TestDownloadDispatchWorker:
         mock_parse = await _run_dispatch_once(queue, mock_manager, results)
 
         mock_parse.assert_awaited_once()
-        assert len(mock_parse.call_args[0][0]) == 3
+        assert len(mock_parse.call_args.args[0]) == 3
 
     async def test_metadata_failure_skips_entry(self):
         entries = [_make_resource(title="A - 01"), _make_resource(title="B - 02")]

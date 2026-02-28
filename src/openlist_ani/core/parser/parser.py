@@ -34,7 +34,7 @@ async def parse_metadata(
         parsed = await parse_title_batch_via_llm(llm, titles)
         for title, pr in zip(titles, parsed):
             pr.resource_title = title
-        enriched = await resolver.resolve_and_validate(parsed)
-        results.extend(enriched)
+        await resolver.resolve_and_validate(parsed)
+        results.extend(parsed)
 
     return results

@@ -2,7 +2,7 @@
 Download resource tool.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ...config import config
 from ...core.download import DownloadManager
@@ -16,7 +16,7 @@ from .base import BaseTool
 class DownloadResourceTool(BaseTool):
     """Tool for downloading anime resources."""
 
-    def __init__(self, download_manager: Optional[DownloadManager] = None):
+    def __init__(self, download_manager: DownloadManager | None = None):
         """Initialize with optional download manager.
 
         Args:
@@ -51,7 +51,7 @@ class DownloadResourceTool(BaseTool):
         )
 
     @property
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

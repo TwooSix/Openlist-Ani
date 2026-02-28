@@ -11,10 +11,8 @@ import os
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Optional
 
-from openlist_ani.logger import logger
-
+from ....logger import logger
 from ..model.task import DownloadTask
 from .api.model import OfflineDownloadTool, OpenlistTaskState
 from .api.openlist import OpenListClient
@@ -51,7 +49,7 @@ def _is_video_file(name: str) -> bool:
 
 
 def format_anime_episode(
-    anime_name: Optional[str], season: Optional[int], episode: Optional[int]
+    anime_name: str | None, season: int | None, episode: int | None
 ) -> str:
     """Safely format anime episode info, handling None values."""
     name = anime_name or "Unknown"
@@ -70,7 +68,7 @@ class _StageStatus(StrEnum):
 @dataclass
 class _StageResult:
     status: _StageStatus
-    error_message: Optional[str] = None
+    error_message: str | None = None
     poll_delay: float = 5.0
 
     @classmethod
@@ -122,7 +120,7 @@ class OpenListDownloader(BaseDownloader):
         self._token = token
         self._offline_download_tool = offline_download_tool
         self._rename_format = rename_format
-        self._client: Optional[OpenListClient] = None
+        self._client: OpenListClient | None = None
 
     @property
     def client(self) -> OpenListClient:
@@ -221,7 +219,7 @@ class OpenListDownloader(BaseDownloader):
             if api_task.id != task_id:
                 continue
 
-            if api_task.state != OpenlistTaskState.Succeeded:
+            if api_task.state != OpenlistTaskState.SUCCEEDED:
                 logger.error(f"Download failed with state: {api_task.state}")
                 return _StageResult.failed(f"Task failed with state: {api_task.state}")
             return _StageResult.completed()
@@ -269,7 +267,7 @@ class OpenListDownloader(BaseDownloader):
 
         matching_done = next((t for t in done_tasks if task_uuid in t.name), None)
         if matching_done is not None:
-            if matching_done.state != OpenlistTaskState.Succeeded:
+            if matching_done.state != OpenlistTaskState.SUCCEEDED:
                 logger.error(f"Transfer failed with state: {matching_done.state}")
                 return _StageResult.failed(
                     f"Transfer failed with state: {matching_done.state}"
@@ -279,7 +277,7 @@ class OpenListDownloader(BaseDownloader):
         return _StageResult.skip()
 
     def _log_progress(
-        self, task: DownloadTask, progress: Optional[float], is_transfer: bool = False
+        self, task: DownloadTask, progress: float | None, is_transfer: bool = False
     ) -> None:
         """Log progress once per 25% bucket, with debug fallback."""
         if progress is None:
@@ -299,7 +297,7 @@ class OpenListDownloader(BaseDownloader):
                 f"{'Transferring' if is_transfer else 'Downloading'} [{format_anime_episode(task.resource_info.anime_name, task.resource_info.season, task.resource_info.episode)}]: {progress:.0f}%)"
             )
 
-    async def _detect_downloaded_file(self, task: DownloadTask) -> Optional[str]:
+    async def _detect_downloaded_file(self, task: DownloadTask) -> str | None:
         """Detect the downloaded file in the temp directory."""
         if not task.temp_path:
             return None

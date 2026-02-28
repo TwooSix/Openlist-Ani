@@ -85,7 +85,7 @@ class TestParseJsonFromMarkdown:
     def test_none_input_raises_type_error(self):
         """Passing None should raise TypeError, not segfault."""
         with pytest.raises(TypeError):
-            parse_json_from_markdown(None)  # type: ignore
+            parse_json_from_markdown(None)  # type: ignore[arg-type]
 
     def test_multiple_json_objects_returns_outermost(self):
         """If there are multiple JSON objects, picks from first '{' to last '}'."""

@@ -209,8 +209,8 @@ class TestSerialization:
 
     def test_round_trip(self):
         res = _make_resource(
-            quality=VideoQuality.k1080p,
-            languages=[LanguageType.kChs, LanguageType.kJp],
+            quality=VideoQuality.Q1080P,
+            languages=[LanguageType.CHS, LanguageType.JP],
         )
         task = DownloadTask.from_resource_info(res, save_path="/downloads")
         task.update_state(DownloadState.DOWNLOADING)
@@ -222,8 +222,8 @@ class TestSerialization:
         assert restored.state == DownloadState.DOWNLOADING
         assert restored.save_path == "/downloads"
         assert restored.resource_info.title == res.title
-        assert restored.resource_info.quality == VideoQuality.k1080p
-        assert LanguageType.kChs in restored.resource_info.languages
+        assert restored.resource_info.quality == VideoQuality.Q1080P
+        assert LanguageType.CHS in restored.resource_info.languages
 
     def test_from_dict_with_string_state(self):
         data = _make_task().to_dict()

@@ -3,7 +3,7 @@ Telegram bot integration for assistant.
 """
 
 import asyncio
-from typing import Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Awaitable, Callable
 
 import aiohttp
 
@@ -50,10 +50,10 @@ Start chatting with me!"""
         self.session = None
 
         # Store conversation history for each user
-        self.user_histories: Dict[int, List[dict]] = {}
+        self.user_histories: dict[int, list[dict]] = {}
 
         # Store status message IDs for each chat
-        self.status_messages: Dict[int, int] = {}
+        self.status_messages: dict[int, int] = {}
 
         # Offset for long polling
         self.update_offset = 0
@@ -117,7 +117,7 @@ Start chatting with me!"""
         await self._process_user_message(chat_id, user_id, text)
 
     @staticmethod
-    def _status_to_text(status: AssistantStatus, payload: dict) -> str:
+    def _format_status_text(status: AssistantStatus, payload: dict) -> str:
         """Map assistant status event to Telegram-friendly text."""
         if status == AssistantStatus.THINKING:
             return "🤔 正在思考..."
@@ -194,7 +194,7 @@ Start chatting with me!"""
             )
             return False
 
-    async def get_updates(self) -> List[dict]:
+    async def get_updates(self) -> list[dict]:
         """Get updates from Telegram using long polling.
 
         Returns:
@@ -252,10 +252,10 @@ Start chatting with me!"""
         if update_id:
             self.update_offset = max(self.update_offset, update_id + 1)
 
-    @staticmethod
     def _extract_message_context(
+        self,
         update: dict,
-    ) -> Optional[Tuple[int, Optional[int], str]]:
+    ) -> tuple[int, int | None, str] | None:
         """Extract chat id, user id and text from update message."""
         message = update.get("message")
         if not message:
@@ -270,7 +270,7 @@ Start chatting with me!"""
 
         return chat_id, user_id, text
 
-    async def _authorize_user(self, chat_id: int, user_id: Optional[int]) -> bool:
+    async def _authorize_user(self, chat_id: int, user_id: int | None) -> bool:
         """Check whether the user is allowed to use this bot."""
         if not self.allowed_users or user_id in self.allowed_users:
             return True
@@ -280,7 +280,7 @@ Start chatting with me!"""
         return False
 
     async def _handle_command(
-        self, chat_id: int, user_id: Optional[int], text: str
+        self, chat_id: int, user_id: int | None, text: str
     ) -> bool:
         """Handle built-in commands.
 
@@ -300,7 +300,7 @@ Start chatting with me!"""
         return False
 
     async def _process_user_message(
-        self, chat_id: int, user_id: Optional[int], text: str
+        self, chat_id: int, user_id: int | None, text: str
     ) -> None:
         """Process a normal user message through AniAssistant."""
         history = self._get_or_create_history(user_id)
@@ -318,14 +318,14 @@ Start chatting with me!"""
             logger.exception(f"Error processing message from {user_id}")
             await self.send_message(chat_id, f"❌ Error processing message: {str(e)}")
 
-    def _get_or_create_history(self, user_id: Optional[int]) -> List[dict]:
+    def _get_or_create_history(self, user_id: int | None) -> list[dict]:
         """Get or initialize conversation history for a user."""
         if user_id is None:
             return []
         return self.user_histories.setdefault(user_id, [])
 
     def _append_history(
-        self, history: List[dict], user_text: str, response: str
+        self, history: list[dict], user_text: str, response: str
     ) -> None:
         """Append one user/assistant turn and trim by max history limit."""
         history.append({"role": "user", "content": user_text})
@@ -341,7 +341,7 @@ Start chatting with me!"""
         """Create chat-specific status callback for assistant progress events."""
 
         async def status_callback(status: AssistantStatus, payload: dict) -> None:
-            status_text = self._status_to_text(status, payload)
+            status_text = self._format_status_text(status, payload)
             await self._upsert_status_message(chat_id, status_text)
 
         return status_callback

@@ -4,7 +4,7 @@ Core assistant logic for LLM interaction and tool calling.
 
 import json
 from enum import Enum
-from typing import Any, Awaitable, Callable, List, Optional
+from typing import Any, Awaitable, Callable
 
 from openai import AsyncOpenAI
 
@@ -56,7 +56,7 @@ If has_next_page is true, request next page."""
             download_manager: DownloadManager instance for download operations
         """
         self.download_manager = download_manager
-        self.client: Optional[AsyncOpenAI] = None
+        self.client: AsyncOpenAI | None = None
         self.model = config.llm.openai_model
         self.tools = get_assistant_tools()
         self.max_history = config.assistant.max_history_messages
@@ -66,8 +66,8 @@ If has_next_page is true, request next page."""
     async def process_message(
         self,
         user_message: str,
-        history: Optional[List[dict]] = None,
-        status_callback: Optional[StatusCallback] = None,
+        history: list[dict] | None = None,
+        status_callback: StatusCallback | None = None,
     ) -> str:
         """Process user message and return response.
 
@@ -100,8 +100,8 @@ If has_next_page is true, request next page."""
 
     async def _run_conversation_loop(
         self,
-        messages: List[dict],
-        status_callback: Optional[StatusCallback] = None,
+        messages: list[dict],
+        status_callback: StatusCallback | None = None,
     ) -> str:
         """Run the LLM interaction loop with tool calls until final answer."""
         for _ in range(self.MAX_TOOL_ITERATIONS):
@@ -115,7 +115,7 @@ If has_next_page is true, request next page."""
         logger.warning("Assistant: Max iterations reached, forcing final response")
         return await self._force_final_response(messages)
 
-    async def _request_model_response(self, messages: List[dict]):
+    async def _request_model_response(self, messages: list[dict]):
         """Request one model response with tools enabled."""
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -128,9 +128,9 @@ If has_next_page is true, request next page."""
     async def _handle_model_message(
         self,
         message,
-        messages: List[dict],
-        status_callback: Optional[StatusCallback] = None,
-    ) -> Optional[str]:
+        messages: list[dict],
+        status_callback: StatusCallback | None = None,
+    ) -> str | None:
         """Handle one model message; return final text if conversation can finish."""
         if not message.tool_calls:
             logger.info("Assistant: No tool calls, returning response")
@@ -146,8 +146,8 @@ If has_next_page is true, request next page."""
     async def _execute_all_tool_calls(
         self,
         tool_calls,
-        messages: List[dict],
-        status_callback: Optional[StatusCallback] = None,
+        messages: list[dict],
+        status_callback: StatusCallback | None = None,
     ) -> None:
         """Execute all tool calls in order and append their outputs to context."""
         for tool_call in tool_calls:
@@ -186,7 +186,7 @@ If has_next_page is true, request next page."""
             logger.exception(f"Assistant: {error_msg}")
             return f"Error: {error_msg}: {str(e)}"
 
-    async def _force_final_response(self, messages: List[dict]) -> str:
+    async def _force_final_response(self, messages: list[dict]) -> str:
         """Force final plain response without tools after iteration limit."""
         final_response = await self.client.chat.completions.create(
             model=self.model,
@@ -201,8 +201,8 @@ If has_next_page is true, request next page."""
     def _build_messages(
         self,
         user_message: str,
-        history: Optional[List[dict]] = None,
-    ) -> List[dict]:
+        history: list[dict] | None = None,
+    ) -> list[dict]:
         """Build the message list with system prompt, history, and user message."""
         messages = [{"role": "system", "content": self.system_prompt}]
 
@@ -214,7 +214,7 @@ If has_next_page is true, request next page."""
         messages.append({"role": "user", "content": user_message})
         return messages
 
-    def _filter_history(self, history: Optional[List[dict]]) -> List[dict]:
+    def _filter_history(self, history: list[dict] | None) -> list[dict]:
         """Keep only recent valid user/assistant history messages."""
         if not history:
             return []
@@ -235,9 +235,9 @@ If has_next_page is true, request next page."""
 
     async def _emit_status(
         self,
-        status_callback: Optional[StatusCallback],
+        status_callback: StatusCallback | None,
         status: AssistantStatus,
-        payload: Optional[dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         """Emit one structured status event to outer integration layer."""
         if status_callback:
@@ -245,9 +245,9 @@ If has_next_page is true, request next page."""
 
     async def _emit_tool_status(
         self,
-        status_callback: Optional[StatusCallback],
+        status_callback: StatusCallback | None,
         tool_name: str,
-        arguments: Optional[dict],
+        arguments: dict | None,
     ) -> None:
         """Emit tool-executing status event; skip when tool args are invalid JSON."""
         if arguments is None:
@@ -259,14 +259,14 @@ If has_next_page is true, request next page."""
         )
 
     @staticmethod
-    def _safe_parse_arguments(raw_arguments: str) -> Optional[dict]:
+    def _safe_parse_arguments(raw_arguments: str) -> dict | None:
         """Try to parse tool arguments JSON, return None on failure."""
         try:
             return json.loads(raw_arguments)
         except json.JSONDecodeError:
             return None
 
-    def _create_openai_client(self) -> Optional[AsyncOpenAI]:
+    def _create_openai_client(self) -> AsyncOpenAI | None:
         """Create OpenAI client from configuration."""
         if not config.llm.openai_api_key:
             logger.warning("OpenAI API key not set, assistant will not work")

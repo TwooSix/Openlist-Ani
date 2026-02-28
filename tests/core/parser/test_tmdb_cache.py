@@ -58,7 +58,7 @@ class TestCachedTMDBClient:
 
         call_count = 0
 
-        async def fake_search(query):
+        def fake_search(query):
             nonlocal call_count
             call_count += 1
             return []
@@ -66,6 +66,7 @@ class TestCachedTMDBClient:
         with patch.object(
             CachedTMDBClient.__bases__[0],
             "search_tv_show",
+            new_callable=AsyncMock,
             side_effect=fake_search,
         ):
             await client.search_tv_show("nonexistent")
@@ -95,7 +96,7 @@ class TestCachedTMDBClient:
 
         call_count = 0
 
-        async def fake_details(tmdb_id):
+        def fake_details(tmdb_id):
             nonlocal call_count
             call_count += 1
             return {}
@@ -103,6 +104,7 @@ class TestCachedTMDBClient:
         with patch.object(
             CachedTMDBClient.__bases__[0],
             "get_tv_show_details",
+            new_callable=AsyncMock,
             side_effect=fake_details,
         ):
             await client.get_tv_show_details(999)
@@ -115,12 +117,13 @@ class TestCachedTMDBClient:
         results_a = [{"id": 1, "name": "A"}]
         results_b = [{"id": 2, "name": "B"}]
 
-        async def fake_search(query):
+        def fake_search(query):
             return results_a if "a" in query.lower() else results_b
 
         with patch.object(
             CachedTMDBClient.__bases__[0],
             "search_tv_show",
+            new_callable=AsyncMock,
             side_effect=fake_search,
         ):
             a = await client.search_tv_show("A")

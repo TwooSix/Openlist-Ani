@@ -1,10 +1,9 @@
 """Utility functions for parser tools."""
 
 import re
-from typing import Optional
 
 
-def parse_json_from_markdown(text: str) -> Optional[str]:
+def parse_json_from_markdown(text: str) -> str | None:
     """Extract JSON string from markdown code block or plain text.
 
     Args:
@@ -27,7 +26,7 @@ def parse_json_from_markdown(text: str) -> Optional[str]:
         return None
 
 
-def parse_json_array_from_markdown(text: str) -> Optional[str]:
+def parse_json_array_from_markdown(text: str) -> str | None:
     """Extract JSON array string from markdown code block or plain text.
 
     Looks for a JSON array (starting with '[') in markdown code blocks or raw text.

@@ -11,11 +11,10 @@ import asyncio
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
-from openlist_ani.logger import logger
+from ...logger import logger
 
 if TYPE_CHECKING:
-    from openlist_ani.config import NotificationConfig
-
+    from ...config import NotificationConfig
     from .bot.base import BotBase
 
 

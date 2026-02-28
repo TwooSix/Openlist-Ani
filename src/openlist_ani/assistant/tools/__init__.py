@@ -4,8 +4,6 @@ Assistant tools module.
 Provides tool classes for assistant function calling.
 """
 
-from typing import Dict, List, Optional, Type
-
 from ...core.download import DownloadManager
 from ...logger import logger
 from .base import BaseTool
@@ -15,7 +13,7 @@ from .parse_rss import ParseRssTool
 from .search_anime import SearchAnimeTool
 
 # Registry of all available tools
-_TOOL_CLASSES: List[Type[BaseTool]] = [
+_kToolClasses: list[type[BaseTool]] = [
     SearchAnimeTool,
     ParseRssTool,
     DownloadResourceTool,
@@ -26,26 +24,26 @@ _TOOL_CLASSES: List[Type[BaseTool]] = [
 class ToolRegistry:
     """Registry for managing assistant tools."""
 
-    def __init__(self, download_manager: Optional[DownloadManager] = None):
+    def __init__(self, download_manager: DownloadManager | None = None):
         """Initialize tool registry.
 
         Args:
             download_manager: DownloadManager instance for download tool
         """
-        self._tools: Dict[str, BaseTool] = {}
+        self._tools: dict[str, BaseTool] = {}
         self._download_manager = download_manager
         self._init_tools()
 
-    def _init_tools(self):
+    def _init_tools(self) -> None:
         """Initialize all tool instances."""
-        for tool_cls in _TOOL_CLASSES:
+        for tool_cls in _kToolClasses:
             if tool_cls == DownloadResourceTool:
                 tool = tool_cls(self._download_manager)
             else:
                 tool = tool_cls()
             self._tools[tool.name] = tool
 
-    def set_download_manager(self, download_manager: DownloadManager):
+    def set_download_manager(self, download_manager: DownloadManager) -> None:
         """Set download manager for download tool.
 
         Args:
@@ -57,7 +55,7 @@ class ToolRegistry:
             if isinstance(download_tool, DownloadResourceTool):
                 download_tool.download_manager = download_manager
 
-    def get_tool(self, name: str) -> Optional[BaseTool]:
+    def get_tool(self, name: str) -> BaseTool | None:
         """Get tool by name.
 
         Args:
@@ -68,7 +66,7 @@ class ToolRegistry:
         """
         return self._tools.get(name)
 
-    def get_definitions(self) -> List[dict]:
+    def get_definitions(self) -> list[dict]:
         """Get all tool definitions for OpenAI function calling.
 
         Returns:
@@ -98,11 +96,11 @@ class ToolRegistry:
 
 
 # Convenience functions for backward compatibility
-_default_registry: Optional[ToolRegistry] = None
+_default_registry: ToolRegistry | None = None
 
 
 def get_registry(
-    download_manager: Optional[DownloadManager] = None,
+    download_manager: DownloadManager | None = None,
 ) -> ToolRegistry:
     """Get or create the default tool registry.
 
@@ -120,7 +118,7 @@ def get_registry(
     return _default_registry
 
 
-def get_assistant_tools() -> List[dict]:
+def get_assistant_tools() -> list[dict]:
     """Get tool definitions for OpenAI function calling.
 
     Returns:

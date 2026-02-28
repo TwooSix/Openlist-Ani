@@ -1,6 +1,5 @@
 import asyncio
 from abc import ABC, abstractmethod
-from typing import List, Optional
 
 import aiohttp
 import feedparser
@@ -14,7 +13,7 @@ class WebsiteBase(ABC):
     Abstract base class for website RSS parsers.
     """
 
-    async def fetch_feed(self, url: str) -> List[AnimeResourceInfo]:
+    async def fetch_feed(self, url: str) -> list[AnimeResourceInfo]:
         """Fetch and parse RSS feed from a URL.
 
         Args:
@@ -38,7 +37,7 @@ class WebsiteBase(ABC):
                     tasks = [self.parse_entry(entry, session) for entry in feed.entries]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    entries: List[AnimeResourceInfo] = []
+                    entries: list[AnimeResourceInfo] = []
                     for res in results:
                         if isinstance(res, Exception):
                             continue
@@ -56,7 +55,7 @@ class WebsiteBase(ABC):
     @abstractmethod
     async def parse_entry(
         self, entry, session: aiohttp.ClientSession
-    ) -> Optional[AnimeResourceInfo]:
+    ) -> AnimeResourceInfo | None:
         """Parse a single RSS entry.
 
         Args:

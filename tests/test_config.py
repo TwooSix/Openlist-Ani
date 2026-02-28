@@ -148,7 +148,7 @@ class TestUserConfig:
         """Extra unknown sections should either be ignored or raise — not crash."""
         data = {"unknown_section": {"key": "value"}}
         try:
-            cfg = UserConfig.model_validate(data)
+            UserConfig.model_validate(data)
             # If it succeeds, that's fine (extra fields ignored)
         except ValidationError:
             # If Pydantic forbids extra fields, that's also acceptable

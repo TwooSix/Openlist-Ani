@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -90,7 +90,7 @@ class MikanWebsite(WebsiteBase):
 
         return normalized, 1
 
-    def _get_download_url(self, entry) -> Optional[str]:
+    def _get_download_url(self, entry) -> str | None:
         """Extract download link from enclosures or link attribute."""
         for enclosure in entry.get("enclosures", []):
             if enclosure.get("type") == "application/x-bittorrent":
@@ -104,7 +104,7 @@ class MikanWebsite(WebsiteBase):
 
     async def _fetch_metadata(
         self, session: aiohttp.ClientSession, url: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Fetch anime metadata from Mikan details page.
 
         Args:
@@ -141,7 +141,7 @@ class MikanWebsite(WebsiteBase):
 
     async def parse_entry(
         self, entry, session: aiohttp.ClientSession
-    ) -> Optional[AnimeResourceInfo]:
+    ) -> AnimeResourceInfo | None:
         title = getattr(entry, "title", None)
         download_url = self._get_download_url(entry)
 

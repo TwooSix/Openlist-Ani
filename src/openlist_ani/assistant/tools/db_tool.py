@@ -3,7 +3,7 @@ Execute SQL query tool.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from ...database import db
 from ...logger import logger
@@ -30,7 +30,7 @@ class ExecuteSqlTool(BaseTool):
         )
 
     @property
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

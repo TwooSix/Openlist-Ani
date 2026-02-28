@@ -3,30 +3,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class OpenlistTaskState(Enum):
-    Pending = 0
-    Running = 1
-    Succeeded = 2
-    Canceling = 3
-    Canceled = 4
-    Errored = 5
-    Failing = 6
-    Failed = 7
-    StateWaitingRetry = 8
-    StateBeforeRetry = 9
+    PENDING = 0
+    RUNNING = 1
+    SUCCEEDED = 2
+    CANCELING = 3
+    CANCELED = 4
+    ERRORED = 5
+    FAILING = 6
+    FAILED = 7
+    STATE_WAITING_RETRY = 8
+    STATE_BEFORE_RETRY = 9
 
 
 class OfflineDownloadTool(StrEnum):
     ARIA2 = "aria2"
     QBITTORRENT = "qBittorrent"
     PIKPAK = "PikPak"
-    CLOUD_115 = "115 Cloud"
+    CLOUD115 = "115 Cloud"
 
 
-def _parse_iso(dt: Optional[str]) -> Optional[datetime]:
+def _parse_iso(dt: str | None) -> datetime | None:
     if not dt:
         return None
     s = dt
@@ -65,18 +65,18 @@ def _parse_iso(dt: Optional[str]) -> Optional[datetime]:
 class OpenlistTask:
     id: str
     name: str
-    creator: Optional[str] = None
-    creator_role: Optional[int] = None
-    state: Optional[OpenlistTaskState] = None
-    status: Optional[str] = None
-    progress: Optional[int] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    total_bytes: Optional[int] = None
-    error: Optional[str] = None
+    creator: str | None = None
+    creator_role: int | None = None
+    state: OpenlistTaskState | None = None
+    status: str | None = None
+    progress: int | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    total_bytes: int | None = None
+    error: str | None = None
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "OpenlistTask":
+    def from_dict(cls, d: dict[str, Any]) -> "OpenlistTask":
         # Map state integer to OpenlistTaskState enum when possible
         state_val = d.get("state")
         state_enum = None
@@ -104,18 +104,18 @@ class OpenlistTask:
 @dataclass
 class FileEntry:
     name: str
-    path: Optional[str] = None
-    size: Optional[int] = None
-    is_dir: Optional[bool] = None
-    modified: Optional[datetime] = None
-    created: Optional[datetime] = None
-    sign: Optional[str] = None
-    thumb: Optional[str] = None
-    type: Optional[int] = None
-    hash_info: Optional[Dict[str, Any]] = None
+    path: str | None = None
+    size: int | None = None
+    is_dir: bool | None = None
+    modified: datetime | None = None
+    created: datetime | None = None
+    sign: str | None = None
+    thumb: str | None = None
+    type: int | None = None
+    hash_info: dict[str, Any] | None = None
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "FileEntry":
+    def from_dict(cls, d: dict[str, Any]) -> "FileEntry":
         # prefer structured hash_info; fall back to parsing JSON in `hashinfo` if present
         hash_info = d.get("hash_info")
         if not hash_info and d.get("hashinfo"):

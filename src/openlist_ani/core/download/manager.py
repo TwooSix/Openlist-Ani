@@ -12,8 +12,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from openlist_ani.logger import logger
-
+from ...logger import logger
 from ..website.model import AnimeResourceInfo
 from .downloader.base import HandlerResult, HandlerStatus
 from .model.task import DownloadState, DownloadTask
@@ -24,7 +23,7 @@ if TYPE_CHECKING:
 
 class DownloadManager:
 
-    _NEXT_STATE: dict[DownloadState, DownloadState] = {
+    _next_state: dict[DownloadState, DownloadState] = {
         DownloadState.PENDING: DownloadState.DOWNLOADING,
         DownloadState.DOWNLOADING: DownloadState.TRANSFERRING,
         DownloadState.TRANSFERRING: DownloadState.CLEANING_UP,
@@ -254,7 +253,7 @@ class DownloadManager:
 
             match result.status:
                 case HandlerStatus.DONE:
-                    next_state = self._NEXT_STATE[task.state]
+                    next_state = self._next_state[task.state]
                     task.update_state(next_state)
                     self._save_state()
                     self._emit_state_change(task, next_state)

@@ -57,7 +57,7 @@ class TestParseIso:
 
 class TestOpenlistTaskState:
     def test_succeeded_value(self):
-        assert OpenlistTaskState.Succeeded.value == 2
+        assert OpenlistTaskState.SUCCEEDED.value == 2
 
     def test_all_states_unique(self):
         values = [s.value for s in OpenlistTaskState]
@@ -92,7 +92,7 @@ class TestOpenlistTaskFromDict:
 
     def test_with_state(self):
         t = OpenlistTask.from_dict({"id": "1", "name": "t", "state": 2})
-        assert t.state == OpenlistTaskState.Succeeded
+        assert t.state == OpenlistTaskState.SUCCEEDED
 
     def test_invalid_state_value(self):
         """Unknown state integer should not crash, state becomes None."""

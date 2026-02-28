@@ -188,7 +188,7 @@ class TestSpecialEpisode:
 
         # Mock LLM to return episode 2
         mock_llm = AsyncMock()
-        mock_llm.chat_completion.return_value = '{"episode_number": 2}'
+        mock_llm.complete_chat.return_value = '{"episode_number": 2}'
 
         sorted_seasons = SeasonInfo.from_raw_list(
             mock_tmdb.get_tv_show_details.return_value["seasons"]
@@ -229,7 +229,7 @@ class TestSpecialEpisode:
         ]
 
         mock_llm = AsyncMock()
-        mock_llm.chat_completion.return_value = '{"episode_number": null}'
+        mock_llm.complete_chat.return_value = '{"episode_number": null}'
 
         sorted_seasons = SeasonInfo.from_raw_list(
             mock_tmdb.get_tv_show_details.return_value["seasons"]
@@ -392,7 +392,7 @@ class TestCourMapping:
         sorted_seasons = [_make_season(1, 24), _make_season(2, 12)]
         mock_tmdb = AsyncMock()
 
-        async def mock_get_episodes(tmdb_id, snum):
+        def mock_get_episodes(tmdb_id, snum):
             if snum == 1:
                 return [_make_episode(i, f"2023-04-{i:02d}") for i in range(1, 13)] + [
                     _make_episode(i, f"2024-01-{i - 12:02d}") for i in range(13, 25)
@@ -401,7 +401,7 @@ class TestCourMapping:
                 return [_make_episode(i, f"2025-04-{i:02d}") for i in range(1, 13)]
             return []
 
-        mock_tmdb.get_season_episodes = mock_get_episodes
+        mock_tmdb.get_season_episodes.side_effect = mock_get_episodes
 
         # fansub S3E5 → global cour 3 = S2 cour1 → S2E(1+5-1) = S2E5
         result = await _code_cour_mapping(
