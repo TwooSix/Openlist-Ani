@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Optional
 
 from ..model.task import DownloadTask
 
@@ -15,7 +14,7 @@ class HandlerStatus(StrEnum):
 @dataclass
 class HandlerResult:
     status: HandlerStatus
-    error_message: Optional[str] = None
+    error_message: str | None = None
     poll_delay: float = 0.0
 
     @classmethod

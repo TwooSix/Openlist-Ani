@@ -1,5 +1,3 @@
-from typing import Optional
-
 import aiohttp
 
 from ...logger import logger
@@ -15,7 +13,7 @@ class AniapiWebsite(WebsiteBase):
     instead of using enclosures. The links point directly to .mp4 files.
     """
 
-    def _get_download_url(self, entry) -> Optional[str]:
+    def _get_download_url(self, entry) -> str | None:
         """Extract download link from link attribute.
 
         ANi API uses direct links to .mp4 files in the <link> element.
@@ -35,7 +33,7 @@ class AniapiWebsite(WebsiteBase):
 
     async def parse_entry(
         self, entry, session: aiohttp.ClientSession
-    ) -> Optional[AnimeResourceInfo]:
+    ) -> AnimeResourceInfo | None:
         """Parse ANi API RSS entry.
 
         ANi API entries contain ANi-formatted titles that include metadata.

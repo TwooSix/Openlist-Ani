@@ -3,7 +3,6 @@ Data models for assistant module.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 
 @dataclass
@@ -13,9 +12,9 @@ class SearchResult:
     title: str
     download_url: str
     is_downloaded: bool
-    anime_name: Optional[str] = None
-    episode: Optional[int] = None
-    quality: Optional[str] = None
+    anime_name: str | None = None
+    episode: int | None = None
+    quality: str | None = None
 
 
 @dataclass
@@ -25,6 +24,6 @@ class DownloadResult:
     success_count: int
     skipped_count: int
     failed_count: int
-    success_items: List[str]
-    skipped_items: List[tuple[str, str]]  # (title, reason)
-    failed_items: List[tuple[str, str]]  # (title, error)
+    success_items: list[str]
+    skipped_items: list[tuple[str, str]]  # (title, reason)
+    failed_items: list[tuple[str, str]]  # (title, error)

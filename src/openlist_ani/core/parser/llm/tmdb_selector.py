@@ -17,7 +17,7 @@ async def generate_tmdb_queries(llm: LLMClient, anime_name: str) -> list[str]:
         },
     ]
     try:
-        content = await llm.chat_completion(messages)
+        content = await llm.complete_chat(messages)
         payload = parse_json_from_markdown(content)
         if not payload:
             return [anime_name]
@@ -55,7 +55,7 @@ async def select_tmdb_candidate(
         },
     ]
     try:
-        content = await llm.chat_completion(messages)
+        content = await llm.complete_chat(messages)
         payload = parse_json_from_markdown(content)
         if not payload:
             return None

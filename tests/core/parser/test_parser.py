@@ -199,7 +199,7 @@ class TestParseMetadata:
 
     @pytest.mark.asyncio
     async def test_empty_content_returns_failed(self):
-        entries = [_make_entry()]
+        entries = [_make_entry(title="[SubGroup] Unknown Anime - 01 [720p]")]
 
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,
@@ -207,7 +207,7 @@ class TestParseMetadata:
                 "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
                 new_callable=AsyncMock,
                 return_value=[
-                    ParseResult(success=False, error="LLM returned no valid JSON array")
+                    ParseResult(success=False, error="LLM returned empty content")
                 ],
             ),
             patch(
@@ -230,3 +230,4 @@ class TestParseMetadata:
 
         assert len(results) == 1
         assert not results[0].success
+        assert "empty content" in results[0].error

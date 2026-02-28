@@ -3,7 +3,7 @@ Base class for assistant tools.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 
 class BaseTool(ABC):
@@ -23,7 +23,7 @@ class BaseTool(ABC):
 
     @property
     @abstractmethod
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         """JSON schema for tool parameters."""
         pass
 
@@ -39,7 +39,7 @@ class BaseTool(ABC):
         """
         pass
 
-    def get_definition(self) -> Dict[str, Any]:
+    def get_definition(self) -> dict[str, Any]:
         """Get OpenAI function calling definition.
 
         Returns:

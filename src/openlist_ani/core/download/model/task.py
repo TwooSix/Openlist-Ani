@@ -11,7 +11,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Optional
+from typing import Any
 
 from ...website.model import AnimeResourceInfo
 
@@ -74,17 +74,17 @@ class DownloadTask:
 
     # State
     state: DownloadState = DownloadState.PENDING
-    error_message: Optional[str] = None
+    error_message: str | None = None
     retry_count: int = 0
     max_retries: int = 3
 
     # Paths
     save_path: str = ""  # Base save directory
-    temp_path: Optional[str] = None  # Temporary download directory
-    final_path: Optional[str] = None  # save_path + filename_after_rename
+    temp_path: str | None = None  # Temporary download directory
+    final_path: str | None = None  # save_path + filename_after_rename
 
     # Download tracking
-    downloaded_filename: Optional[str] = None  # Original name of downloaded file
+    downloaded_filename: str | None = None  # Original name of downloaded file
     initial_files: list[str] = field(
         default_factory=list
     )  # Files in temp dir before download
@@ -92,8 +92,8 @@ class DownloadTask:
     # Timestamps
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
     # Resource info (flattened for serialization)
     resource_info: AnimeResourceInfo = field(default_factory=AnimeResourceInfo)

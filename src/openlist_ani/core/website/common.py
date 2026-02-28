@@ -1,5 +1,3 @@
-from typing import Optional
-
 import aiohttp
 
 from ...logger import logger
@@ -12,7 +10,7 @@ class CommonRSSWebsite(WebsiteBase):
     Generic website parser for common RSS feeds
     """
 
-    def _get_download_url(self, entry) -> Optional[str]:
+    def _get_download_url(self, entry) -> str | None:
         """Extract download link from enclosures or link attribute."""
         for enclosure in entry.get("enclosures", []):
             href = enclosure.get("href", "")
@@ -32,7 +30,7 @@ class CommonRSSWebsite(WebsiteBase):
 
     async def parse_entry(
         self, entry, session: aiohttp.ClientSession
-    ) -> Optional[AnimeResourceInfo]:
+    ) -> AnimeResourceInfo | None:
         title = getattr(entry, "title", None)
         download_url = self._get_download_url(entry)
 

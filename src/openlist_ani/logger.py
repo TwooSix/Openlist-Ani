@@ -17,7 +17,7 @@ def configure_logger(
     rotation: str = "00:00",
     retention: str = "1 week",
     log_name: str = "openlist_ani",
-):
+) -> None:
     """Configure logger with given settings.
 
     Args:

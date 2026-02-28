@@ -12,8 +12,8 @@ from .database import db
 from .logger import configure_logger, logger
 
 
-async def main_assistant():
-    """Main entry point for assistant."""
+async def run_assistant() -> None:
+    """Run the assistant entry point."""
     configure_logger(
         console_level=config.log.level,
         file_level=config.log.file_level,
@@ -71,10 +71,10 @@ async def main_assistant():
         logger.exception(f"Assistant error: {e}")
 
 
-def main():
-    """Sync wrapper for main_assistant."""
+def main() -> None:
+    """Sync wrapper for run_assistant."""
     try:
-        asyncio.run(main_assistant())
+        asyncio.run(run_assistant())
     except KeyboardInterrupt:
         logger.info("Assistant shutdown")
 

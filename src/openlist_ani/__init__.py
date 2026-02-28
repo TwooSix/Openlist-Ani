@@ -3,15 +3,16 @@ import sys
 
 from .config import config
 from .core.download import DownloadManager, OpenListDownloader
+from .core.download.model.task import DownloadTask
 from .core.notification.manager import NotificationManager
 from .core.rss import RSSManager
 from .core.website.model import AnimeResourceInfo
 from .database import db
 from .logger import configure_logger, logger
-from .worker import download_dispatch_worker, rss_poll_worker
+from .worker import dispatch_downloads, poll_rss_feeds
 
 
-async def run():
+async def run() -> None:
     """Main application entry point."""
     # Configure logger from config
     configure_logger(
@@ -52,7 +53,7 @@ async def run():
     )
 
     # Register callback to save completed downloads to database
-    async def save_to_database(task):
+    async def save_to_database(task: DownloadTask) -> None:
         """Save completed download to database."""
         try:
             await db.add_resource(task.resource_info)
@@ -68,7 +69,7 @@ async def run():
         # Start the batch notification worker
         notification_manager.start()
 
-        async def send_notification(task):
+        async def send_notification(task: DownloadTask) -> None:
             """Send notification when download completes."""
             try:
                 anime_name = task.resource_info.anime_name or "Unknown"
@@ -86,9 +87,9 @@ async def run():
     rss_entry_queue: asyncio.Queue[AnimeResourceInfo] = asyncio.Queue()
     active_downloads: set[asyncio.Task[None]] = set()
 
-    poll_task = asyncio.create_task(rss_poll_worker(rss, rss_entry_queue))
+    poll_task = asyncio.create_task(poll_rss_feeds(rss, rss_entry_queue))
     dispatch_task = asyncio.create_task(
-        download_dispatch_worker(manager, rss_entry_queue, active_downloads)
+        dispatch_downloads(manager, rss_entry_queue, active_downloads)
     )
 
     try:

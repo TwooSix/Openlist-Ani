@@ -2,13 +2,14 @@ import asyncio
 
 from .config import config
 from .core.download import DownloadManager
+from .core.parser.model import ParseResult
 from .core.parser.parser import parse_metadata
 from .core.rss import RSSManager
 from .core.website.model import AnimeResourceInfo
 from .logger import logger
 
 
-async def rss_poll_worker(
+async def poll_rss_feeds(
     rss: RSSManager,
     rss_entry_queue: asyncio.Queue[AnimeResourceInfo],
 ) -> None:
@@ -32,7 +33,7 @@ async def rss_poll_worker(
         await asyncio.sleep(config.rss.interval_time)
 
 
-async def download_dispatch_worker(
+async def dispatch_downloads(
     manager: DownloadManager,
     rss_entry_queue: asyncio.Queue[AnimeResourceInfo],
     active_downloads: set[asyncio.Task[None]],
@@ -55,30 +56,38 @@ async def download_dispatch_worker(
         parsed_results = await parse_metadata(batch)
 
         for entry, parse_result in zip(batch, parsed_results):
-            if not parse_result.success:
-                logger.error(
-                    f"Metadata extraction failed for {entry.title}: {parse_result.error}. Skipping."
-                )
-                continue
+            _dispatch_parsed_entry(manager, entry, parse_result, active_downloads)
 
-            meta = parse_result.result
-            entry.anime_name = meta.anime_name
-            entry.season = meta.season
-            entry.episode = meta.episode
-            entry.quality = meta.quality
-            entry.fansub = meta.fansub if entry.fansub is None else entry.fansub
-            entry.languages = meta.languages
-            entry.version = meta.version
 
-            season_str = f"S{meta.season:02d}" if meta.season is not None else "S??"
-            episode_str = f"E{meta.episode:02d}" if meta.episode is not None else "E??"
-            logger.info(
-                f"Parsed: {meta.anime_name} {season_str}{episode_str} - {entry.title}"
-            )
+def _dispatch_parsed_entry(
+    manager: DownloadManager,
+    entry: AnimeResourceInfo,
+    parse_result: ParseResult,
+    active_downloads: set[asyncio.Task[None]],
+) -> None:
+    """Apply parse result to entry and schedule download if successful."""
+    if not parse_result.success:
+        logger.error(
+            f"Metadata extraction failed for {entry.title}: {parse_result.error}. Skipping."
+        )
+        return
 
-            download_task = asyncio.create_task(_download_entry(manager, entry))
-            active_downloads.add(download_task)
-            download_task.add_done_callback(lambda t: active_downloads.discard(t))
+    meta = parse_result.result
+    entry.anime_name = meta.anime_name
+    entry.season = meta.season
+    entry.episode = meta.episode
+    entry.quality = meta.quality
+    entry.fansub = meta.fansub if entry.fansub is None else entry.fansub
+    entry.languages = meta.languages
+    entry.version = meta.version
+
+    season_str = f"S{meta.season:02d}" if meta.season is not None else "S??"
+    episode_str = f"E{meta.episode:02d}" if meta.episode is not None else "E??"
+    logger.info(f"Parsed: {meta.anime_name} {season_str}{episode_str} - {entry.title}")
+
+    download_task = asyncio.create_task(_download_entry(manager, entry))
+    active_downloads.add(download_task)
+    download_task.add_done_callback(lambda t: active_downloads.discard(t))
 
 
 async def _download_entry(manager: DownloadManager, entry: AnimeResourceInfo) -> None:

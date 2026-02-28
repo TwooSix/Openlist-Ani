@@ -1,5 +1,5 @@
 import asyncio
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from ..config import config
 from ..database import db
@@ -26,7 +26,7 @@ class RSSManager:
         self._download_manager = download_manager
         self._factory = WebsiteFactory()
 
-    async def check_update(self) -> List[AnimeResourceInfo]:
+    async def check_update(self) -> list[AnimeResourceInfo]:
         """Check all RSS subscriptions for updates.
 
         Returns:
@@ -51,7 +51,7 @@ class RSSManager:
 
         return new_entries
 
-    def _get_website_handler(self, url: str) -> Optional[WebsiteBase]:
+    def _get_website_handler(self, url: str) -> WebsiteBase | None:
         """Get appropriate handler using WebsiteFactory."""
         try:
             return self._factory.create(url)
@@ -59,7 +59,7 @@ class RSSManager:
             logger.warning(f"Failed to create handler for URL {url}: {e}")
             return None
 
-    def _build_fetch_tasks(self, urls: List[str]) -> List:
+    def _build_fetch_tasks(self, urls: list[str]) -> list:
         """Build RSS fetch coroutine tasks for configured URLs."""
         tasks = []
         for url in urls:
@@ -69,15 +69,15 @@ class RSSManager:
             tasks.append(handler.fetch_feed(url))
         return tasks
 
-    async def _collect_new_entries(self, results: List) -> List[AnimeResourceInfo]:
+    async def _collect_new_entries(self, results: list) -> list[AnimeResourceInfo]:
         """Collect valid and new entries from fetched RSS results."""
-        new_entries: List[AnimeResourceInfo] = []
+        new_entries: list[AnimeResourceInfo] = []
         for result in results:
             if not self._is_valid_feed_result(result):
                 continue
 
             for entry in result:
-                if await self._should_skip_entry(entry):
+                if not await self._is_processable_entry(entry):
                     continue
                 new_entries.append(entry)
         return new_entries
@@ -94,17 +94,17 @@ class RSSManager:
 
         return True
 
-    async def _should_skip_entry(self, entry: AnimeResourceInfo) -> bool:
-        """Check whether an entry should be skipped from download queue."""
+    async def _is_processable_entry(self, entry: AnimeResourceInfo) -> bool:
+        """Check whether an entry is eligible for download."""
         if not entry.download_url:
-            return True
+            return False
 
         if await db.is_downloaded(entry.title):
             logger.debug(f"Skipping already downloaded: {entry.title}")
-            return True
+            return False
 
         if self._download_manager and self._download_manager.is_downloading(entry):
             logger.debug(f"Skipping already queued: {entry.title}")
-            return True
+            return False
 
-        return False
+        return True

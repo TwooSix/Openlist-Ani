@@ -2,7 +2,7 @@
 Search anime resources tool.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import quote_plus
 
 from ...core.website import WebsiteFactory
@@ -29,7 +29,7 @@ class SearchAnimeTool(BaseTool):
         )
 
     @property
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -80,7 +80,7 @@ class SearchAnimeTool(BaseTool):
 
         return self._format_search_results(anime_name, website, results)
 
-    def _build_search_url(self, anime_name: str, website: str) -> Optional[str]:
+    def _build_search_url(self, anime_name: str, website: str) -> str | None:
         """Build search RSS URL based on website type."""
         encoded_name = quote_plus(anime_name)
         website_search_urls = {
@@ -90,7 +90,7 @@ class SearchAnimeTool(BaseTool):
         }
         return website_search_urls.get(website)
 
-    async def _fetch_entries(self, search_url: str) -> Optional[List[Any]]:
+    async def _fetch_entries(self, search_url: str) -> list[Any] | None:
         """Fetch RSS entries through website handler."""
         factory = WebsiteFactory()
         handler = factory.create(search_url)
@@ -98,9 +98,9 @@ class SearchAnimeTool(BaseTool):
             return None
         return await handler.fetch_feed(search_url)
 
-    async def _build_search_results(self, entries: List[Any]) -> List[SearchResult]:
+    async def _build_search_results(self, entries: list[Any]) -> list[SearchResult]:
         """Convert raw feed entries to SearchResult list with download status."""
-        results: List[SearchResult] = []
+        results: list[SearchResult] = []
         for entry in entries:
             is_downloaded = await db.is_downloaded(entry.title)
             results.append(
@@ -116,15 +116,15 @@ class SearchAnimeTool(BaseTool):
         return results
 
     def _split_results(
-        self, results: List[SearchResult]
-    ) -> Tuple[List[SearchResult], List[SearchResult]]:
+        self, results: list[SearchResult]
+    ) -> tuple[list[SearchResult], list[SearchResult]]:
         """Split results into downloaded and new resources."""
         downloaded = [result for result in results if result.is_downloaded]
         new_resources = [result for result in results if not result.is_downloaded]
         return downloaded, new_resources
 
     def _format_search_results(
-        self, anime_name: str, website: str, results: List[SearchResult]
+        self, anime_name: str, website: str, results: list[SearchResult]
     ) -> str:
         """Format search results for assistant response."""
         downloaded, new_resources = self._split_results(results)
@@ -141,7 +141,7 @@ class SearchAnimeTool(BaseTool):
 
         return msg
 
-    def _format_downloaded_resources(self, downloaded: List[SearchResult]) -> str:
+    def _format_downloaded_resources(self, downloaded: list[SearchResult]) -> str:
         """Format downloaded resources section."""
         message = f"📦 Already Downloaded ({len(downloaded)} resources):\n"
         for idx, resource in enumerate(downloaded[:10], 1):
@@ -158,7 +158,7 @@ class SearchAnimeTool(BaseTool):
         )
         return message
 
-    def _format_new_resources(self, new_resources: List[SearchResult]) -> str:
+    def _format_new_resources(self, new_resources: list[SearchResult]) -> str:
         """Format new resources section."""
         message = f"🆕 New Resources ({len(new_resources)} available):\n"
         for idx, resource in enumerate(new_resources[:10], 1):

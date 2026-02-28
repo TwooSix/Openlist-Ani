@@ -109,19 +109,30 @@ class SpecialEpisodeStrategy(MappingStrategy):
                 )
 
         # Try LLM-based matching when both client and resource title are available
-        if ctx.llm_client and ctx.resource_title:
-            season0_episodes = await ctx.tmdb_client.get_season_episodes(ctx.tmdb_id, 0)
-            if season0_episodes:
-                matched = await _llm_match_special_episode(
-                    ctx.llm_client, ctx.resource_title, season0_episodes
-                )
-                if matched is not None:
-                    return EpisodeMapping(
-                        season=0, episode=matched, strategy="special_llm"
-                    )
+        llm_result = await self._try_llm_special_match(ctx)
+        if llm_result is not None:
+            return llm_result
 
         # Fallback: map to S0E1
         return EpisodeMapping(season=0, episode=1, strategy="special_fallback")
+
+    async def _try_llm_special_match(
+        self, ctx: MappingContext
+    ) -> EpisodeMapping | None:
+        """Attempt LLM-based special episode matching against Season 0."""
+        if not ctx.llm_client or not ctx.resource_title:
+            return None
+
+        season0_episodes = await ctx.tmdb_client.get_season_episodes(ctx.tmdb_id, 0)
+        if not season0_episodes:
+            return None
+
+        matched = await _match_special_episode_via_llm(
+            ctx.llm_client, ctx.resource_title, season0_episodes
+        )
+        if matched is not None:
+            return EpisodeMapping(season=0, episode=matched, strategy="special_llm")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -148,37 +159,7 @@ class CourMappingStrategy(MappingStrategy):
         if ctx.fansub_season <= max_tmdb_season:
             return None
 
-        # Build global cours across all TMDB seasons
-        # Each entry: (tmdb_season_number, start_ep, end_ep)
-        global_cours: list[tuple[int, int, int]] = []
-
-        for s in regular:
-            if s.episode_count < 1:
-                continue
-            episodes = await ctx.tmdb_client.get_season_episodes(
-                ctx.tmdb_id, s.season_number
-            )
-            if episodes:
-                cours = detect_cours_from_episodes(episodes)
-                logger.debug(
-                    f"Cour detection: tmdb_id={ctx.tmdb_id} S{s.season_number:02d} → "
-                    f"{len(episodes)} episodes, {len(cours)} cour(s) detected: "
-                    f"{[(c.start_episode, c.end_episode) for c in cours]}"
-                )
-                if len(cours) > 1:
-                    for cour in cours:
-                        global_cours.append(
-                            (s.season_number, cour.start_episode, cour.end_episode)
-                        )
-                else:
-                    global_cours.append((s.season_number, 1, s.episode_count))
-            else:
-                logger.warning(
-                    f"Cour detection: tmdb_id={ctx.tmdb_id} S{s.season_number:02d} → "
-                    f"no episode data, treating as single cour"
-                )
-                global_cours.append((s.season_number, 1, s.episode_count))
-
+        global_cours = await self._build_global_cours(ctx, regular)
         if not global_cours:
             return None
 
@@ -223,6 +204,48 @@ class CourMappingStrategy(MappingStrategy):
             )
 
         return None
+
+    async def _build_global_cours(
+        self,
+        ctx: MappingContext,
+        regular: list[SeasonInfo],
+    ) -> list[tuple[int, int, int]]:
+        """Build global cour list across all TMDB seasons.
+
+        Returns:
+            List of (tmdb_season_number, start_ep, end_ep) tuples.
+        """
+        global_cours: list[tuple[int, int, int]] = []
+
+        for s in regular:
+            if s.episode_count < 1:
+                continue
+            episodes = await ctx.tmdb_client.get_season_episodes(
+                ctx.tmdb_id, s.season_number
+            )
+            if not episodes:
+                logger.warning(
+                    f"Cour detection: tmdb_id={ctx.tmdb_id} S{s.season_number:02d} → "
+                    f"no episode data, treating as single cour"
+                )
+                global_cours.append((s.season_number, 1, s.episode_count))
+                continue
+
+            cours = detect_cours_from_episodes(episodes)
+            logger.debug(
+                f"Cour detection: tmdb_id={ctx.tmdb_id} S{s.season_number:02d} → "
+                f"{len(episodes)} episodes, {len(cours)} cour(s) detected: "
+                f"{[(c.start_episode, c.end_episode) for c in cours]}"
+            )
+            if len(cours) > 1:
+                for cour in cours:
+                    global_cours.append(
+                        (s.season_number, cour.start_episode, cour.end_episode)
+                    )
+            else:
+                global_cours.append((s.season_number, 1, s.episode_count))
+
+        return global_cours
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +299,7 @@ def _map_absolute_episode(
     return None
 
 
-async def _llm_match_special_episode(
+async def _match_special_episode_via_llm(
     llm_client: LLMClient,
     resource_title: str,
     season0_episodes: list[dict[str, Any]],
@@ -316,7 +339,7 @@ async def _llm_match_special_episode(
     ]
 
     try:
-        content = await llm_client.chat_completion(messages)
+        content = await llm_client.complete_chat(messages)
         payload = parse_json_from_markdown(content)
         if not payload:
             return None
@@ -337,7 +360,7 @@ async def _llm_match_special_episode(
 
 
 class EpisodeMapper:
-    def __init__(self, strategies: list[MappingStrategy] | None = None):
+    def __init__(self, strategies: list[MappingStrategy] | None = None) -> None:
         self._strategies = strategies or [
             DirectMatchStrategy(),
             SpecialEpisodeStrategy(),

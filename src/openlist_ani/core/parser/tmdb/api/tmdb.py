@@ -1,25 +1,25 @@
 import asyncio
 import atexit
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
 from cachetools import TTLCache
 
-from openlist_ani.config import config
-from openlist_ani.logger import logger
+from .....config import config
+from .....logger import logger
 
 
 class TMDBClient:
     def __init__(self):
         self.base_url = "https://api.tmdb.org/3"
         self._timeout = aiohttp.ClientTimeout(total=30, connect=30, sock_read=30)
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     @property
     def api_key(self) -> str:
         return config.llm.tmdb_api_key
 
-    async def search_tv_show(self, query: str) -> List[Dict[str, Any]]:
+    async def search_tv_show(self, query: str) -> list[dict[str, Any]]:
         """Search for a TV show on TMDB.
 
         Args:
@@ -50,7 +50,7 @@ class TMDBClient:
             logger.error(f"Unexpected error in TMDB search: {e}")
             return []
 
-    async def get_tv_show_details(self, tmdb_id: int) -> Dict[str, Any]:
+    async def get_tv_show_details(self, tmdb_id: int) -> dict[str, Any]:
         """Get detailed information for a TV show including seasons.
 
         Args:
@@ -80,7 +80,7 @@ class TMDBClient:
 
     async def get_season_episodes(
         self, tmdb_id: int, season_number: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get episode list for a specific season, including air dates.
 
         Args:
@@ -110,13 +110,13 @@ class TMDBClient:
             logger.error(f"Unexpected error getting TMDB season episodes: {e}")
             return []
 
-    async def _get_session(self) -> aiohttp.ClientSession:
+    def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(timeout=self._timeout, trust_env=True)
         return self._session
 
-    async def _request_json(self, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        session = await self._get_session()
+    async def _request_json(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
+        session = self._get_session()
         async with session.get(url, params=params) as response:
             response.raise_for_status()
             return await response.json()
@@ -139,7 +139,7 @@ class CachedTMDBClient(TMDBClient):
         self._details_cache: TTLCache = TTLCache(maxsize=details_maxsize, ttl=ttl)
         self._season_eps_cache: TTLCache = TTLCache(maxsize=details_maxsize, ttl=ttl)
 
-    async def search_tv_show(self, query: str) -> List[Dict[str, Any]]:
+    async def search_tv_show(self, query: str) -> list[dict[str, Any]]:
         cache_key = query.strip().lower()
         cached = self._search_cache.get(cache_key)
         if cached is not None:
@@ -150,7 +150,7 @@ class CachedTMDBClient(TMDBClient):
             self._search_cache[cache_key] = result
         return result
 
-    async def get_tv_show_details(self, tmdb_id: int) -> Dict[str, Any]:
+    async def get_tv_show_details(self, tmdb_id: int) -> dict[str, Any]:
         cached = self._details_cache.get(tmdb_id)
         if cached is not None:
             logger.debug(f"TMDB details cache hit: {tmdb_id}")
@@ -162,7 +162,7 @@ class CachedTMDBClient(TMDBClient):
 
     async def get_season_episodes(
         self, tmdb_id: int, season_number: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         cache_key = (tmdb_id, season_number)
         cached = self._season_eps_cache.get(cache_key)
         if cached is not None:
@@ -174,7 +174,7 @@ class CachedTMDBClient(TMDBClient):
         return result
 
 
-_cached_client: Optional[CachedTMDBClient] = None
+_cached_client: CachedTMDBClient | None = None
 
 
 def get_tmdb_client() -> CachedTMDBClient:
@@ -186,11 +186,13 @@ def get_tmdb_client() -> CachedTMDBClient:
 
 @atexit.register
 def _cleanup_tmdb_client_session() -> None:
+    """Best-effort cleanup of the shared aiohttp session at interpreter exit."""
     client = _cached_client
     if client is None:
         return
 
     try:
         asyncio.run(client.close())
-    except Exception:
+    except RuntimeError:
+        # A loop is already running or other edge-case at shutdown; skip.
         pass

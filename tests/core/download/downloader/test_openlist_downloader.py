@@ -208,7 +208,7 @@ def _setup_download_done(client, task_id="dl-task-1"):
             OpenlistTask(
                 id=task_id,
                 name="download task",
-                state=OpenlistTaskState.Succeeded,
+                state=OpenlistTaskState.SUCCEEDED,
             )
         ]
     )
@@ -401,7 +401,7 @@ class TestOnDownloadingFlow:
                 OpenlistTask(
                     id="transfer-1",
                     name=f"transfer for uuid {task.id}",
-                    state=OpenlistTaskState.Running,
+                    state=OpenlistTaskState.RUNNING,
                 )
             ]
         )
@@ -476,8 +476,8 @@ class TestBuildFinalFilenameEnumFields:
     """Regression tests: quality and languages must be embedded as plain strings.
 
     Before the fix, (str, Enum) caused format() to produce repr-style output
-    such as "<VideoQuality.k1080p: '1080p'>" or
-    "[<LanguageType.kChs: '简'>, <LanguageType.kJp: '日'>]"
+    such as "<VideoQuality.Q1080P: '1080p'>" or
+    "[<LanguageType.CHS: '简'>, <LanguageType.JP: '日'>]"
     instead of "1080p" / "简日".
     """
 
@@ -487,7 +487,7 @@ class TestBuildFinalFilenameEnumFields:
             "{anime_name} S{season:02d}E{episode:02d} {quality}",
             with_mock_client=False,
         )
-        task = _make_task(episode=5, quality=VideoQuality.k1080p)
+        task = _make_task(episode=5, quality=VideoQuality.Q1080P)
         result = d._build_final_filename(task, "MyAnime", 1, 5)
         assert result == "MyAnime S01E05 1080p.mkv"
         _assert_no_enum_repr(result)
@@ -495,11 +495,11 @@ class TestBuildFinalFilenameEnumFields:
     @pytest.mark.parametrize(
         ("quality", "value_str"),
         [
-            (VideoQuality.k2160p, "2160p"),
-            (VideoQuality.k1080p, "1080p"),
-            (VideoQuality.k720p, "720p"),
-            (VideoQuality.k480p, "480p"),
-            (VideoQuality.kUnknown, "unknown"),
+            (VideoQuality.Q2160P, "2160p"),
+            (VideoQuality.Q1080P, "1080p"),
+            (VideoQuality.Q720P, "720p"),
+            (VideoQuality.Q480P, "480p"),
+            (VideoQuality.UNKNOWN, "unknown"),
         ],
     )
     def test_quality_all_variants_in_format(self, quality, value_str):
@@ -518,7 +518,7 @@ class TestBuildFinalFilenameEnumFields:
             "{anime_name} S{season:02d}E{episode:02d} [{languages}]",
             with_mock_client=False,
         )
-        task = _make_task(episode=5, languages=[LanguageType.kChs, LanguageType.kJp])
+        task = _make_task(episode=5, languages=[LanguageType.CHS, LanguageType.JP])
         result = d._build_final_filename(task, "MyAnime", 1, 5)
         assert result == "MyAnime S01E05 [简日].mkv"
         _assert_no_enum_repr(result)
@@ -526,8 +526,8 @@ class TestBuildFinalFilenameEnumFields:
     @pytest.mark.parametrize(
         ("languages", "expected_contains", "expected_not_contains"),
         [
-            ([LanguageType.kCht], "[繁]", None),
-            ([LanguageType.kChs, LanguageType.kJp], None, "[]"),
+            ([LanguageType.CHT], "[繁]", None),
+            ([LanguageType.CHS, LanguageType.JP], None, "[]"),
         ],
     )
     def test_languages_variants(
@@ -551,8 +551,8 @@ class TestBuildFinalFilenameEnumFields:
             "{anime_name} {quality} [{languages}]", with_mock_client=False
         )
         task = _make_task(
-            quality=VideoQuality.k1080p,
-            languages=[LanguageType.kChs, LanguageType.kCht],
+            quality=VideoQuality.Q1080P,
+            languages=[LanguageType.CHS, LanguageType.CHT],
         )
         result = d._build_final_filename(task, "MyAnime", 1, 3)
         assert result == "MyAnime 1080p [简繁].mkv"
@@ -565,8 +565,8 @@ class TestBuildFinalFilenameEnumFields:
         )
         task = _make_task(
             episode=5,
-            quality=VideoQuality.k1080p,
-            languages=[LanguageType.kChs],
+            quality=VideoQuality.Q1080P,
+            languages=[LanguageType.CHS],
         )
         result = d._build_final_filename(task, "MyAnime", 1, 5)
         assert result == "MyAnime S01E05.mkv"

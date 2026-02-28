@@ -1,10 +1,9 @@
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import aiohttp
 
-from openlist_ani.logger import logger
-
+from .....logger import logger
 from .model import FileEntry, OfflineDownloadTool, OpenlistTask
 
 
@@ -43,7 +42,7 @@ class OpenListClient:
             f"OpenListClient initialized with max {max_concurrent_requests} concurrent requests"
         )
 
-    async def _request(self, method: str, url: str, **kwargs) -> Optional[dict]:
+    async def _request(self, method: str, url: str, **kwargs) -> dict | None:
         """Perform an HTTP request with timeout + retries for transient network errors."""
         async with self._semaphore:
             last_exc: Exception | None = None
@@ -76,11 +75,11 @@ class OpenListClient:
             logger.error(f"Request error to {url}: {last_exc}")
             return None
 
-    async def _post(self, url: str, json: dict) -> Optional[dict]:
+    async def _post(self, url: str, json: dict) -> dict | None:
         """Helper to perform post request with aiohttp"""
         return await self._request("POST", url, json=json)
 
-    async def _get(self, url: str, params: dict = None) -> Optional[dict]:
+    async def _get(self, url: str, params: dict = None) -> dict | None:
         """Helper to perform get request with aiohttp"""
         return await self._request("GET", url, params=params)
 
@@ -101,11 +100,11 @@ class OpenListClient:
 
     async def add_offline_download(
         self,
-        urls: List[str],
+        urls: list[str],
         path: str,
-        tool: Union[str, OfflineDownloadTool],
+        tool: str | OfflineDownloadTool,
         delete_policy: str = "delete_always",
-    ) -> Optional[List[OpenlistTask]]:
+    ) -> list[OpenlistTask] | None:
         """
         Add offline download tasks.
         :param urls: List of download URLs (http/magnet/torrent)
@@ -135,7 +134,7 @@ class OpenListClient:
             logger.error(f"Failed to add offline download: {msg}")
             return None
 
-    async def get_offline_download_tools(self) -> Optional[List[Dict[str, Any]]]:
+    async def get_offline_download_tools(self) -> list[dict[str, Any]] | None:
         """
         Get available offline download tools (public).
         :return: List of tools or None on error.
@@ -149,7 +148,7 @@ class OpenListClient:
             logger.error(f"Failed to get offline download tools: {msg}")
             return None
 
-    async def get_offline_download_done(self) -> Optional[List[OpenlistTask]]:
+    async def get_offline_download_done(self) -> list[OpenlistTask] | None:
         """
         Get list of completed offline download tasks.
         Endpoint: GET /api/task/offline_download/done
@@ -165,7 +164,7 @@ class OpenListClient:
             logger.error(f"Failed to fetch done offline download tasks: {msg}")
             return None
 
-    async def get_offline_download_undone(self) -> Optional[List[OpenlistTask]]:
+    async def get_offline_download_undone(self) -> list[OpenlistTask] | None:
         """
         Get list of not-yet-completed offline download tasks.
         Endpoint: GET /api/task/offline_download/undone
@@ -183,7 +182,7 @@ class OpenListClient:
 
     async def get_offline_download_transfer_done(
         self,
-    ) -> Optional[List[OpenlistTask]]:
+    ) -> list[OpenlistTask] | None:
         """
         Get list of completed offline download transfer tasks.
         Endpoint: GET /api/task/offline_download_transfer/done
@@ -201,7 +200,7 @@ class OpenListClient:
 
     async def get_offline_download_transfer_undone(
         self,
-    ) -> Optional[List[OpenlistTask]]:
+    ) -> list[OpenlistTask] | None:
         """
         Get list of not-yet-completed offline download transfer tasks.
         Endpoint: GET /api/task/offline_download_transfer/undone
@@ -219,7 +218,7 @@ class OpenListClient:
             )
             return None
 
-    async def list_files(self, path: str) -> Optional[List[FileEntry]]:
+    async def list_files(self, path: str) -> list[FileEntry] | None:
         """List files in a directory."""
         if not self.token:
             return None
@@ -278,7 +277,7 @@ class OpenListClient:
             logger.error(f"Failed to create directory: {msg}")
             return False
 
-    async def move_file(self, src_dir: str, dst_dir: str, filenames: List[str]) -> bool:
+    async def move_file(self, src_dir: str, dst_dir: str, filenames: list[str]) -> bool:
         """Move files from source directory to destination directory."""
         if not self.token:
             return False
@@ -295,7 +294,7 @@ class OpenListClient:
             logger.error(f"Failed to move files: {msg}")
             return False
 
-    async def remove_path(self, dir_path: str, names: List[str]) -> bool:
+    async def remove_path(self, dir_path: str, names: list[str]) -> bool:
         """Remove files or directories."""
         if not self.token:
             return False

@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import aiosqlite
 
@@ -13,7 +12,7 @@ class AniDatabase:
     def __init__(self, db_path: Path = DB_FILE):
         self.db_path = db_path
 
-    async def init(self):
+    async def init(self) -> None:
         """Initialize the database table if it doesn't exist."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -50,8 +49,8 @@ class AniDatabase:
     async def add_resource(
         self,
         resource_info: AnimeResourceInfo,
-        downloaded_at: Optional[datetime] = None,
-    ):
+        downloaded_at: datetime | None = None,
+    ) -> None:
         """Mark a resource as downloaded with complete information."""
         async with aiosqlite.connect(self.db_path) as db:
             try:

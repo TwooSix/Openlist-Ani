@@ -6,7 +6,7 @@ Supports hot-reloading and Pydantic validation.
 import os
 import tomllib
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 from tomlkit import dumps as toml_dumps
@@ -16,7 +16,7 @@ from .logger import logger
 
 
 class RSSConfig(BaseModel):
-    urls: List[str] = Field(default_factory=list)
+    urls: list[str] = Field(default_factory=list)
     interval_time: int = 300  # RSS fetch interval in seconds (default: 5 minutes)
 
 
@@ -51,14 +51,14 @@ class NotificationConfig(BaseModel):
     batch_interval: float = (
         300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
     )
-    bots: List[BotConfig] = Field(default_factory=list)
+    bots: list[BotConfig] = Field(default_factory=list)
 
 
 class TelegramAssistantConfig(BaseModel):
     """Configuration for Telegram assistant bot."""
 
     bot_token: str = ""
-    allowed_users: List[int] = Field(default_factory=list)
+    allowed_users: list[int] = Field(default_factory=list)
 
 
 class AssistantConfig(BaseModel):

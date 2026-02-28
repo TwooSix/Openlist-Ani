@@ -19,18 +19,18 @@ class TestResourceTitleParseResult:
             anime_name="葬送のフリーレン",
             season=1,
             episode=5,
-            quality=VideoQuality.k1080p,
+            quality=VideoQuality.Q1080P,
             fansub="喵萌奶茶屋",
-            languages=[LanguageType.kChs, LanguageType.kJp],
+            languages=[LanguageType.CHS, LanguageType.JP],
             version=1,
             tmdb_id=209867,
         )
         assert result.anime_name == "葬送のフリーレン"
         assert result.season == 1
         assert result.episode == 5
-        assert result.quality == VideoQuality.k1080p
+        assert result.quality == VideoQuality.Q1080P
         assert result.fansub == "喵萌奶茶屋"
-        assert result.languages == [LanguageType.kChs, LanguageType.kJp]
+        assert result.languages == [LanguageType.CHS, LanguageType.JP]
         assert result.version == 1
         assert result.tmdb_id == 209867
 
@@ -54,9 +54,9 @@ class TestResourceTitleParseResult:
             anime_name="Test",
             season=0,
             episode=1,
-            quality=VideoQuality.kUnknown,
+            quality=VideoQuality.UNKNOWN,
             fansub=None,
-            languages=[LanguageType.kUnknown],
+            languages=[LanguageType.UNKNOWN],
             version=1,
         )
         assert result.tmdb_id is None
@@ -78,8 +78,8 @@ class TestResourceTitleParseResult:
         )
         result = ResourceTitleParseResult.model_validate_json(raw)
         assert result.anime_name == "Frieren"
-        assert result.quality == VideoQuality.k1080p
-        assert result.languages == [LanguageType.kChs, LanguageType.kJp]
+        assert result.quality == VideoQuality.Q1080P
+        assert result.languages == [LanguageType.CHS, LanguageType.JP]
         assert result.version == 2
         assert result.tmdb_id == 12345
 
@@ -247,9 +247,9 @@ class TestResourceTitleParseResult:
             anime_name="Test",
             season=2,
             episode=10,
-            quality=VideoQuality.k2160p,
+            quality=VideoQuality.Q2160P,
             fansub="Group",
-            languages=[LanguageType.kChs, LanguageType.kCht],
+            languages=[LanguageType.CHS, LanguageType.CHT],
             version=2,
             tmdb_id=999,
         )

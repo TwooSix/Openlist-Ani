@@ -1,7 +1,6 @@
 """Tests for CommonRSSWebsite entry parsing."""
 
 from types import SimpleNamespace
-from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,8 +11,8 @@ from openlist_ani.core.website.common import CommonRSSWebsite
 def _make_entry(
     title: str = "Test Anime - 01",
     download_url: str = "magnet:?xt=urn:btih:abc123",
-    enclosures: Optional[list] = None,
-    link: Optional[str] = None,
+    enclosures: list | None = None,
+    link: str | None = None,
 ) -> SimpleNamespace:
     entry = SimpleNamespace(title=title, link=link or "")
     enc = enclosures or []

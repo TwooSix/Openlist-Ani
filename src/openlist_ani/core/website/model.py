@@ -1,22 +1,21 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional
 
 
 class VideoQuality(StrEnum):
-    k2160p = "2160p"
-    k1080p = "1080p"
-    k720p = "720p"
-    k480p = "480p"
-    kUnknown = "unknown"
+    Q2160P = "2160p"
+    Q1080P = "1080p"
+    Q720P = "720p"
+    Q480P = "480p"
+    UNKNOWN = "unknown"
 
 
 class LanguageType(StrEnum):
-    kChs = "简"
-    kCht = "繁"
-    kJp = "日"
-    kEng = "英"
-    kUnknown = "未知"
+    CHS = "简"
+    CHT = "繁"
+    JP = "日"
+    ENG = "英"
+    UNKNOWN = "未知"
 
 
 @dataclass
@@ -27,11 +26,11 @@ class AnimeResourceInfo:
 
     title: str
     download_url: str
-    anime_name: Optional[str] = None
-    season: Optional[int] = None
-    episode: Optional[int] = None
-    fansub: Optional[str] = None
-    quality: Optional[VideoQuality] = VideoQuality.kUnknown
+    anime_name: str | None = None
+    season: int | None = None
+    episode: int | None = None
+    fansub: str | None = None
+    quality: VideoQuality | None = VideoQuality.UNKNOWN
     languages: list[LanguageType] = field(default_factory=list)
     version: int = 1
 
