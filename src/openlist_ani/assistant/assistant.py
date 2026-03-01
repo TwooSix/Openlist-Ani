@@ -35,19 +35,30 @@ class AniAssistant:
 ## Key Rules:
 - Search first if no download URL is available
 - Parse RSS before downloading from feeds
-- NEVER download resources marked as "✅ Downloaded"
+- NEVER download resources marked as "Downloaded"
 - Use database to check download history before downloading
+- If tool args are uncertain or conflicting, ask user first; do NOT call tools
+- When a tool returns confirmation/mismatch, relay to user verbatim; NEVER retry with guessed params
 - Respond in the user's language
 - Think step by step: break complex requests into atomic tool calls
-- Combine tools creatively to fulfill user requests
 
 ## Database Schema:
 Table: `resources`
 Columns: id, url, title, anime_name, season, episode, fansub, quality, languages, version, downloaded_at
 
 ## Pagination:
-Do NOT add LIMIT/OFFSET to SQL queries — pagination is handled automatically.
-If has_next_page is true, request next page."""
+Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next page.
+
+## Bangumi:
+- To find subject_id by name: call get_bangumi_collection first
+- update_bangumi_collection: if tool returns confirmation/mismatch, relay to user and STOP
+- recommend_anime / get_bangumi_reviews / get_bangumi_calendar / get_bangumi_subject for info
+
+## Mikan (mikanani.me):
+- mikan_search_bangumi: find anime by keyword → Mikan ID
+- mikan_subscribe_bangumi: pass subtitle_group_name, tool auto-resolves ID
+- mikan_unsubscribe_bangumi: unsubscribe
+- Search first to get Mikan ID, then subscribe"""
 
     def __init__(self, download_manager: DownloadManager):
         """Initialize assistant.

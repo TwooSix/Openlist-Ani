@@ -5,6 +5,7 @@ Entry point for assistant module.
 import asyncio
 
 from .assistant import TelegramAssistant
+from .assistant.tools import close_tool_clients
 from .config import config
 from .core.download import DownloadManager
 from .core.download.downloader import OpenListDownloader
@@ -69,6 +70,8 @@ async def run_assistant() -> None:
         logger.info("Assistant stopped by user")
     except Exception as e:
         logger.exception(f"Assistant error: {e}")
+    finally:
+        await close_tool_clients()
 
 
 def main() -> None:

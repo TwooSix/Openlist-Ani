@@ -45,6 +45,13 @@ max_history_messages = 10  # Maximum number of conversation history messages to 
 bot_token = ""  # Telegram bot token from @BotFather
 allowed_users = []  # List of allowed Telegram user IDs (empty = allow all)
 
+[bangumi]
+access_token = ""  # Bangumi API Access Token (also supports env var BANGUMI_TOKEN)
+
+[mikan]
+username = ""  # Mikan (mikanani.me) account username
+password = ""  # Mikan account password
+
 [log]
 level = "INFO"  # Console log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 file_level = "INFO"  # File log level

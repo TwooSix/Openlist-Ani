@@ -6,9 +6,24 @@ Provides tool classes for assistant function calling.
 
 from ...core.download import DownloadManager
 from ...logger import logger
+from .bangumi_tool import (
+    BangumiCalendarTool,
+    BangumiCollectionTool,
+    BangumiCollectTool,
+    BangumiRecommendTool,
+    BangumiReviewsTool,
+    BangumiSubjectTool,
+)
 from .base import BaseTool
 from .db_tool import ExecuteSqlTool
 from .download_tool import DownloadResourceTool
+from .helper.bangumi import close_bangumi_client
+from .helper.mikan import close_mikan_client
+from .mikan_tool import (
+    MikanSearchTool,
+    MikanSubscribeTool,
+    MikanUnsubscribeTool,
+)
 from .parse_rss import ParseRssTool
 from .search_anime import SearchAnimeTool
 
@@ -18,6 +33,15 @@ _kToolClasses: list[type[BaseTool]] = [
     ParseRssTool,
     DownloadResourceTool,
     ExecuteSqlTool,
+    BangumiCalendarTool,
+    BangumiSubjectTool,
+    BangumiCollectionTool,
+    BangumiReviewsTool,
+    BangumiCollectTool,
+    BangumiRecommendTool,
+    MikanSearchTool,
+    MikanSubscribeTool,
+    MikanUnsubscribeTool,
 ]
 
 
@@ -144,14 +168,37 @@ async def handle_tool_call(
     return await registry.handle_tool_call(tool_name, arguments)
 
 
+async def close_tool_clients() -> None:
+    """Close shared HTTP clients used by tool modules."""
+    try:
+        await close_bangumi_client()
+    except Exception as exc:
+        logger.warning(f"Failed to close Bangumi client cleanly: {exc}")
+
+    try:
+        await close_mikan_client()
+    except Exception as exc:
+        logger.warning(f"Failed to close Mikan client cleanly: {exc}")
+
+
 __all__ = [
     "BaseTool",
     "SearchAnimeTool",
     "ParseRssTool",
     "DownloadResourceTool",
     "ExecuteSqlTool",
+    "BangumiCalendarTool",
+    "BangumiSubjectTool",
+    "BangumiCollectionTool",
+    "BangumiReviewsTool",
+    "BangumiCollectTool",
+    "BangumiRecommendTool",
+    "MikanSearchTool",
+    "MikanSubscribeTool",
+    "MikanUnsubscribeTool",
     "ToolRegistry",
     "get_registry",
     "get_assistant_tools",
     "handle_tool_call",
+    "close_tool_clients",
 ]

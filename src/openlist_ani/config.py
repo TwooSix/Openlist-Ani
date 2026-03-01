@@ -80,6 +80,21 @@ class LogConfig(BaseModel):
     retention: str = "1 week"  # How long to keep old logs
 
 
+class BangumiConfig(BaseModel):
+    """Configuration for Bangumi API integration."""
+
+    access_token: str = (
+        ""  # Bangumi API Access Token (also supports env var BANGUMI_TOKEN)
+    )
+
+
+class MikanConfig(BaseModel):
+    """Configuration for Mikan (mikanani.me) integration."""
+
+    username: str = ""  # Mikan account username
+    password: str = ""  # Mikan account password
+
+
 class ProxyConfig(BaseModel):
     """Configuration for proxy settings."""
 
@@ -95,6 +110,8 @@ class UserConfig(BaseModel):
     assistant: AssistantConfig = AssistantConfig()
     log: LogConfig = LogConfig()
     proxy: ProxyConfig = ProxyConfig()
+    bangumi: BangumiConfig = BangumiConfig()
+    mikan: MikanConfig = MikanConfig()
 
 
 class ConfigManager:
@@ -307,6 +324,19 @@ class ConfigManager:
     @property
     def proxy(self) -> ProxyConfig:
         return self.data.proxy
+
+    @property
+    def bangumi(self) -> BangumiConfig:
+        return self.data.bangumi
+
+    @property
+    def bangumi_token(self) -> str:
+        """Get Bangumi token with env var override."""
+        return os.environ.get("BANGUMI_TOKEN", "") or self.bangumi.access_token
+
+    @property
+    def mikan(self) -> MikanConfig:
+        return self.data.mikan
 
     async def validate_openlist(self) -> bool:
         """

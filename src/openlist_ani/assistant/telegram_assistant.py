@@ -134,6 +134,12 @@ Start chatting with me!"""
                 "search_anime_resources": "🔍 正在搜索动画资源...",
                 "parse_rss": "📡 正在解析 RSS 订阅...",
                 "execute_sql_query": "💾 正在查询下载历史数据库...",
+                "get_bangumi_calendar": "📅 正在获取每日放送...",
+                "get_bangumi_subject": "📖 正在查询番剧详情...",
+                "get_bangumi_collection": "📚 正在获取用户收藏...",
+                "get_bangumi_reviews": "💬 正在获取番剧评论...",
+                "update_bangumi_collection": "✏️ 正在更新收藏状态...",
+                "recommend_anime": "🎯 正在分析用户喜好...",
             }
             return tool_status_messages.get(tool_name, f"⚙️ 正在执行 {tool_name}...")
 
