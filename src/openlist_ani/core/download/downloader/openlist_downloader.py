@@ -9,6 +9,7 @@ download functionality.
 import asyncio
 import os
 import re
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -101,6 +102,7 @@ class OpenListDownloader(BaseDownloader):
 
     _TRANSFER_CHECK_MAX_RETRIES = 3
     _TRANSFER_CHECK_INTERVAL_SECONDS = 5
+    _FILE_DETECT_TIMEOUT_SECONDS = 30
 
     def __init__(
         self,
@@ -191,6 +193,16 @@ class OpenListDownloader(BaseDownloader):
 
         downloaded_filename = await self._detect_downloaded_file(task)
         if not downloaded_filename:
+            detect_start_key = "_file_detect_start_time"
+            now = time.monotonic()
+            start_time = task.extra_data.get(detect_start_key)
+            if start_time is None:
+                task.extra_data[detect_start_key] = now
+            elif now - start_time >= self._FILE_DETECT_TIMEOUT_SECONDS:
+                return HandlerResult.fail(
+                    f"Timed out waiting for downloaded file after "
+                    f"{self._FILE_DETECT_TIMEOUT_SECONDS}s"
+                )
             return HandlerResult.poll(delay=10)
 
         task.downloaded_filename = downloaded_filename
