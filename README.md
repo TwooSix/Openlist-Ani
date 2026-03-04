@@ -52,8 +52,8 @@ offline_download_tool = "QBITTORRENT"  # 离线下载工具
 
 [llm]
 openai_api_key = ""                 # API Key
-openai_base_url = "https://api.openai.com/v1"
-openai_model = "gpt-4o"            # 推荐 gemini-2.0-flash
+openai_base_url = "https://api.deepseek.com/v1"
+openai_model = "deepseek-chat"
 ```
 
 > 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E)
