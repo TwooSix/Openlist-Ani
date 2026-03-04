@@ -1,7 +1,7 @@
 [project]
 name = "openlist-ani"
-version = "1.0.0.dev260225"
-description = "Add your description here"
+version = "1.0.0.dev260304"
+description = "Automatically fetch anime updates from RSS feeds and download them offline to the corresponding cloud storage via OpenList."
 readme = "README.md"
 authors = [{ name = "TwoSix", email = "nitiaob@qq.com" }]
 requires-python = ">=3.11"
