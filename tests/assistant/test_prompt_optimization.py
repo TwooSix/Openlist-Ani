@@ -8,7 +8,6 @@ from openlist_ani.assistant.tools.search_anime import SearchAnimeTool
 
 
 class TestSystemPromptOptimization:
-
     def test_system_prompt_is_compact(self):
         """System prompt should be significantly shorter than the old ~1200 token version."""
         prompt = AniAssistant.DEFAULT_SYSTEM_PROMPT
@@ -29,7 +28,6 @@ class TestSystemPromptOptimization:
 
 
 class TestToolDescriptions:
-
     def test_search_tool_has_scenario_guidance(self):
         tool = SearchAnimeTool()
         desc = tool.description

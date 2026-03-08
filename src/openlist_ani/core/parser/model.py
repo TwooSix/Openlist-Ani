@@ -54,7 +54,10 @@ class SeasonInfo(BaseModel):
         return sorted(
             [
                 SeasonInfo(
-                    **{k: s.get(k, default) for k, default in int_field_defaults.items()}
+                    **{
+                        k: s.get(k, default)
+                        for k, default in int_field_defaults.items()
+                    }
                 )
                 for s in raw_seasons
             ],

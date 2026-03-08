@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from ..config import config
 from ..core.download import DownloadManager
 from ..logger import logger
+from .memory import AssistantMemoryManager
 from .tools import get_assistant_tools, handle_tool_call
 
 
@@ -73,12 +74,18 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
         self.max_history = config.assistant.max_history_messages
         self.system_prompt = self.DEFAULT_SYSTEM_PROMPT
         self.client = self._create_openai_client()
+        self.memory_manager = AssistantMemoryManager(
+            client=self.client,
+            model=self.model,
+            recent_message_limit=self.max_history,
+        )
 
     async def process_message(
         self,
         user_message: str,
         history: list[dict] | None = None,
         status_callback: StatusCallback | None = None,
+        memory_key: str | None = None,
     ) -> str:
         """Process user message and return response.
 
@@ -99,11 +106,13 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
 
         try:
             logger.info(f"Assistant: Processing message: {user_message}")
-            messages = self._build_messages(user_message, history)
+            messages = await self._build_messages(user_message, history, memory_key)
 
             await self._emit_status(status_callback, AssistantStatus.THINKING)
 
-            return await self._run_conversation_loop(messages, status_callback)
+            response = await self._run_conversation_loop(messages, status_callback)
+            await self.memory_manager.remember_turn(memory_key, user_message, response)
+            return response
 
         except Exception as e:
             logger.exception("Assistant: Error processing message")
@@ -209,21 +218,36 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
             or "Operation completed but unable to generate response"
         )
 
-    def _build_messages(
+    async def _build_messages(
         self,
         user_message: str,
         history: list[dict] | None = None,
+        memory_key: str | None = None,
     ) -> list[dict]:
         """Build the message list with system prompt, history, and user message."""
         messages = [{"role": "system", "content": self.system_prompt}]
 
-        filtered_history = self._filter_history(history)
+        messages.extend(
+            await self.memory_manager.build_memory_messages(memory_key, user_message)
+        )
+
+        effective_history = history
+        if effective_history is None and memory_key:
+            effective_history = await self.memory_manager.load_recent_history(
+                memory_key
+            )
+
+        filtered_history = self._filter_history(effective_history)
         if filtered_history:
             messages.extend(filtered_history)
             messages.append({"role": "system", "content": self.HISTORY_FOCUS_PROMPT})
 
         messages.append({"role": "user", "content": user_message})
         return messages
+
+    async def clear_memory(self, memory_key: str | None) -> None:
+        """Clear persisted memory for the given conversation key."""
+        await self.memory_manager.clear_memory(memory_key)
 
     def _filter_history(self, history: list[dict] | None) -> list[dict]:
         """Keep only recent valid user/assistant history messages."""
@@ -242,6 +266,19 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
         payload: dict[str, Any] = {"tool_name": tool_name}
         if tool_name == "download_resource" and "title" in arguments:
             payload["title"] = arguments["title"]
+        if tool_name == "search_anime_resources":
+            payload["website"] = arguments.get("website")
+        if tool_name == "parse_rss":
+            payload["rss_url"] = arguments.get("rss_url")
+        if tool_name in {
+            "mikan_search_bangumi",
+            "mikan_subscribe_bangumi",
+            "mikan_unsubscribe_bangumi",
+        }:
+            if "keyword" in arguments:
+                payload["keyword"] = arguments["keyword"]
+            if "bangumi_id" in arguments:
+                payload["bangumi_id"] = arguments["bangumi_id"]
         return payload
 
     async def _emit_status(

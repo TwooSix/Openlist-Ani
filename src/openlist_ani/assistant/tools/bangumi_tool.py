@@ -381,8 +381,7 @@ class BangumiCollectTool(BaseTool):
                 "collection_type": {
                     "type": "integer",
                     "description": (
-                        "Collection type: 1=Wish, 2=Done, "
-                        "3=Doing, 4=OnHold, 5=Dropped"
+                        "Collection type: 1=Wish, 2=Done, 3=Doing, 4=OnHold, 5=Dropped"
                     ),
                 },
                 "ep_status": {
@@ -460,15 +459,17 @@ class BangumiCollectTool(BaseTool):
 
         client = _get_client()
         try:
-            matched_episode_ids, missing_episode_numbers, rollback_episode_ids = (
-                await self._pre_validate_episodes(
-                    client,
-                    subject_id,
-                    requested_episode_numbers,
-                    ep_status,
-                    episode_number,
-                    episode_numbers,
-                )
+            (
+                matched_episode_ids,
+                missing_episode_numbers,
+                rollback_episode_ids,
+            ) = await self._pre_validate_episodes(
+                client,
+                subject_id,
+                requested_episode_numbers,
+                ep_status,
+                episode_number,
+                episode_numbers,
             )
             if isinstance(matched_episode_ids, str):
                 return matched_episode_ids

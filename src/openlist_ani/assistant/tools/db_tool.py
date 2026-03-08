@@ -138,9 +138,9 @@ class ExecuteSqlTool(BaseTool):
             }
 
             if has_next:
-                response["pagination"][
-                    "hint"
-                ] = f"⚠️ There are more results! Call this function again with page={page + 1} to see the next page."
+                response["pagination"]["hint"] = (
+                    f"⚠️ There are more results! Call this function again with page={page + 1} to see the next page."
+                )
 
             return json.dumps(response, ensure_ascii=False, default=str)
 

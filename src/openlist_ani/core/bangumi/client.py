@@ -283,8 +283,7 @@ class BangumiClient:
 
         self._collection_cache[cache_key] = all_entries
         logger.info(
-            f"Bangumi: Fetched {len(all_entries)} collection entries "
-            f"for @{username}"
+            f"Bangumi: Fetched {len(all_entries)} collection entries for @{username}"
         )
         return all_entries
 
@@ -308,8 +307,7 @@ class BangumiClient:
         items = [parse_related_subject(item) for item in (data or [])]
         self._related_cache[subject_id] = items
         logger.debug(
-            f"Bangumi: Fetched {len(items)} related subjects "
-            f"for subject {subject_id}"
+            f"Bangumi: Fetched {len(items)} related subjects for subject {subject_id}"
         )
         return items
 
@@ -442,8 +440,7 @@ class BangumiClient:
                 break
 
         logger.debug(
-            f"Bangumi: Fetched {len(all_episodes)} episodes "
-            f"for subject {subject_id}"
+            f"Bangumi: Fetched {len(all_episodes)} episodes for subject {subject_id}"
         )
         return all_episodes
 

@@ -507,9 +507,9 @@ class TestBuildFinalFilenameEnumFields:
         d = _make_downloader("{anime_name} [{quality}]", with_mock_client=False)
         task = _make_task(quality=quality)
         result = d._build_final_filename(task, "A", 1, 1)
-        assert (
-            f"[{value_str}]" in result
-        ), f"Expected '[{value_str}]' in '{result}' for {quality!r}"
+        assert f"[{value_str}]" in result, (
+            f"Expected '[{value_str}]' in '{result}' for {quality!r}"
+        )
         _assert_no_enum_repr(result)
 
     def test_languages_in_format_is_joined_plain_string(self):

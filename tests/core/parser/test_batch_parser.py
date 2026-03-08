@@ -44,7 +44,6 @@ BATCH_SUCCESS_JSON = json.dumps(
 
 
 class TestParseBatchResults:
-
     def test_all_success(self):
         content = f"```json\n{BATCH_SUCCESS_JSON}\n```"
         results = extract_batch_results(content, 2)
@@ -143,7 +142,6 @@ class TestParseBatchResults:
 
 
 class TestParseMetadataBatch:
-
     async def test_returns_failed_list_when_no_api_key(self):
         entries = [_make_entry("Title A"), _make_entry("Title B")]
         with patch("openlist_ani.core.parser.parser.config") as mock_config:

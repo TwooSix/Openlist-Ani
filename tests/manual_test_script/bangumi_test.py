@@ -185,9 +185,9 @@ async def _test_profile_generation(bt_module) -> None:
         llm_analysis = profile.get("llm_analysis", {})
 
         if profile["total_rated"] > 0:
-            assert (
-                1.0 <= profile["avg_rating"] <= 10.0
-            ), f"Avg rating {profile['avg_rating']} out of range"
+            assert 1.0 <= profile["avg_rating"] <= 10.0, (
+                f"Avg rating {profile['avg_rating']} out of range"
+            )
 
         assert len(profile["collection_stats"]) > 0, "No collection stats"
 
@@ -223,9 +223,9 @@ async def _test_profile_incremental(bt_module) -> None:
         avg2 = profile2["avg_rating"]
         rated2 = profile2["total_rated"]
 
-        assert (
-            synced1 == synced2
-        ), f"Synced IDs differ: {len(synced1)} vs {len(synced2)}"
+        assert synced1 == synced2, (
+            f"Synced IDs differ: {len(synced1)} vs {len(synced2)}"
+        )
         assert avg1 == avg2, f"Avg rating changed: {avg1} -> {avg2}"
         assert rated1 == rated2, f"Total rated changed: {rated1} -> {rated2}"
 

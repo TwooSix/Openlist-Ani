@@ -1215,9 +1215,9 @@ class TestEndToEndRecommendation:
         # Extract only the candidate list (between "## Candidate Anime" and "---")
         after_header = result.split("## Candidate Anime")[-1]
         candidate_lines = after_header.split("---")[0]
-        assert (
-            "[100]" not in candidate_lines
-        ), "Collected anime 100 should be filtered from candidates"
+        assert "[100]" not in candidate_lines, (
+            "Collected anime 100 should be filtered from candidates"
+        )
         assert "已收藏动画" not in candidate_lines
         assert "全新动画" in candidate_lines
         assert "另一部新番" in candidate_lines
@@ -1557,7 +1557,9 @@ class TestUserProfileGeneration:
             ),
         ]
 
-        with (patch.object(profile_helper, "_analyze_with_llm") as mock_llm,):
+        with (
+            patch.object(profile_helper, "_analyze_with_llm") as mock_llm,
+        ):
             profile = await profile_helper._build_or_update_profile(mock_client)
 
         # LLM should NOT be called when there are no new entries

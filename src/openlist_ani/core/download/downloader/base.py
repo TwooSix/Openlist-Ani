@@ -31,7 +31,6 @@ class HandlerResult:
 
 
 class BaseDownloader(ABC):
-
     @property
     @abstractmethod
     def downloader_type(self) -> str: ...
