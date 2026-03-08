@@ -68,7 +68,6 @@ async def _run_dispatch_once(queue, mock_manager, batch_return_value):
 
 
 class TestDownloadDispatchWorker:
-
     async def test_single_entry_dispatched(self):
         entry = _make_resource(title="Anime - 01")
         queue: asyncio.Queue = asyncio.Queue()

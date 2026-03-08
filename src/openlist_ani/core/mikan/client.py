@@ -255,8 +255,7 @@ class MikanClient:
 
                 body = await resp.text()
                 logger.error(
-                    f"Mikan: Unsubscribe failed (status={resp.status}): "
-                    f"{body[:200]}"
+                    f"Mikan: Unsubscribe failed (status={resp.status}): {body[:200]}"
                 )
                 return False
 

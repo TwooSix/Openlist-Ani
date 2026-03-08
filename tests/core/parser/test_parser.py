@@ -1,6 +1,5 @@
 """Tests for openlist_ani.core.parser.parser module (parse_metadata)."""
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,23 +12,6 @@ from openlist_ani.core.website.model import AnimeResourceInfo
 def _make_entry(title: str = "[SubGroup] Frieren - 05 [1080p]") -> AnimeResourceInfo:
     return AnimeResourceInfo(title=title, download_url="magnet:?xt=urn:btih:abc123")
 
-
-VALID_BATCH_JSON = json.dumps(
-    [
-        {
-            "index": 1,
-            "status": "success",
-            "anime_name": "Frieren",
-            "season": 1,
-            "episode": 5,
-            "quality": "1080p",
-            "fansub": "SubGroup",
-            "languages": ["简", "日"],
-            "version": 1,
-            "tmdb_id": 209867,
-        }
-    ]
-)
 
 VALID_PARSE_RESULTS = [
     ParseResult(
@@ -49,7 +31,6 @@ VALID_PARSE_RESULTS = [
 
 
 class TestParseMetadata:
-
     @pytest.mark.asyncio
     async def test_returns_failed_when_no_api_key(self):
         entries = [_make_entry()]

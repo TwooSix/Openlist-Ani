@@ -15,6 +15,7 @@ dependencies = [
     "lxml>=6.0.2",
     "openai>=2.15.0",
     "pydantic>=2.12.5",
+    "python-telegram-bot>=22.6",
     "tomlkit>=0.13.3",
 ]
 

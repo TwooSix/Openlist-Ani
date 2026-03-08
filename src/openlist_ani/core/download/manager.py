@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
 
 class DownloadManager:
-
     _next_state: dict[DownloadState, DownloadState] = {
         DownloadState.PENDING: DownloadState.DOWNLOADING,
         DownloadState.DOWNLOADING: DownloadState.TRANSFERRING,

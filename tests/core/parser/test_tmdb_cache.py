@@ -20,7 +20,6 @@ def reset_singleton():
 
 
 class TestCachedTMDBClient:
-
     async def test_search_cache_hit(self):
         client = CachedTMDBClient()
         fake_results = [{"id": 1, "name": "Frieren"}]
@@ -134,7 +133,6 @@ class TestCachedTMDBClient:
 
 
 class TestGetTmdbClient:
-
     def test_returns_singleton(self):
         c1 = get_tmdb_client()
         c2 = get_tmdb_client()

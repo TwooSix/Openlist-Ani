@@ -127,7 +127,6 @@ class TMDBClient:
 
 
 class CachedTMDBClient(TMDBClient):
-
     def __init__(
         self,
         search_maxsize: int = 256,

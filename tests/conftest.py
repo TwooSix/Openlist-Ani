@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-from openlist_ani.core.website.model import AnimeResourceInfo
-
 
 def make_entry(
     title: str = "Test Anime - 01",
@@ -25,11 +23,3 @@ def make_entry(
         enc.append({"href": download_url, "type": "application/x-bittorrent"})
 
     return entry
-
-
-def make_resource(
-    title: str = "Test Anime - 01",
-    download_url: str = "magnet:?xt=urn:btih:abc123",
-) -> AnimeResourceInfo:
-    """Helper to build an AnimeResourceInfo instance."""
-    return AnimeResourceInfo(title=title, download_url=download_url)
