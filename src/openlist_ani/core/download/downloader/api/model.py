@@ -24,6 +24,14 @@ class OfflineDownloadTool(StrEnum):
     QBITTORRENT = "qBittorrent"
     PIKPAK = "PikPak"
     CLOUD115 = "115 Cloud"
+    CLOUD115_OPEN = "115 Open"
+    PAN123 = "123Pan"
+    PAN123_OPEN = "123 Open"
+    SIMPLE_HTTP = "SimpleHttp"
+    THUNDER = "Thunder"
+    THUNDER_BROWSER = "ThunderBrowser"
+    THUNDERX = "ThunderX"
+    TRANSMISSION = "Transmission"
 
 
 def _parse_iso(dt: str | None) -> datetime | None:
