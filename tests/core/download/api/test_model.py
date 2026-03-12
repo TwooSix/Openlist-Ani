@@ -2,7 +2,7 @@
 
 import json
 
-from openlist_ani.core.download.downloader.api.model import (
+from openlist_ani.core.download.api.model import (
     FileEntry,
     OfflineDownloadTool,
     OpenlistTask,

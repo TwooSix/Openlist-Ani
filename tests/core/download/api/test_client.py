@@ -3,9 +3,8 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-from openlist_ani.core.download.downloader.api.model import OpenlistTaskState
-from openlist_ani.core.download.downloader.api.openlist import OpenListClient
+from openlist_ani.core.download.api.client import OpenListClient
+from openlist_ani.core.download.api.model import OpenlistTaskState
 
 
 @pytest.fixture

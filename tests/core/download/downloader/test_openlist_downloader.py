@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from openlist_ani.core.download.downloader.api.model import (
+from openlist_ani.core.download.api.model import (
     OpenlistTask,
     OpenlistTaskState,
 )
-from openlist_ani.core.download.downloader.base import HandlerStatus
+from openlist_ani.core.download.downloader.base import DownloadError
 from openlist_ani.core.download.downloader.openlist_downloader import (
     OpenListDownloader,
     format_anime_episode,
@@ -154,7 +154,7 @@ class TestOpenListDownloaderInit:
 
 
 # ---------------------------------------------------------------------------
-# on_transferring – version suffix logic
+# _transfer_to_final – version suffix logic
 # ---------------------------------------------------------------------------
 
 
@@ -179,7 +179,7 @@ def _make_downloader(
 
 
 def _make_task(version=1, *, episode=3, quality=None, languages=None):
-    """Create a DownloadTask in TRANSFERRING state."""
+    """Create a DownloadTask in DOWNLOADING state."""
     info_kwargs = {
         "title": f"[SubGroup] MyAnime - {episode:02d} [1080p]",
         "download_url": "magnet:?xt=test",
@@ -193,25 +193,11 @@ def _make_task(version=1, *, episode=3, quality=None, languages=None):
     if languages is not None:
         info_kwargs["languages"] = languages
     info = AnimeResourceInfo(**info_kwargs)
-    task = DownloadTask(resource_info=info, save_path="/downloads")
-    task.state = DownloadState.TRANSFERRING
-    task.downloaded_filename = "something.mkv"
-    task.temp_path = f"/downloads/{task.id}"
+    task = DownloadTask(resource_info=info, base_path="/downloads")
+    task.state = DownloadState.DOWNLOADING
+    task.downloader_data["downloaded_filename"] = "something.mkv"
+    task.downloader_data["temp_path"] = f"/downloads/{task.id}"
     return task
-
-
-def _setup_download_done(client, task_id="dl-task-1"):
-    """Configure mock client as if the offline download completed successfully."""
-    client.get_offline_download_undone = AsyncMock(return_value=[])
-    client.get_offline_download_done = AsyncMock(
-        return_value=[
-            OpenlistTask(
-                id=task_id,
-                name="download task",
-                state=OpenlistTaskState.SUCCEEDED,
-            )
-        ]
-    )
 
 
 def _assert_no_enum_repr(result: str):
@@ -233,7 +219,7 @@ class TestDetectDownloadedFile:
     async def test_recursively_picks_largest_video(self):
         d = _make_downloader()
         task = _make_task()
-        task.initial_files = []
+        task.downloader_data["initial_files"] = []
         from types import SimpleNamespace
 
         d._client.list_files.side_effect = [
@@ -255,7 +241,7 @@ class TestDetectDownloadedFile:
     async def test_returns_none_when_only_non_videos(self):
         d = _make_downloader()
         task = _make_task()
-        task.initial_files = []
+        task.downloader_data["initial_files"] = []
         from types import SimpleNamespace
 
         d._client.list_files.return_value = [
@@ -269,7 +255,7 @@ class TestDetectDownloadedFile:
     async def test_ignores_initial_files_and_chooses_next_largest(self):
         d = _make_downloader()
         task = _make_task()
-        task.initial_files = ["batch/ep01.mkv"]
+        task.downloader_data["initial_files"] = ["batch/ep01.mkv"]
         from types import SimpleNamespace
 
         d._client.list_files.side_effect = [
@@ -287,7 +273,7 @@ class TestDetectDownloadedFile:
         assert result == "batch/ep02.mkv"
 
 
-class TestTransferringVersionSuffix:
+class TestTransferToFinal:
     """Test that version suffix is appended correctly during rename."""
 
     @pytest.mark.asyncio
@@ -328,8 +314,7 @@ class TestTransferringVersionSuffix:
         if fansub is not None:
             task.resource_info.fansub = fansub
 
-        result = await d.on_transferring(task)
-        assert result.status == HandlerStatus.DONE
+        await d._transfer_to_final(task)
 
         new_filename = d._client.rename_file.call_args[0][1]
         assert new_filename == expected_filename
@@ -369,102 +354,102 @@ class TestLogProgressBucketed:
         assert mock_info.call_count == 2
 
 
-class TestOnDownloadingFlow:
+class TestWaitDownloadComplete:
+    """Test _wait_download_complete polling behavior."""
+
     @pytest.mark.asyncio
-    async def test_returns_poll_when_download_not_finished(self):
+    async def test_returns_when_download_succeeds(self, mock_async_sleep):
         d = _make_downloader()
         task = _make_task()
-        task.extra_data["task_id"] = "dl-task-1"
+        task.downloader_data["task_id"] = "dl-task-1"
 
+        # First poll: still running, second poll: done
         d._client.get_offline_download_undone = AsyncMock(
+            side_effect=[
+                [
+                    OpenlistTask(
+                        id="dl-task-1",
+                        name="download task",
+                        progress=55,
+                    )
+                ],
+                [],
+            ]
+        )
+        d._client.get_offline_download_done = AsyncMock(
             return_value=[
                 OpenlistTask(
                     id="dl-task-1",
                     name="download task",
-                    progress=55,
+                    state=OpenlistTaskState.SUCCEEDED,
                 )
             ]
         )
 
-        result = await d.on_downloading(task)
-        assert result.status == HandlerStatus.POLL
+        await d._wait_download_complete(task)
+        assert mock_async_sleep.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_waits_when_matching_transfer_task_is_running(self):
+    async def test_raises_when_task_not_found(self):
         d = _make_downloader()
         task = _make_task()
-        task.extra_data["task_id"] = "dl-task-1"
+        task.downloader_data["task_id"] = "dl-task-1"
 
-        _setup_download_done(d._client)
+        d._client.get_offline_download_undone = AsyncMock(return_value=[])
+        d._client.get_offline_download_done = AsyncMock(return_value=[])
+
+        with pytest.raises(DownloadError, match="not found"):
+            await d._wait_download_complete(task)
+
+
+class TestWaitTransferComplete:
+    """Test _wait_transfer_complete polling and skip behavior."""
+
+    @pytest.mark.asyncio
+    async def test_waits_when_transfer_task_is_running(self, mock_async_sleep):
+        d = _make_downloader()
+        task = _make_task()
+
+        # First poll: running, second poll: succeeded
         d._client.get_offline_download_transfer_undone = AsyncMock(
+            side_effect=[
+                [
+                    OpenlistTask(
+                        id="transfer-1",
+                        name=f"transfer for uuid {task.id}",
+                        state=OpenlistTaskState.RUNNING,
+                    )
+                ],
+                [],
+            ]
+        )
+        d._client.get_offline_download_transfer_done = AsyncMock(
             return_value=[
                 OpenlistTask(
                     id="transfer-1",
                     name=f"transfer for uuid {task.id}",
-                    state=OpenlistTaskState.RUNNING,
+                    state=OpenlistTaskState.SUCCEEDED,
                 )
             ]
         )
 
-        with patch.object(
-            d,
-            "_detect_downloaded_file",
-            new_callable=AsyncMock,
-            return_value="video.mkv",
-        ) as mock_detect:
-            result = await d.on_downloading(task)
-
-        assert result.status == HandlerStatus.POLL
-        mock_detect.assert_not_awaited()
+        await d._wait_transfer_complete(task)
+        assert mock_async_sleep.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_skips_transfer_check_after_three_tries_and_succeeds(
+    async def test_skips_after_max_retries_when_no_transfer_found(
         self, mock_async_sleep
     ):
         d = _make_downloader()
         task = _make_task()
-        task.extra_data["task_id"] = "dl-task-1"
 
-        _setup_download_done(d._client)
         d._client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
         d._client.get_offline_download_transfer_done = AsyncMock(return_value=[])
 
-        with patch.object(
-            d,
-            "_detect_downloaded_file",
-            new_callable=AsyncMock,
-            return_value="video.mkv",
-        ) as mock_detect:
-            result = await d.on_downloading(task)
-
-        assert result.status == HandlerStatus.DONE
-        assert task.downloaded_filename == "video.mkv"
+        await d._wait_transfer_complete(task)
         assert d._client.get_offline_download_transfer_undone.await_count == 3
         assert d._client.get_offline_download_transfer_done.await_count == 3
         assert mock_async_sleep.await_count == 2
-        mock_detect.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_polls_when_file_not_found_after_download_complete(
-        self, mock_async_sleep
-    ):
-        d = _make_downloader()
-        task = _make_task()
-        task.extra_data["task_id"] = "dl-task-1"
-
-        _setup_download_done(d._client)
-        d._client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
-        d._client.get_offline_download_transfer_done = AsyncMock(return_value=[])
-
-        with patch.object(
-            d,
-            "_detect_downloaded_file",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            result = await d.on_downloading(task)
-
-        assert result.status == HandlerStatus.POLL
 
 
 # ---------------------------------------------------------------------------
@@ -507,9 +492,9 @@ class TestBuildFinalFilenameEnumFields:
         d = _make_downloader("{anime_name} [{quality}]", with_mock_client=False)
         task = _make_task(quality=quality)
         result = d._build_final_filename(task, "A", 1, 1)
-        assert f"[{value_str}]" in result, (
-            f"Expected '[{value_str}]' in '{result}' for {quality!r}"
-        )
+        assert (
+            f"[{value_str}]" in result
+        ), f"Expected '[{value_str}]' in '{result}' for {quality!r}"
         _assert_no_enum_repr(result)
 
     def test_languages_in_format_is_joined_plain_string(self):

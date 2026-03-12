@@ -1,8 +1,65 @@
 """
-Assistant module for interactive chatbot integration.
+Assistant module — Telegram chatbot that communicates with the backend via HTTP.
 """
 
+import asyncio
+
+from ..backend.client import BackendClient
+from ..config import config
+from ..database import db
+from ..logger import configure_logger, logger
 from .assistant import AniAssistant, AssistantStatus
 from .telegram_assistant import TelegramAssistant
+from .tools import close_tool_clients
 
-__all__ = ["AniAssistant", "AssistantStatus", "TelegramAssistant"]
+
+async def run() -> None:
+    """Start the assistant process."""
+    configure_logger(
+        console_level=config.log.level,
+        file_level=config.log.file_level,
+        rotation=config.log.rotation,
+        retention=config.log.retention,
+        log_name="assistant",
+    )
+    logger.info("Starting openlist-ani assistant...")
+
+    if not config.validate():
+        logger.error("Configuration validation failed. Exiting.")
+        return
+
+    if not config.assistant.enabled:
+        logger.error(
+            "Assistant is not enabled in config.toml. "
+            "Please set [assistant] enabled = true"
+        )
+        return
+
+    await db.init()
+    logger.info("Database initialized")
+
+    backend_client = BackendClient(config.backend_url)
+    logger.info(f"Backend client initialized (url={config.backend_url})")
+
+    telegram_assistant = TelegramAssistant(backend_client)
+
+    try:
+        await telegram_assistant.run()
+    except KeyboardInterrupt:
+        logger.info("Assistant stopped by user")
+    except Exception as e:
+        logger.exception(f"Assistant error: {e}")
+    finally:
+        await backend_client.close()
+        await close_tool_clients()
+
+
+def main() -> None:
+    """Synchronous CLI entry point for the assistant process."""
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        logger.info("Assistant shutdown")
+
+
+__all__ = ["AniAssistant", "AssistantStatus", "TelegramAssistant", "main", "run"]

@@ -15,7 +15,7 @@ class TestRSSManagerCheckUpdate:
         mock_dm = MagicMock()
         mgr = RSSManager(download_manager=mock_dm)
 
-        with patch("openlist_ani.core.rss.config") as mock_config:
+        with patch("openlist_ani.core.rss.manager.config") as mock_config:
             mock_config.rss.urls = []
             result = await mgr.check_update()
 
@@ -38,8 +38,8 @@ class TestRSSManagerCheckUpdate:
         mock_handler.fetch_feed = AsyncMock(return_value=[resource])
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db") as mock_db,
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db") as mock_db,
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://acg.rip/.xml"]
@@ -67,8 +67,8 @@ class TestRSSManagerCheckUpdate:
         mock_handler.fetch_feed = AsyncMock(return_value=[resource])
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db") as mock_db,
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db") as mock_db,
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://acg.rip/.xml"]
@@ -95,8 +95,8 @@ class TestRSSManagerCheckUpdate:
         mock_handler.fetch_feed = AsyncMock(return_value=[resource])
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db") as mock_db,
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db") as mock_db,
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://acg.rip/.xml"]
@@ -126,8 +126,8 @@ class TestRSSManagerCheckUpdate:
         )
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db") as mock_db,
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db") as mock_db,
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://acg.rip/.xml"]
@@ -149,8 +149,8 @@ class TestRSSManagerCheckUpdate:
         mock_handler.fetch_feed = AsyncMock(side_effect=Exception("Network error"))
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db"),
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db"),
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://fail.example.com/rss"]
@@ -169,8 +169,8 @@ class TestRSSManagerCheckUpdate:
         mock_handler.fetch_feed = AsyncMock(return_value="unexpected string")
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db"),
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db"),
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://example.com/rss"]
@@ -186,8 +186,8 @@ class TestRSSManagerCheckUpdate:
         mgr = RSSManager(download_manager=mock_dm)
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db"),
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db"),
             patch.object(mgr, "_get_website_handler", return_value=None),
         ):
             mock_config.rss.urls = ["https://unknown.example.com/rss"]
@@ -210,8 +210,8 @@ class TestRSSManagerCheckUpdate:
         mock_handler.fetch_feed = AsyncMock(side_effect=[[r1], [r2]])
 
         with (
-            patch("openlist_ani.core.rss.config") as mock_config,
-            patch("openlist_ani.core.rss.db") as mock_db,
+            patch("openlist_ani.core.rss.manager.config") as mock_config,
+            patch("openlist_ani.core.rss.manager.db") as mock_db,
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://a.com/rss", "https://b.com/rss"]

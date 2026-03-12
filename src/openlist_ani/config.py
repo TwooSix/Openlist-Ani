@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 from tomlkit import dumps as toml_dumps
 
-from .core.download.downloader.api.model import OfflineDownloadTool
+from .core.download.api.model import OfflineDownloadTool
 from .logger import logger
 
 
@@ -124,6 +124,13 @@ class ProxyConfig(BaseModel):
     https: str = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
 
 
+class BackendConfig(BaseModel):
+    """Configuration for the backend API server."""
+
+    host: str = "127.0.0.1"  # Bind address (localhost only by default)
+    port: int = 26666  # Listening port
+
+
 class UserConfig(BaseModel):
     rss: RSSConfig = RSSConfig()
     openlist: OpenListConfig = OpenListConfig()
@@ -134,6 +141,7 @@ class UserConfig(BaseModel):
     proxy: ProxyConfig = ProxyConfig()
     bangumi: BangumiConfig = BangumiConfig()
     mikan: MikanConfig = MikanConfig()
+    backend: BackendConfig = BackendConfig()
 
 
 class ConfigManager:
@@ -360,6 +368,15 @@ class ConfigManager:
     def mikan(self) -> MikanConfig:
         return self.data.mikan
 
+    @property
+    def backend(self) -> BackendConfig:
+        return self.data.backend
+
+    @property
+    def backend_url(self) -> str:
+        """Get the full backend API base URL."""
+        return f"http://{self.backend.host}:{self.backend.port}"
+
     async def validate_openlist(self) -> bool:
         """
         Validate OpenList server health and offline download tool availability.
@@ -370,7 +387,7 @@ class ConfigManager:
         Returns:
             True if all checks pass, False otherwise.
         """
-        from .core.download.downloader.api import OpenListClient
+        from .core.download.api import OpenListClient
 
         client = OpenListClient(
             base_url=self.openlist.url,
