@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from openlist_ani.core.download.model.task import (
+from openlist_ani.core.download.task import (
     STATE_TRANSITIONS,
     DownloadState,
     DownloadTask,
@@ -36,7 +36,7 @@ def _make_resource(**kwargs) -> AnimeResourceInfo:
 def _make_task(**kwargs) -> DownloadTask:
     defaults = {
         "resource_info": _make_resource(),
-        "save_path": "/downloads",
+        "base_path": "/downloads",
     }
     defaults.update(kwargs)
     return DownloadTask(**defaults)
@@ -72,16 +72,16 @@ class TestDownloadTaskCreation:
 
     def test_from_resource_info(self):
         res = _make_resource(title="Test", download_url="magnet:?test")
-        task = DownloadTask.from_resource_info(res, save_path="/anime")
+        task = DownloadTask.from_resource_info(res, base_path="/anime")
         assert task.resource_info.title == "Test"
-        assert task.save_path == "/anime"
+        assert task.base_path == "/anime"
         assert task.state == DownloadState.PENDING
 
     def test_optional_fields_none(self):
         task = _make_task()
-        assert task.temp_path is None
-        assert task.final_path is None
-        assert task.downloaded_filename is None
+        assert task.downloader_data.get("temp_path") is None
+        assert task.output_path is None
+        assert task.downloader_data.get("downloaded_filename") is None
         assert task.started_at is None
         assert task.completed_at is None
         assert task.error_message is None
@@ -101,13 +101,9 @@ class TestStateTransitions:
             (DownloadState.PENDING, DownloadState.DOWNLOADING),
             (DownloadState.PENDING, DownloadState.CANCELLED),
             (DownloadState.PENDING, DownloadState.FAILED),
-            (DownloadState.DOWNLOADING, DownloadState.TRANSFERRING),
+            (DownloadState.DOWNLOADING, DownloadState.COMPLETED),
             (DownloadState.DOWNLOADING, DownloadState.FAILED),
             (DownloadState.DOWNLOADING, DownloadState.CANCELLED),
-            (DownloadState.TRANSFERRING, DownloadState.CLEANING_UP),
-            (DownloadState.TRANSFERRING, DownloadState.FAILED),
-            (DownloadState.CLEANING_UP, DownloadState.COMPLETED),
-            (DownloadState.CLEANING_UP, DownloadState.FAILED),
             (DownloadState.FAILED, DownloadState.PENDING),
         ],
     )
@@ -121,9 +117,7 @@ class TestStateTransitions:
         "from_state, to_state",
         [
             (DownloadState.PENDING, DownloadState.COMPLETED),
-            (DownloadState.PENDING, DownloadState.CLEANING_UP),
             (DownloadState.DOWNLOADING, DownloadState.PENDING),
-            (DownloadState.DOWNLOADING, DownloadState.COMPLETED),
             (DownloadState.COMPLETED, DownloadState.PENDING),
             (DownloadState.COMPLETED, DownloadState.DOWNLOADING),
             (DownloadState.CANCELLED, DownloadState.DOWNLOADING),
@@ -212,7 +206,7 @@ class TestSerialization:
             quality=VideoQuality.Q1080P,
             languages=[LanguageType.CHS, LanguageType.JP],
         )
-        task = DownloadTask.from_resource_info(res, save_path="/downloads")
+        task = DownloadTask.from_resource_info(res, base_path="/downloads")
         task.update_state(DownloadState.DOWNLOADING)
 
         data = task.to_dict()
@@ -220,7 +214,7 @@ class TestSerialization:
 
         assert restored.id == task.id
         assert restored.state == DownloadState.DOWNLOADING
-        assert restored.save_path == "/downloads"
+        assert restored.base_path == "/downloads"
         assert restored.resource_info.title == res.title
         assert restored.resource_info.quality == VideoQuality.Q1080P
         assert LanguageType.CHS in restored.resource_info.languages
@@ -231,12 +225,12 @@ class TestSerialization:
         task = DownloadTask.from_dict(data)
         assert task.state == DownloadState.DOWNLOADING
 
-    def test_from_dict_preserves_extra_data(self):
+    def test_from_dict_preserves_downloader_data(self):
         task = _make_task()
-        task.extra_data["task_id"] = "abc-123"
+        task.downloader_data["task_id"] = "abc-123"
         data = task.to_dict()
         restored = DownloadTask.from_dict(data)
-        assert restored.extra_data["task_id"] == "abc-123"
+        assert restored.downloader_data["task_id"] == "abc-123"
 
     def test_to_dict_returns_plain_dict(self):
         """Ensure to_dict result is JSON-serializable (no enum objects)."""

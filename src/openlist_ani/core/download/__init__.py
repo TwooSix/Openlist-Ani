@@ -2,10 +2,15 @@
 Download module for managing anime downloads.
 
 This module provides a flexible download architecture with:
-- DownloadEvent: State machine-based download event tracking
+- DownloadTask: State machine-based download task tracking
 - DownloadManager: Orchestrates downloads and manages persistence
 - BaseDownloader: Abstract interface for download implementations
 - OpenListDownloader: OpenList-based downloader implementation
+
+Each downloader lives in its own sub-package under ``downloader/``.
+Currently only the OpenList downloader is implemented, but the
+architecture supports adding new downloaders by subclassing
+``BaseDownloader``.
 
 Usage:
     from openlist_ani.core.download import (
@@ -32,22 +37,23 @@ Usage:
     await manager.download(resource_info, save_path)
 """
 
-from .downloader.base import BaseDownloader, HandlerResult, HandlerStatus
+from .downloader.base import BaseDownloader, DownloadError
 from .downloader.openlist_downloader import OpenListDownloader
 from .manager import DownloadManager
-from .model.task import (
+from .task import (
+    TERMINAL_STATES,
     DownloadState,
     DownloadTask,
     InvalidStateTransitionError,
 )
 
 __all__ = [
-    "DownloadTask",
-    "DownloadState",
-    "InvalidStateTransitionError",
     "BaseDownloader",
-    "HandlerResult",
-    "HandlerStatus",
+    "DownloadError",
     "DownloadManager",
+    "DownloadState",
+    "DownloadTask",
+    "InvalidStateTransitionError",
+    "TERMINAL_STATES",
     "OpenListDownloader",
 ]

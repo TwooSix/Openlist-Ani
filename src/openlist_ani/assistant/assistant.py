@@ -8,8 +8,8 @@ from typing import Any, Awaitable, Callable
 
 from openai import AsyncOpenAI
 
+from ..backend.client import BackendClient
 from ..config import config
-from ..core.download import DownloadManager
 from ..logger import logger
 from .memory import AssistantMemoryManager
 from .tools import get_assistant_tools, handle_tool_call
@@ -61,13 +61,13 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
 - mikan_unsubscribe_bangumi: unsubscribe
 - Search first to get Mikan ID, then subscribe"""
 
-    def __init__(self, download_manager: DownloadManager):
+    def __init__(self, backend_client: BackendClient):
         """Initialize assistant.
 
         Args:
-            download_manager: DownloadManager instance for download operations
+            backend_client: BackendClient instance for backend API interaction
         """
-        self.download_manager = download_manager
+        self.backend_client = backend_client
         self.client: AsyncOpenAI | None = None
         self.model = config.llm.openai_model
         self.tools = get_assistant_tools()
@@ -196,7 +196,7 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
         try:
             arguments = json.loads(raw_arguments)
             logger.info(f"Assistant: Calling tool {tool_name} with {arguments}")
-            return await handle_tool_call(tool_name, arguments, self.download_manager)
+            return await handle_tool_call(tool_name, arguments, self.backend_client)
         except json.JSONDecodeError:
             error_msg = f"Failed to parse arguments for tool {tool_name}"
             logger.error(f"Assistant: {error_msg}: {raw_arguments}")

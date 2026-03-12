@@ -16,8 +16,8 @@ from telegram.ext import (
     filters,
 )
 
+from ..backend.client import BackendClient
 from ..config import config
-from ..core.download import DownloadManager
 from ..logger import logger
 from .assistant import AniAssistant, AssistantStatus
 
@@ -43,14 +43,14 @@ Start chatting with me!"""
     UNAUTHORIZED_MESSAGE = "❌ You are not authorized to use this bot"
     HISTORY_CLEARED_MESSAGE = "✅ Conversation history cleared"
 
-    def __init__(self, download_manager: DownloadManager):
+    def __init__(self, backend_client: BackendClient):
         """Initialize Telegram assistant.
 
         Args:
-            download_manager: DownloadManager instance
+            backend_client: BackendClient instance for backend API interaction
         """
-        self.download_manager = download_manager
-        self.assistant = AniAssistant(download_manager)
+        self.backend_client = backend_client
+        self.assistant = AniAssistant(backend_client)
         self.bot_token = config.assistant.telegram.bot_token
         self.allowed_users = set(config.assistant.telegram.allowed_users)
         self.application: Application | None = None

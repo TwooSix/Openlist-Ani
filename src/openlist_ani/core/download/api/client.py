@@ -3,7 +3,7 @@ from typing import Any
 
 import aiohttp
 
-from .....logger import logger
+from ....logger import logger
 from .model import FileEntry, OfflineDownloadTool, OpenlistTask
 
 
