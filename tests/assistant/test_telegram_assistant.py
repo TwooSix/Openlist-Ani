@@ -19,7 +19,7 @@ class TestTelegramAssistant:
             "openlist_ani.assistant.telegram_assistant.AniAssistant",
             return_value=fake_assistant,
         ):
-            assistant = TelegramAssistant(download_manager=MagicMock())
+            assistant = TelegramAssistant(backend_client=MagicMock())
 
         assistant.allowed_users = {1}
         update = SimpleNamespace(

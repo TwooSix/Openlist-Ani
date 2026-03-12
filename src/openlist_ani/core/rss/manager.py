@@ -1,13 +1,13 @@
 import asyncio
 from typing import TYPE_CHECKING
 
-from ..config import config
-from ..database import db
-from ..logger import logger
-from .website import AnimeResourceInfo, WebsiteBase, WebsiteFactory
+from ...config import config
+from ...database import db
+from ...logger import logger
+from ..website import AnimeResourceInfo, WebsiteBase, WebsiteFactory
 
 if TYPE_CHECKING:
-    from .download.manager import DownloadManager
+    from ..download.manager import DownloadManager
 
 
 class RSSManager:

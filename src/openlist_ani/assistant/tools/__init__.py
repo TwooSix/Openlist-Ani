@@ -4,7 +4,7 @@ Assistant tools module.
 Provides tool classes for assistant function calling.
 """
 
-from ...core.download import DownloadManager
+from ...backend.client import BackendClient
 from ...logger import logger
 from .bangumi_tool import (
     BangumiCalendarTool,
@@ -48,36 +48,36 @@ _kToolClasses: list[type[BaseTool]] = [
 class ToolRegistry:
     """Registry for managing assistant tools."""
 
-    def __init__(self, download_manager: DownloadManager | None = None):
+    def __init__(self, backend_client: BackendClient | None = None):
         """Initialize tool registry.
 
         Args:
-            download_manager: DownloadManager instance for download tool
+            backend_client: BackendClient instance for download tool
         """
         self._tools: dict[str, BaseTool] = {}
-        self._download_manager = download_manager
+        self._backend_client = backend_client
         self._init_tools()
 
     def _init_tools(self) -> None:
         """Initialize all tool instances."""
         for tool_cls in _kToolClasses:
             if tool_cls == DownloadResourceTool:
-                tool = tool_cls(self._download_manager)
+                tool = tool_cls(self._backend_client)
             else:
                 tool = tool_cls()
             self._tools[tool.name] = tool
 
-    def set_download_manager(self, download_manager: DownloadManager) -> None:
-        """Set download manager for download tool.
+    def set_backend_client(self, backend_client: BackendClient) -> None:
+        """Set backend client for download tool.
 
         Args:
-            download_manager: DownloadManager instance
+            backend_client: BackendClient instance
         """
-        self._download_manager = download_manager
+        self._backend_client = backend_client
         if "download_resource" in self._tools:
             download_tool = self._tools["download_resource"]
             if isinstance(download_tool, DownloadResourceTool):
-                download_tool.download_manager = download_manager
+                download_tool.backend_client = backend_client
 
     def get_tool(self, name: str) -> BaseTool | None:
         """Get tool by name.
@@ -124,21 +124,21 @@ _default_registry: ToolRegistry | None = None
 
 
 def get_registry(
-    download_manager: DownloadManager | None = None,
+    backend_client: BackendClient | None = None,
 ) -> ToolRegistry:
     """Get or create the default tool registry.
 
     Args:
-        download_manager: DownloadManager instance
+        backend_client: BackendClient instance
 
     Returns:
         ToolRegistry instance
     """
     global _default_registry
     if _default_registry is None:
-        _default_registry = ToolRegistry(download_manager)
-    elif download_manager is not None:
-        _default_registry.set_download_manager(download_manager)
+        _default_registry = ToolRegistry(backend_client)
+    elif backend_client is not None:
+        _default_registry.set_backend_client(backend_client)
     return _default_registry
 
 
@@ -152,19 +152,19 @@ def get_assistant_tools() -> list[dict]:
 
 
 async def handle_tool_call(
-    tool_name: str, arguments: dict, download_manager: DownloadManager
+    tool_name: str, arguments: dict, backend_client: BackendClient
 ) -> str:
     """Handle tool call from assistant.
 
     Args:
         tool_name: Name of the tool to call
         arguments: Tool arguments
-        download_manager: DownloadManager instance
+        backend_client: BackendClient instance
 
     Returns:
         Tool execution result as string
     """
-    registry = get_registry(download_manager)
+    registry = get_registry(backend_client)
     return await registry.handle_tool_call(tool_name, arguments)
 
 

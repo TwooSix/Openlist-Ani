@@ -17,7 +17,7 @@ from openlist_ani.config import (
     RSSConfig,
     UserConfig,
 )
-from openlist_ani.core.download.downloader.api.model import OfflineDownloadTool
+from openlist_ani.core.download.api.model import OfflineDownloadTool
 
 # ===========================================================================
 # Pydantic model defaults & validation

@@ -21,3 +21,7 @@ data/
 # test
 *.ipynb
 .env
+
+.github/agents/
+.github/instructions/
+.github/skills/

@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 from tomlkit import dumps as toml_dumps
 
-from .core.download.downloader.api.model import OfflineDownloadTool
+from .core.download.api.model import OfflineDownloadTool
 from .logger import logger
 
 
@@ -48,7 +48,9 @@ class NotificationConfig(BaseModel):
     """Configuration for notification system."""
 
     enabled: bool = False
-    batch_interval: float = 300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    batch_interval: float = (
+        300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    )
     bots: list[BotConfig] = Field(default_factory=list)
 
 
@@ -72,7 +74,9 @@ class LogConfig(BaseModel):
 
     level: str = "INFO"  # Console log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
     file_level: str = "INFO"  # File log level
-    rotation: str = "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    rotation: str = (
+        "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    )
     retention: str = "1 week"  # How long to keep old logs
 
 
@@ -98,6 +102,13 @@ class ProxyConfig(BaseModel):
     https: str = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
 
 
+class BackendConfig(BaseModel):
+    """Configuration for the backend API server."""
+
+    host: str = "127.0.0.1"  # Bind address (localhost only by default)
+    port: int = 26666  # Listening port
+
+
 class UserConfig(BaseModel):
     rss: RSSConfig = RSSConfig()
     openlist: OpenListConfig = OpenListConfig()
@@ -108,6 +119,7 @@ class UserConfig(BaseModel):
     proxy: ProxyConfig = ProxyConfig()
     bangumi: BangumiConfig = BangumiConfig()
     mikan: MikanConfig = MikanConfig()
+    backend: BackendConfig = BackendConfig()
 
 
 class ConfigManager:
@@ -334,6 +346,15 @@ class ConfigManager:
     def mikan(self) -> MikanConfig:
         return self.data.mikan
 
+    @property
+    def backend(self) -> BackendConfig:
+        return self.data.backend
+
+    @property
+    def backend_url(self) -> str:
+        """Get the full backend API base URL."""
+        return f"http://{self.backend.host}:{self.backend.port}"
+
     async def validate_openlist(self) -> bool:
         """
         Validate OpenList server health and offline download tool availability.
@@ -344,7 +365,7 @@ class ConfigManager:
         Returns:
             True if all checks pass, False otherwise.
         """
-        from .core.download.downloader.api import OpenListClient
+        from .core.download.api import OpenListClient
 
         client = OpenListClient(
             base_url=self.openlist.url,
@@ -364,9 +385,9 @@ class ConfigManager:
         # Step 2: offline download tool validation
         tool: OfflineDownloadTool = self.openlist.offline_download_tool
         logger.info(f"Verifying offline download tool '{tool}'...")
-        available_tools: (
-            list[dict[str, Any]] | None
-        ) = await client.get_offline_download_tools()
+        available_tools: list[dict[str, Any]] | None = (
+            await client.get_offline_download_tools()
+        )
         if available_tools is None:
             logger.error("Failed to retrieve offline download tools from server.")
             return False

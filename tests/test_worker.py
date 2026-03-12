@@ -44,17 +44,17 @@ def _parse_fail(error="failed"):
 
 async def _run_dispatch_once(queue, mock_manager, batch_return_value):
     """Run dispatch_downloads until it processes one batch, then cancel."""
-    from openlist_ani.worker import dispatch_downloads
+    from openlist_ani.backend.worker import dispatch_downloads
 
     active: set[asyncio.Task] = set()
 
     with (
         patch(
-            "openlist_ani.worker.parse_metadata",
+            "openlist_ani.backend.worker.parse_metadata",
             new_callable=AsyncMock,
             return_value=batch_return_value,
         ) as mock_parse,
-        patch("openlist_ani.worker.config") as mock_config,
+        patch("openlist_ani.backend.worker.config") as mock_config,
     ):
         mock_config.openlist.download_path = "/downloads"
 
@@ -89,11 +89,11 @@ class TestDownloadDispatchWorker:
         mock_manager = AsyncMock()
         mock_manager.is_downloading = lambda e: True
 
-        from openlist_ani.worker import dispatch_downloads
+        from openlist_ani.backend.worker import dispatch_downloads
 
         active: set[asyncio.Task] = set()
         with patch(
-            "openlist_ani.worker.parse_metadata",
+            "openlist_ani.backend.worker.parse_metadata",
             new_callable=AsyncMock,
         ) as mock_parse:
             try:

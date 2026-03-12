@@ -1,3 +1,7 @@
+[backend]
+host = "127.0.0.1"  # Backend API bind address (127.0.0.1 = localhost only)
+port = 26666  # Backend API listening port
+
 [rss]
 urls = []
 interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)

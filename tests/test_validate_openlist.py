@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from openlist_ani.config import ConfigManager
-from openlist_ani.core.download.downloader.api.model import OfflineDownloadTool
+from openlist_ani.core.download.api.model import OfflineDownloadTool
 
 
 @pytest.fixture
@@ -25,9 +25,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_health_check_fails(self, mgr):
         """Should return False when health check fails."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = False
             MockClient.return_value = mock_instance
@@ -39,9 +37,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_get_tools_returns_none(self, mgr):
         """Should return False when get_offline_download_tools returns None."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = True
             mock_instance.get_offline_download_tools.return_value = None
@@ -53,9 +49,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_tool_not_in_available_list(self, mgr):
         """Should return False when configured tool is not available on server."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = True
             mock_instance.get_offline_download_tools.return_value = [
@@ -69,9 +63,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_all_checks_pass(self, mgr):
         """Should return True when health is ok and tool is available."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = True
             mock_instance.get_offline_download_tools.return_value = [
@@ -86,9 +78,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_client_created_with_correct_params(self, mgr):
         """Should create OpenListClient with url and token from config."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = True
             mock_instance.get_offline_download_tools.return_value = [
@@ -105,9 +95,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_dict_format_tools_also_work(self, mgr):
         """Should also handle dict-format tools (e.g. {"name": "qBittorrent"})."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = True
             mock_instance.get_offline_download_tools.return_value = [
@@ -122,9 +110,7 @@ class TestValidateOpenlist:
     @pytest.mark.asyncio
     async def test_empty_tools_list(self, mgr):
         """Should return False when server returns empty tools list."""
-        with patch(
-            "openlist_ani.core.download.downloader.api.OpenListClient"
-        ) as MockClient:
+        with patch("openlist_ani.core.download.api.OpenListClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.check_health.return_value = True
             mock_instance.get_offline_download_tools.return_value = []
