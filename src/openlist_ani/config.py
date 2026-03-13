@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from tomlkit import dumps as toml_dumps
 
 from .core.download.downloader.api.model import OfflineDownloadTool
@@ -25,7 +25,29 @@ class OpenListConfig(BaseModel):
     token: str = ""
     download_path: str = "/"
     offline_download_tool: OfflineDownloadTool = OfflineDownloadTool.QBITTORRENT
-    rename_format: str = "{anime_name} S{season:02d}E{episode:02d}"
+    rename_format: str = (
+        "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+    )
+
+    @field_validator("offline_download_tool", mode="before")
+    @classmethod
+    def _normalize_offline_download_tool(
+        cls, value: OfflineDownloadTool | str
+    ) -> OfflineDownloadTool | str:
+        if isinstance(value, OfflineDownloadTool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                raise ValueError("offline_download_tool cannot be empty.")
+            lower_normalized = normalized.lower()
+            for tool in OfflineDownloadTool:
+                if (
+                    lower_normalized == tool.value.lower()
+                    or lower_normalized == tool.name.lower()
+                ):
+                    return tool
+        return value
 
 
 class LLMConfig(BaseModel):
@@ -48,7 +70,9 @@ class NotificationConfig(BaseModel):
     """Configuration for notification system."""
 
     enabled: bool = False
-    batch_interval: float = 300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    batch_interval: float = (
+        300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    )
     bots: list[BotConfig] = Field(default_factory=list)
 
 
@@ -72,7 +96,9 @@ class LogConfig(BaseModel):
 
     level: str = "INFO"  # Console log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
     file_level: str = "INFO"  # File log level
-    rotation: str = "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    rotation: str = (
+        "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    )
     retention: str = "1 week"  # How long to keep old logs
 
 
@@ -364,9 +390,9 @@ class ConfigManager:
         # Step 2: offline download tool validation
         tool: OfflineDownloadTool = self.openlist.offline_download_tool
         logger.info(f"Verifying offline download tool '{tool}'...")
-        available_tools: (
-            list[dict[str, Any]] | None
-        ) = await client.get_offline_download_tools()
+        available_tools: list[dict[str, Any]] | None = (
+            await client.get_offline_download_tools()
+        )
         if available_tools is None:
             logger.error("Failed to retrieve offline download tools from server.")
             return False
