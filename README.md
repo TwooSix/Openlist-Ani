@@ -48,7 +48,7 @@ urls = ["RSS订阅链接"]
 url = "http://localhost:5244"       # Openlist 访问地址
 token = ""                          # 令牌，见「设置 → 其他 → 令牌」
 download_path = "/PikPak/Anime"     # 下载保存路径
-offline_download_tool = "QBITTORRENT"  # 离线下载工具
+offline_download_tool = "qBittorrent"  # 离线下载工具
 
 [llm]
 openai_api_key = ""                 # API Key
