@@ -1,12 +1,18 @@
 """
 Telegram bot integration for assistant.
+
+Uses AI-driven streaming: the LLM decides when to send progress
+messages via the built-in ``send_message`` tool. The integration layer
+delivers those messages to the Telegram chat and sends a typing
+indicator to keep the user informed.
 """
 
 import asyncio
-from typing import Awaitable, Callable
+import time
 
 from telegram import Update
-from telegram.error import BadRequest, TelegramError
+from telegram.constants import ChatAction
+from telegram.error import TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -19,7 +25,12 @@ from telegram.ext import (
 from ..backend.client import BackendClient
 from ..config import config
 from ..logger import logger
-from .assistant import AniAssistant, AssistantStatus
+from .assistant import AniAssistant, StreamCallback
+
+# Telegram message length limit
+_MAX_MESSAGE_LENGTH = 4096
+# Min interval between stream messages (seconds)
+_STREAM_MIN_INTERVAL = 0.5
 
 
 class TelegramAssistant:
@@ -41,7 +52,8 @@ Note: I will respond in the same language you use to communicate with me!
 
 Start chatting with me!"""
     UNAUTHORIZED_MESSAGE = "❌ You are not authorized to use this bot"
-    HISTORY_CLEARED_MESSAGE = "✅ Conversation history cleared"
+    MEMORY_CLEARED_MESSAGE = "✅ Memory cleared"
+    NEW_SESSION_MESSAGE = "✅ New session started"
 
     def __init__(self, backend_client: BackendClient):
         """Initialize Telegram assistant.
@@ -54,9 +66,6 @@ Start chatting with me!"""
         self.bot_token = config.assistant.telegram.bot_token
         self.allowed_users = set(config.assistant.telegram.allowed_users)
         self.application: Application | None = None
-
-        # Store status message IDs for each chat
-        self.status_messages: dict[int, int] = {}
 
         logger.info(
             f"Telegram assistant initialized. Allowed users: {self.allowed_users}"
@@ -95,12 +104,16 @@ Start chatting with me!"""
         """Register Telegram command and message handlers."""
         application.add_handler(CommandHandler("start", self._handle_start_command))
         application.add_handler(CommandHandler("clear", self._handle_clear_command))
+        application.add_handler(CommandHandler("reset", self._handle_reset_command))
         application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message)
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                self._handle_text_message,
+            )
         )
 
     async def _start_polling(self) -> None:
-        """Start the application and begin polling for Telegram updates."""
+        """Start the application and begin polling."""
         if self.application is None:
             raise RuntimeError("Telegram application is not initialized")
 
@@ -115,7 +128,7 @@ Start chatting with me!"""
         logger.info(f"Bot started: @{bot_info.username} ({bot_info.first_name})")
 
     async def _stop_polling(self) -> None:
-        """Stop polling and the application, keeping it ready for restart."""
+        """Stop polling and the application."""
         if self.application is None:
             return
 
@@ -154,45 +167,9 @@ Start chatting with me!"""
         except Exception:
             logger.debug("Telegram application shutdown failed or already shut down")
 
-    @staticmethod
-    def _format_status_text(status: AssistantStatus, payload: dict) -> str:
-        """Map assistant status event to Telegram-friendly text."""
-        if status == AssistantStatus.THINKING:
-            return "🤔 正在思考..."
-
-        if status == AssistantStatus.FINALIZING:
-            return "✍️ 正在整理回复..."
-
-        if status == AssistantStatus.TOOL_EXECUTING:
-            tool_name = payload.get("tool_name", "")
-            if tool_name == "download_resource" and payload.get("title"):
-                return f"⬇️ 正在下载: {payload['title']}"
-
-            if tool_name == "search_anime_resources":
-                website = payload.get("website")
-                website_labels = {
-                    "mikan": "🍊 正在搜索 Mikan 资源...",
-                    "dmhy": "🌸 正在搜索动漫花园资源...",
-                    "acgrip": "🛰️ 正在搜索 ACG.RIP 资源...",
-                }
-                return website_labels.get(website, "🔍 正在搜索动画资源...")
-
-            tool_status_messages = {
-                "parse_rss": "📡 正在解析 RSS 订阅...",
-                "execute_sql_query": "💾 正在查询下载历史数据库...",
-                "get_bangumi_calendar": "📅 正在获取 Bangumi 每日放送...",
-                "get_bangumi_subject": "📖 正在查询 Bangumi 番剧详情...",
-                "get_bangumi_collection": "📚 正在获取 Bangumi 用户收藏...",
-                "get_bangumi_reviews": "💬 正在获取 Bangumi 番剧评论...",
-                "update_bangumi_collection": "✏️ 正在更新 Bangumi 收藏状态...",
-                "recommend_anime": "🎯 正在分析用户喜好...",
-                "mikan_search_bangumi": "🍊 正在搜索 Mikan 番剧条目...",
-                "mikan_subscribe_bangumi": "🍊 正在订阅 Mikan 番剧...",
-                "mikan_unsubscribe_bangumi": "🍊 正在取消 Mikan 订阅...",
-            }
-            return tool_status_messages.get(tool_name, f"⚙️ 正在执行 {tool_name}...")
-
-        return "⚙️ 正在处理中..."
+    # ------------------------------------------------------------------
+    # Authorization
+    # ------------------------------------------------------------------
 
     async def _authorize_user(
         self,
@@ -214,6 +191,10 @@ Start chatting with me!"""
             )
         return False
 
+    # ------------------------------------------------------------------
+    # Command handlers
+    # ------------------------------------------------------------------
+
     async def _handle_start_command(
         self,
         update: Update,
@@ -230,17 +211,32 @@ Start chatting with me!"""
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """Handle the /clear command and wipe persisted memory."""
+        """Handle the /clear command and wipe all persisted memory."""
         if not await self._authorize_user(update, context):
             return
 
-        memory_key = self._build_memory_key(update.effective_user)
-        await self.assistant.clear_memory(memory_key)
+        await self.assistant.clear_memory()
 
-        if update.effective_chat:
-            await self._clear_status_message(context, update.effective_chat.id)
         if update.effective_message:
-            await update.effective_message.reply_text(self.HISTORY_CLEARED_MESSAGE)
+            await update.effective_message.reply_text(self.MEMORY_CLEARED_MESSAGE)
+
+    async def _handle_reset_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """Handle the /reset command to start a new session."""
+        if not await self._authorize_user(update, context):
+            return
+
+        await self.assistant.start_new_session()
+
+        if update.effective_message:
+            await update.effective_message.reply_text(self.NEW_SESSION_MESSAGE)
+
+    # ------------------------------------------------------------------
+    # Message handler
+    # ------------------------------------------------------------------
 
     async def _handle_text_message(
         self,
@@ -260,77 +256,91 @@ Start chatting with me!"""
         logger.info(
             f"Received message from {getattr(user, 'id', None)}: {message.text}"
         )
-        status_callback = self._build_status_callback(context, chat.id)
+
+        # Send initial typing indicator
+        await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
+
+        stream_callback = self._build_stream_callback(context, chat.id)
 
         try:
             response = await self.assistant.process_message(
                 message.text,
-                status_callback=status_callback,
-                memory_key=self._build_memory_key(user),
+                stream_callback=stream_callback,
             )
-            await self._clear_status_message(context, chat.id)
-            await message.reply_text(response)
+            await self._send_chunked_message(context, chat.id, response)
         except Exception as exc:
             logger.exception(
                 f"Error processing message from {getattr(user, 'id', None)}"
             )
-            await self._clear_status_message(context, chat.id)
-            await message.reply_text(f"❌ Error processing message: {str(exc)}")
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"❌ Error processing message: {str(exc)}",
+            )
+
+    # ------------------------------------------------------------------
+    # Streaming helpers
+    # ------------------------------------------------------------------
+
+    def _build_stream_callback(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> StreamCallback:
+        """Create a stream callback that sends messages and typing."""
+        last_sent: list[float] = [0.0]
+
+        async def _stream_cb(text: str) -> None:
+            now = time.monotonic()
+            elapsed = now - last_sent[0]
+            if elapsed < _STREAM_MIN_INTERVAL:
+                await asyncio.sleep(_STREAM_MIN_INTERVAL - elapsed)
+
+            await self._send_chunked_message(context, chat_id, text)
+            last_sent[0] = time.monotonic()
+
+            # Re-send typing indicator after the message
+            try:
+                await context.bot.send_chat_action(
+                    chat_id=chat_id, action=ChatAction.TYPING
+                )
+            except TelegramError:
+                pass
+
+        return _stream_cb
 
     @staticmethod
-    def _build_memory_key(user) -> str | None:
-        """Build a stable persisted memory key for one Telegram user."""
-        if user is None:
-            return None
-        return f"telegram:{user.id}"
-
-    def _build_status_callback(
-        self,
+    async def _send_chunked_message(
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-    ) -> Callable[[AssistantStatus, dict], Awaitable[None]]:
-        """Create chat-specific status callback for assistant progress events."""
-
-        async def status_callback(status: AssistantStatus, payload: dict) -> None:
-            status_text = self._format_status_text(status, payload)
-            await self._upsert_status_message(context, chat_id, status_text)
-
-        return status_callback
-
-    async def _upsert_status_message(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        chat_id: int,
-        status_text: str,
+        text: str,
     ) -> None:
-        """Create or update status message for a chat."""
-        message_id = self.status_messages.get(chat_id)
-        if message_id:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=status_text,
-                )
-                return
-            except BadRequest as exc:
-                if "message is not modified" in str(exc).lower():
-                    return
-            except TelegramError:
-                logger.debug("Failed to edit status message, sending a new one")
+        """Send a message, splitting on newline boundaries if too long.
 
-        sent_message = await context.bot.send_message(chat_id=chat_id, text=status_text)
-        self.status_messages[chat_id] = sent_message.message_id
+        Args:
+            context: Telegram bot context.
+            chat_id: Chat to send to.
+            text: Full message text.
+        """
+        if not text:
+            return
 
-    async def _clear_status_message(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        chat_id: int,
-    ) -> None:
-        """Delete and clear tracked status message for a chat if present."""
-        message_id = self.status_messages.pop(chat_id, None)
-        if message_id:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            except TelegramError:
-                logger.debug("Failed to delete status message for chat {}", chat_id)
+        if len(text) <= _MAX_MESSAGE_LENGTH:
+            await context.bot.send_message(chat_id=chat_id, text=text)
+            return
+
+        # Split into chunks on newline boundaries
+        remaining = text
+        while remaining:
+            if len(remaining) <= _MAX_MESSAGE_LENGTH:
+                await context.bot.send_message(chat_id=chat_id, text=remaining)
+                break
+
+            # Find the last newline within the limit
+            split_at = remaining.rfind("\n", 0, _MAX_MESSAGE_LENGTH)
+            if split_at <= 0:
+                # No good newline boundary — hard-cut
+                split_at = _MAX_MESSAGE_LENGTH
+
+            chunk = remaining[:split_at]
+            remaining = remaining[split_at:].lstrip("\n")
+            await context.bot.send_message(chat_id=chat_id, text=chunk)

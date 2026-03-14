@@ -22,16 +22,15 @@ from .service import BackendService
 router = APIRouter(prefix="/api")
 
 
-@router.post("/restart", response_model=RestartResponse)
+@router.post("/restart")
 async def restart_service() -> RestartResponse:
     """Restart the application by sending SIGHUP to self."""
     logger.info("Backend: Restart requested via API")
-    # Send SIGHUP to trigger graceful restart
-    os.kill(os.getpid(), signal.SIGHUP)
+    os.kill(os.getpid(), signal.SIGHUP)  # noqa: S603 – intentional self-signal for graceful restart
     return RestartResponse(success=True, message="Restart signal sent")
 
 
-@router.post("/rss", response_model=AddRSSResponse)
+@router.post("/rss")
 async def add_rss_url(request: AddRSSRequest) -> AddRSSResponse:
     """Add a new RSS monitoring URL."""
     svc = BackendService.get()
@@ -39,7 +38,7 @@ async def add_rss_url(request: AddRSSRequest) -> AddRSSResponse:
     return AddRSSResponse(success=success, message=message, urls=urls)
 
 
-@router.post("/downloads", response_model=CreateDownloadResponse)
+@router.post("/downloads")
 async def create_download(request: CreateDownloadRequest) -> CreateDownloadResponse:
     """Create a new download task."""
     svc = BackendService.get()
@@ -50,7 +49,7 @@ async def create_download(request: CreateDownloadRequest) -> CreateDownloadRespo
     return CreateDownloadResponse(success=success, message=message, task=task)
 
 
-@router.get("/downloads", response_model=DownloadListResponse)
+@router.get("/downloads")
 async def list_downloads() -> DownloadListResponse:
     """Get all active download tasks."""
     svc = BackendService.get()
@@ -58,7 +57,10 @@ async def list_downloads() -> DownloadListResponse:
     return DownloadListResponse(tasks=tasks, total=len(tasks))
 
 
-@router.get("/downloads/{task_id}", response_model=DownloadTaskResponse)
+@router.get(
+    "/downloads/{task_id}",
+    responses={404: {"description": "Task not found"}},
+)
 async def get_download(task_id: str) -> DownloadTaskResponse:
     """Get a specific download task's status and progress."""
     svc = BackendService.get()

@@ -21,7 +21,7 @@ class BackendClient:
         self._base_url = base_url.rstrip("/")
         self._session: aiohttp.ClientSession | None = None
 
-    async def _get_session(self) -> aiohttp.ClientSession:
+    def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session."""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
@@ -56,7 +56,7 @@ class BackendClient:
             RuntimeError: On non-2xx response.
         """
         url = f"{self._base_url}{path}"
-        session = await self._get_session()
+        session = self._get_session()
         async with session.request(method, url, json=json) as resp:
             body = await resp.json()
             if resp.status >= 400:

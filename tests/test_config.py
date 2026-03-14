@@ -90,7 +90,6 @@ class TestAssistantConfig:
     def test_defaults(self):
         cfg = AssistantConfig()
         assert cfg.enabled is False
-        assert cfg.max_history_messages == 10
         assert cfg.telegram.bot_token == ""
         assert cfg.telegram.allowed_users == []
 

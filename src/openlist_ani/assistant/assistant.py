@@ -1,10 +1,15 @@
-"""
-Core assistant logic for LLM interaction and tool calling.
+"""Core assistant logic for LLM interaction and tool calling.
+
+Architecture:
+
+- **Tools** (read_file, search_files, run_command, send_message): exposed
+  as OpenAI function-calling tools via :class:`ToolRegistry`.
+- **Domain skills** (bangumi, mikan, oani): completely independent
+  standalone scripts.  The LLM discovers them by searching for SKILL.md
+  files and executes them via ``run_command``.
 """
 
 import json
-from enum import Enum
-from typing import Any, Awaitable, Callable
 
 from openai import AsyncOpenAI
 
@@ -12,54 +17,77 @@ from ..backend.client import BackendClient
 from ..config import config
 from ..logger import logger
 from .memory import AssistantMemoryManager
-from .tools import get_assistant_tools, handle_tool_call
+from .tools import (
+    MessageCallback,
+    SendMessageTool,
+    ToolRegistry,
+    UpdateMemoryTool,
+    UpdateSoulTool,
+    UpdateUserProfileTool,
+)
 
+# Re-export so integration layers (telegram, etc.) can import from here.
+StreamCallback = MessageCallback
 
-class AssistantStatus(str, Enum):
-    """Assistant execution status emitted to outer integrations."""
+_BEHAVIORAL_RULES = (
+    "## Behavioral Rules (MANDATORY)\n\n"
+    "### 1. Message-First Principle\n\n"
+    "Before EVERY tool call, you MUST call `send_message` first to tell "
+    "the user what you are about to do. This is a hard rule with NO "
+    "exceptions. The user must never wait in silence.\n\n"
+    "Example flow:\n"
+    '1. Call `send_message`: "Let me search for resources for this anime 🔍"\n'
+    "2. Call `run_command` to execute the search skill\n"
+    '3. Call `send_message`: "Found some results, let me organize them 📋"\n'
+    "4. Return final results to the user\n\n"
+    "### 2. Operational Safety\n\n"
+    "- If no download link is available, search for resources first.\n"
+    "- When given an RSS link, always parse it before downloading.\n"
+    "- NEVER download resources already marked as downloaded.\n"
+    "- Check download history via database query before downloading.\n"
+    "- If tool arguments are uncertain or conflicting, ask the user "
+    "instead of guessing.\n"
+    "- When a tool returns confirmation or conflict info, relay it "
+    "to the user verbatim — do NOT retry on your own.\n\n"
+    "### 3. Thinking Approach\n\n"
+    "- Break complex requests into atomic steps.\n"
+    "- Report progress to the user after each step.\n"
+    "- On error, explain the situation and suggest alternatives.\n\n"
+    "### 4. Memory Management\n\n"
+    "You have three tools for persisting information across conversations. "
+    "Be **proactive** — save important info immediately, don't wait.\n\n"
+    "- `update_user_profile`: Save personal user info (name, preferences, "
+    "habits, Bangumi collection analysis) to USER.md. Call this whenever "
+    "you discover anything about the user.\n"
+    "- `update_memory`: Save valuable contextual facts (task outcomes, "
+    "environment details, workflow patterns) to MEMORY.md. Call this for "
+    "durable knowledge that isn't personal info.\n"
+    "- `update_soul`: Save personality/behaviour changes to SOUL.md. "
+    "Call this ONLY when the user explicitly asks you to change how you "
+    "behave or communicate.\n"
+)
 
-    THINKING = "thinking"
-    FINALIZING = "finalizing"
-    TOOL_EXECUTING = "tool_executing"
-
-
-StatusCallback = Callable[[AssistantStatus, dict[str, Any]], Awaitable[None]]
+_SKILL_DISCOVERY_HINT = (
+    "## Skill Discovery\n\n"
+    "You have domain-specific skills available as standalone scripts.\n"
+    "To discover and use them:\n\n"
+    "1. Use `search_files` with pattern "
+    "`src/openlist_ani/assistant/skills/**/SKILL.md` "
+    "to find available skills.\n"
+    "2. Use `read_file` to read the SKILL.md and learn about "
+    "available actions and their CLI arguments.\n"
+    "3. Use `run_command` to execute the skill script, e.g.:\n"
+    "   `uv run python -m "
+    "openlist_ani.assistant.skills.<skill>.script.<action> "
+    "[--arg value ...]`\n\n"
+    "Always read SKILL.md first so you know the correct arguments.\n"
+)
 
 
 class AniAssistant:
     """Core assistant for interacting with LLM and executing tools."""
 
-    MAX_TOOL_ITERATIONS = 20
-    HISTORY_FOCUS_PROMPT = "--- New user request below. Focus on addressing THIS request specifically. Previous conversation is provided only for context. ---"
-    DEFAULT_SYSTEM_PROMPT = """You are an anime resource download assistant with tool access.
-
-## Key Rules:
-- Search first if no download URL is available
-- Parse RSS before downloading from feeds
-- NEVER download resources marked as "Downloaded"
-- Use database to check download history before downloading
-- If tool args are uncertain or conflicting, ask user first; do NOT call tools
-- When a tool returns confirmation/mismatch, relay to user verbatim; NEVER retry with guessed params
-- Respond in the user's language
-- Think step by step: break complex requests into atomic tool calls
-
-## Database Schema:
-Table: `resources`
-Columns: id, url, title, anime_name, season, episode, fansub, quality, languages, version, downloaded_at
-
-## Pagination:
-Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next page.
-
-## Bangumi:
-- To find subject_id by name: call get_bangumi_collection first
-- update_bangumi_collection: if tool returns confirmation/mismatch, relay to user and STOP
-- recommend_anime / get_bangumi_reviews / get_bangumi_calendar / get_bangumi_subject for info
-
-## Mikan (mikanani.me):
-- mikan_search_bangumi: find anime by keyword → Mikan ID
-- mikan_subscribe_bangumi: pass subtitle_group_name, tool auto-resolves ID
-- mikan_unsubscribe_bangumi: unsubscribe
-- Search first to get Mikan ID, then subscribe"""
+    MAX_TOOL_ITERATIONS = 100
 
     def __init__(self, backend_client: BackendClient):
         """Initialize assistant.
@@ -70,34 +98,37 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
         self.backend_client = backend_client
         self.client: AsyncOpenAI | None = None
         self.model = config.llm.openai_model
-        self.tools = get_assistant_tools()
-        self.max_history = config.assistant.max_history_messages
-        self.system_prompt = self.DEFAULT_SYSTEM_PROMPT
+        self.tool_registry = ToolRegistry()
+        self.tools = self.tool_registry.get_definitions()
         self.client = self._create_openai_client()
         self.memory_manager = AssistantMemoryManager(
             client=self.client,
             model=self.model,
-            recent_message_limit=self.max_history,
         )
+
+        # Wire memory manager into all memory-related tools.
+        for tool_name, tool_type in (
+            ("update_user_profile", UpdateUserProfileTool),
+            ("update_memory", UpdateMemoryTool),
+            ("update_soul", UpdateSoulTool),
+        ):
+            tool = self.tool_registry.get_tool(tool_name)
+            if isinstance(tool, tool_type):
+                tool.set_memory_manager(self.memory_manager)
 
     async def process_message(
         self,
         user_message: str,
-        history: list[dict] | None = None,
-        status_callback: StatusCallback | None = None,
-        memory_key: str | None = None,
+        stream_callback: StreamCallback | None = None,
     ) -> str:
         """Process user message and return response.
 
         Args:
-            user_message: User's message
-            history: Conversation history (list of message dicts with 'role' and 'content')
-                    Should only include user/assistant messages from previous conversations
-                status_callback: Optional callback for UI progress updates.
-                        Receives (status enum, payload) for each state event.
+            user_message: User's message.
+            stream_callback: Optional callback to push progress messages.
 
         Returns:
-            Assistant's response message
+            Assistant's response message.
         """
         if not self.client:
             return (
@@ -106,13 +137,20 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
 
         try:
             logger.info(f"Assistant: Processing message: {user_message}")
-            messages = await self._build_messages(user_message, history, memory_key)
+            messages = await self._build_messages(user_message)
 
-            await self._emit_status(status_callback, AssistantStatus.THINKING)
+            # Set the stream callback on SendMessageTool for this turn
+            send_tool = self.tool_registry.get_tool("send_message")
+            if isinstance(send_tool, SendMessageTool):
+                send_tool.set_callback(stream_callback)
 
-            response = await self._run_conversation_loop(messages, status_callback)
-            await self.memory_manager.remember_turn(memory_key, user_message, response)
-            return response
+            try:
+                response = await self._run_conversation_loop(messages)
+                await self.memory_manager.append_turn(user_message, response)
+                return response
+            finally:
+                if isinstance(send_tool, SendMessageTool):
+                    send_tool.set_callback(None)
 
         except Exception as e:
             logger.exception("Assistant: Error processing message")
@@ -121,14 +159,11 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
     async def _run_conversation_loop(
         self,
         messages: list[dict],
-        status_callback: StatusCallback | None = None,
     ) -> str:
         """Run the LLM interaction loop with tool calls until final answer."""
         for _ in range(self.MAX_TOOL_ITERATIONS):
             model_message = await self._request_model_response(messages)
-            final_text = await self._handle_model_message(
-                model_message, messages, status_callback
-            )
+            final_text = await self._handle_model_message(model_message, messages)
             if final_text is not None:
                 return final_text
 
@@ -149,33 +184,25 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
         self,
         message,
         messages: list[dict],
-        status_callback: StatusCallback | None = None,
     ) -> str | None:
-        """Handle one model message; return final text if conversation can finish."""
+        """Handle one model message; return final text or None to continue."""
         if not message.tool_calls:
             logger.info("Assistant: No tool calls, returning response")
-            await self._emit_status(status_callback, AssistantStatus.FINALIZING)
             return message.content or "Sorry, I cannot understand your request"
 
         messages.append(message)
-        await self._execute_all_tool_calls(
-            message.tool_calls, messages, status_callback
-        )
+        await self._execute_all_tool_calls(message.tool_calls, messages)
         return None
 
     async def _execute_all_tool_calls(
         self,
         tool_calls,
         messages: list[dict],
-        status_callback: StatusCallback | None = None,
     ) -> None:
-        """Execute all tool calls in order and append their outputs to context."""
+        """Execute all tool calls and append results to context."""
         for tool_call in tool_calls:
             tool_name = tool_call.function.name
             raw_arguments = tool_call.function.arguments
-            arguments = self._safe_parse_arguments(raw_arguments)
-
-            await self._emit_tool_status(status_callback, tool_name, arguments)
 
             tool_result = await self._execute_tool_call(tool_name, raw_arguments)
             messages.append(
@@ -186,21 +213,25 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
                 }
             )
 
-            if not tool_result.startswith("Error"):
-                logger.info(
-                    f"Assistant: Tool {tool_name} result: {tool_result[:200]}..."
-                )
-
-    async def _execute_tool_call(self, tool_name: str, raw_arguments: str) -> str:
+    async def _execute_tool_call(
+        self,
+        tool_name: str,
+        raw_arguments: str,
+    ) -> str:
         """Execute one tool call and return tool output text."""
         try:
             arguments = json.loads(raw_arguments)
-            logger.info(f"Assistant: Calling tool {tool_name} with {arguments}")
-            return await handle_tool_call(tool_name, arguments, self.backend_client)
         except json.JSONDecodeError:
             error_msg = f"Failed to parse arguments for tool {tool_name}"
             logger.error(f"Assistant: {error_msg}: {raw_arguments}")
             return f"Error: {error_msg}. Please check your arguments format."
+
+        logger.info(f"Assistant: Calling tool {tool_name} with {arguments}")
+        try:
+            result = await self.tool_registry.handle_tool_call(tool_name, arguments)
+            if not result.startswith("❌"):
+                logger.info(f"Assistant: Tool {tool_name} result: {result[:200]}...")
+            return result
         except Exception as e:
             error_msg = f"Error executing tool {tool_name}"
             logger.exception(f"Assistant: {error_msg}")
@@ -218,101 +249,24 @@ Do NOT add LIMIT/OFFSET to SQL queries. If has_next_page is true, request next p
             or "Operation completed but unable to generate response"
         )
 
-    async def _build_messages(
-        self,
-        user_message: str,
-        history: list[dict] | None = None,
-        memory_key: str | None = None,
-    ) -> list[dict]:
-        """Build the message list with system prompt, history, and user message."""
-        messages = [{"role": "system", "content": self.system_prompt}]
+    async def _build_messages(self, user_message: str) -> list[dict]:
+        """Build the message list from memory + skill discovery hint."""
+        messages = await self.memory_manager.build_system_messages(user_message)
 
-        messages.extend(
-            await self.memory_manager.build_memory_messages(memory_key, user_message)
-        )
-
-        effective_history = history
-        if effective_history is None and memory_key:
-            effective_history = await self.memory_manager.load_recent_history(
-                memory_key
-            )
-
-        filtered_history = self._filter_history(effective_history)
-        if filtered_history:
-            messages.extend(filtered_history)
-            messages.append({"role": "system", "content": self.HISTORY_FOCUS_PROMPT})
+        # Behavioral rules + skill discovery hint
+        messages.append({"role": "system", "content": _BEHAVIORAL_RULES})
+        messages.append({"role": "system", "content": _SKILL_DISCOVERY_HINT})
 
         messages.append({"role": "user", "content": user_message})
         return messages
 
-    async def clear_memory(self, memory_key: str | None) -> None:
-        """Clear persisted memory for the given conversation key."""
-        await self.memory_manager.clear_memory(memory_key)
+    async def clear_memory(self) -> None:
+        """Clear all persisted memory."""
+        await self.memory_manager.clear_all_memory()
 
-    def _filter_history(self, history: list[dict] | None) -> list[dict]:
-        """Keep only recent valid user/assistant history messages."""
-        if not history:
-            return []
-
-        return [
-            msg
-            for msg in history[-self.max_history :]
-            if msg.get("role") in ["user", "assistant"] and "tool_calls" not in msg
-        ]
-
-    @staticmethod
-    def _build_tool_status_payload(tool_name: str, arguments: dict) -> dict[str, Any]:
-        """Build structured payload for tool execution status event."""
-        payload: dict[str, Any] = {"tool_name": tool_name}
-        if tool_name == "download_resource" and "title" in arguments:
-            payload["title"] = arguments["title"]
-        if tool_name == "search_anime_resources":
-            payload["website"] = arguments.get("website")
-        if tool_name == "parse_rss":
-            payload["rss_url"] = arguments.get("rss_url")
-        if tool_name in {
-            "mikan_search_bangumi",
-            "mikan_subscribe_bangumi",
-            "mikan_unsubscribe_bangumi",
-        }:
-            if "keyword" in arguments:
-                payload["keyword"] = arguments["keyword"]
-            if "bangumi_id" in arguments:
-                payload["bangumi_id"] = arguments["bangumi_id"]
-        return payload
-
-    async def _emit_status(
-        self,
-        status_callback: StatusCallback | None,
-        status: AssistantStatus,
-        payload: dict[str, Any] | None = None,
-    ) -> None:
-        """Emit one structured status event to outer integration layer."""
-        if status_callback:
-            await status_callback(status, payload or {})
-
-    async def _emit_tool_status(
-        self,
-        status_callback: StatusCallback | None,
-        tool_name: str,
-        arguments: dict | None,
-    ) -> None:
-        """Emit tool-executing status event; skip when tool args are invalid JSON."""
-        if arguments is None:
-            return
-        await self._emit_status(
-            status_callback,
-            AssistantStatus.TOOL_EXECUTING,
-            self._build_tool_status_payload(tool_name, arguments),
-        )
-
-    @staticmethod
-    def _safe_parse_arguments(raw_arguments: str) -> dict | None:
-        """Try to parse tool arguments JSON, return None on failure."""
-        try:
-            return json.loads(raw_arguments)
-        except json.JSONDecodeError:
-            return None
+    async def start_new_session(self) -> None:
+        """Close the current session and start a new one."""
+        await self.memory_manager.start_new_session()
 
     def _create_openai_client(self) -> AsyncOpenAI | None:
         """Create OpenAI client from configuration."""

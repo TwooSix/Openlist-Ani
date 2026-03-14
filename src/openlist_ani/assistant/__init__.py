@@ -8,9 +8,8 @@ from ..backend.client import BackendClient
 from ..config import config
 from ..database import db
 from ..logger import configure_logger, logger
-from .assistant import AniAssistant, AssistantStatus
+from .assistant import AniAssistant, StreamCallback
 from .telegram_assistant import TelegramAssistant
-from .tools import close_tool_clients
 
 
 async def run() -> None:
@@ -51,7 +50,6 @@ async def run() -> None:
         logger.exception(f"Assistant error: {e}")
     finally:
         await backend_client.close()
-        await close_tool_clients()
 
 
 def main() -> None:
@@ -62,4 +60,4 @@ def main() -> None:
         logger.info("Assistant shutdown")
 
 
-__all__ = ["AniAssistant", "AssistantStatus", "TelegramAssistant", "main", "run"]
+__all__ = ["AniAssistant", "StreamCallback", "TelegramAssistant", "main", "run"]

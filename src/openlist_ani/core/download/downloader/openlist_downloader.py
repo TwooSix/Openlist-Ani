@@ -181,6 +181,12 @@ class OpenListDownloader(BaseDownloader):
 
     # ── Step 2: Wait for offline download ────────────────────────────
 
+    def _check_done_task_state(self, matching_done, label: str) -> None:
+        """Raise if a completed task has a non-success state."""
+        if matching_done.state != OpenlistTaskState.SUCCEEDED:
+            logger.error(f"{label} failed with state: {matching_done.state}")
+            raise DownloadError(f"{label} failed with state: {matching_done.state}")
+
     async def _wait_download_complete(self, task: DownloadTask) -> None:
         """Poll until the offline download completes."""
         task_id = task.downloader_data.get("task_id")
@@ -205,11 +211,7 @@ class OpenListDownloader(BaseDownloader):
 
             matching_done = next((t for t in done if t.id == task_id), None)
             if matching_done is not None:
-                if matching_done.state != OpenlistTaskState.SUCCEEDED:
-                    logger.error(f"Download failed with state: {matching_done.state}")
-                    raise DownloadError(
-                        f"Task failed with state: {matching_done.state}"
-                    )
+                self._check_done_task_state(matching_done, "Task")
                 return
 
             raise DownloadError(f"Task {task_id} not found in undone or done lists")
@@ -244,11 +246,7 @@ class OpenListDownloader(BaseDownloader):
 
             matching_done = next((t for t in done if task_uuid in t.name), None)
             if matching_done is not None:
-                if matching_done.state != OpenlistTaskState.SUCCEEDED:
-                    logger.error(f"Transfer failed with state: {matching_done.state}")
-                    raise DownloadError(
-                        f"Transfer failed with state: {matching_done.state}"
-                    )
+                self._check_done_task_state(matching_done, "Transfer")
                 return
 
             not_found_count += 1
@@ -339,7 +337,7 @@ class OpenListDownloader(BaseDownloader):
         file_to_move = await self._rename_temp_file_if_needed(task, final_filename)
 
         logger.debug(
-            f"Moving file to final destination: " f"{final_dir_path}/{file_to_move}"
+            f"Moving file to final destination: {final_dir_path}/{file_to_move}"
         )
         if not await self.client.move_file(temp_path, final_dir_path, [file_to_move]):
             raise DownloadError(f"Failed to move file to: {final_dir_path}")
@@ -456,6 +454,6 @@ class OpenListDownloader(BaseDownloader):
             return final_filename
 
         logger.warning(
-            f"Rename failed, will move with original name: " f"{downloaded_filename}"
+            f"Rename failed, will move with original name: {downloaded_filename}"
         )
         return downloaded_filename

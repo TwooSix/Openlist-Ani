@@ -229,6 +229,65 @@ class BangumiClient:
         logger.debug(f"Bangumi: Fetched subject {subject_id} – {subject.display_name}")
         return subject
 
+    async def search_subjects(
+        self,
+        keyword: str,
+        *,
+        sort: str = "match",
+        subject_type: list[int] | None = None,
+        tag: list[str] | None = None,
+        air_date: list[str] | None = None,
+        rating: list[str] | None = None,
+        rank: list[str] | None = None,
+        nsfw: bool | None = False,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Search subjects by keyword (POST /v0/search/subjects).
+
+        Args:
+            keyword: Search keyword.
+            sort: Sort order – "match", "heat", "rank", or "score".
+            subject_type: List of SubjectType ints to filter (OR relation).
+            tag: Tag strings to filter (AND relation).
+            air_date: Date range filters, e.g. [">=2020-07-01", "<2020-10-01"].
+            rating: Rating range filters, e.g. [">=6", "<8"].
+            rank: Rank range filters, e.g. [">10", "<=100"].
+            nsfw: None = include all, True = R18 only, False = non-R18 only.
+            limit: Max results per page.
+            offset: Pagination offset.
+
+        Returns:
+            Raw paged response dict with "total", "limit", "offset", "data".
+        """
+        body: dict[str, Any] = {"keyword": keyword, "sort": sort}
+
+        filters: dict[str, Any] = {}
+        if subject_type:
+            filters["type"] = subject_type
+        if tag:
+            filters["tag"] = tag
+        if air_date:
+            filters["air_date"] = air_date
+        if rating:
+            filters["rating"] = rating
+        if rank:
+            filters["rank"] = rank
+        if nsfw is not None:
+            filters["nsfw"] = nsfw
+
+        if filters:
+            body["filter"] = filters
+
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        data = await self._request(
+            "POST", "/v0/search/subjects", params=params, json_body=body
+        )
+        logger.debug(
+            f"Bangumi: Search '{keyword}' returned {data.get('total', 0)} total results"
+        )
+        return data
+
     async def fetch_user_collections(
         self,
         subject_type: int | None = 2,

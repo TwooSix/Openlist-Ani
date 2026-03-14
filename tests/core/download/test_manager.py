@@ -61,7 +61,7 @@ class TestIsDownloading:
             title="Active",
             download_url="magnet:?xt=urn:btih:active",
         )
-        task = DownloadTask(resource_info=resource, base_path="/tmp")
+        task = DownloadTask(resource_info=resource, base_path=str(tmp_path))
         mgr._tasks["task1"] = task
 
         assert mgr.is_downloading(resource) is True
@@ -73,7 +73,7 @@ class TestIsDownloading:
         )
 
         active = _make_resource(title="A", download_url="magnet:?xt=urn:btih:aaa")
-        task = DownloadTask(resource_info=active, base_path="/tmp")
+        task = DownloadTask(resource_info=active, base_path=str(tmp_path))
         mgr._tasks["task1"] = task
 
         query = _make_resource(title="B", download_url="magnet:?xt=urn:btih:bbb")
@@ -254,7 +254,7 @@ class TestRunDownload:
         downloader = _make_mock_downloader()
         call_count = 0
 
-        async def download_with_retry(task):
+        def download_with_retry(task):
             nonlocal call_count
             call_count += 1
             if call_count <= 1:

@@ -5,7 +5,6 @@ Uses mock HTTP responses to verify parsing, caching, and error handling
 without requiring a real API connection.
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -17,7 +16,6 @@ from openlist_ani.core.bangumi.model import (
     BangumiBlog,
     BangumiImages,
     BangumiRating,
-    BangumiTag,
     BangumiTopic,
     CalendarDay,
     CalendarItem,
@@ -706,16 +704,13 @@ class TestBangumiClient:
 
 
 class TestBangumiTools:
-    """Tests for Bangumi assistant tools."""
+    """Tests for Bangumi skill scripts (plain function interface)."""
 
     def test_calendar_tool_format(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCalendarTool
+        from openlist_ani.assistant.skills.bangumi.script.calendar import (
+            _format_calendar,
+        )
 
-        tool = BangumiCalendarTool()
-        assert tool.name == "get_bangumi_calendar"
-        assert "calendar" in tool.description.lower()
-
-        # Test formatting
         day = CalendarDay(
             weekday=Weekday(en="Mon", cn="星期一", ja="月曜日", id=1),
             items=[
@@ -728,37 +723,26 @@ class TestBangumiTools:
                 )
             ],
         )
-        result = tool._format_calendar([day])
+        result = _format_calendar([day])
         assert "星期一" in result
         assert "测试" in result
         assert "8.5" in result
 
-    def test_subject_tool_definition(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiSubjectTool
+    def test_subject_run_exists(self):
+        from openlist_ani.assistant.skills.bangumi.script.subject import run
 
-        tool = BangumiSubjectTool()
-        assert tool.name == "get_bangumi_subject"
-        assert "subject_id" in tool.parameters["properties"]
-        assert "subject_id" in tool.parameters["required"]
+        assert callable(run)
 
-    def test_collection_tool_definition(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectionTool
+    def test_collection_run_exists(self):
+        from openlist_ani.assistant.skills.bangumi.script.collection import run
 
-        tool = BangumiCollectionTool()
-        assert tool.name == "get_bangumi_collection"
-        assert "collection_type" in tool.parameters["properties"]
-
-    def test_recommend_tool_definition(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiRecommendTool
-
-        tool = BangumiRecommendTool()
-        assert tool.name == "recommend_anime"
-        assert "recommend" in tool.description.lower()
+        assert callable(run)
 
     def test_collection_tool_format(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectionTool
+        from openlist_ani.assistant.skills.bangumi.script.collection import (
+            _format_collections,
+        )
 
-        tool = BangumiCollectionTool()
         entries = [
             UserCollectionEntry(
                 subject_id=100,
@@ -768,24 +752,16 @@ class TestBangumiTools:
                 subject=SlimSubject(id=100, name="Test", name_cn="测试"),
             ),
         ]
-        result = tool._format_collections(entries)
+        result = _format_collections(entries)
         assert "测试" in result
         assert "rating:9" in result
         assert "看过" in result
 
-    def test_reviews_tool_definition(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiReviewsTool
-
-        tool = BangumiReviewsTool()
-        assert tool.name == "get_bangumi_reviews"
-        assert "subject_id" in tool.parameters["properties"]
-        assert "subject_id" in tool.parameters["required"]
-        assert "review" in tool.description.lower()
-
     def test_reviews_tool_format(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiReviewsTool
+        from openlist_ani.assistant.skills.bangumi.script.reviews import (
+            _format_reviews,
+        )
 
-        tool = BangumiReviewsTool()
         topics = [
             BangumiTopic(id=1, title="Great show!", replies=10, user_nickname="alice"),
         ]
@@ -798,7 +774,7 @@ class TestBangumiTools:
                 user_nickname="bob",
             ),
         ]
-        result = tool._format_reviews(100, topics, blogs)
+        result = _format_reviews(100, topics, blogs)
         assert "Great show!" in result
         assert "alice" in result
         assert "10 replies" in result
@@ -806,39 +782,22 @@ class TestBangumiTools:
         assert "bob" in result
         assert "phenomenal" in result
 
-    def test_collect_tool_definition(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
-
-        tool = BangumiCollectTool()
-        assert tool.name == "update_bangumi_collection"
-        assert "subject_id" in tool.parameters["required"]
-        assert "collection_type" in tool.parameters["required"]
-        props = tool.parameters["properties"]
-        assert "ep_status" in props
-        # rate/comment/tags must NOT be exposed
-        assert "rate" not in props
-        assert "comment" not in props
-        assert "tags" not in props
-
     async def test_collect_tool_validates_type(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
 
-        tool = BangumiCollectTool()
-        result = await tool.execute(subject_id=100, collection_type=99)
+        result = await run(subject_id=100, collection_type=99)
         assert "Invalid collection type" in result
 
     async def test_collect_tool_validates_ep_status(self):
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
 
-        tool = BangumiCollectTool()
-        result = await tool.execute(subject_id=100, collection_type=2, ep_status=-1)
+        result = await run(subject_id=100, collection_type=2, ep_status=-1)
         assert "Invalid ep_status" in result
 
     async def test_collect_tool_updates_single_episode(self):
-        from openlist_ani.assistant.tools import bangumi_tool as bt
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script import collect as bt
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
 
-        tool = BangumiCollectTool()
         mock_client = AsyncMock()
         mock_client.fetch_subject_episodes.return_value = [
             {"id": 1001, "ep": 1, "sort": 1, "type": 0},
@@ -847,7 +806,7 @@ class TestBangumiTools:
         ]
 
         with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await tool.execute(
+            result = await run(
                 subject_id=517057,
                 collection_type=3,
                 episode_number=28,
@@ -866,10 +825,9 @@ class TestBangumiTools:
         )
 
     async def test_collect_tool_updates_progress_to_n(self):
-        from openlist_ani.assistant.tools import bangumi_tool as bt
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script import collect as bt
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
 
-        tool = BangumiCollectTool()
         mock_client = AsyncMock()
         mock_client.fetch_subject_episodes.return_value = [
             {"id": 1001, "ep": 1, "sort": 1, "type": 0},
@@ -878,7 +836,7 @@ class TestBangumiTools:
         ]
 
         with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await tool.execute(
+            result = await run(
                 subject_id=517057,
                 collection_type=3,
                 ep_status=3,
@@ -892,10 +850,9 @@ class TestBangumiTools:
         )
 
     async def test_collect_tool_blocks_update_when_episode_mismatch(self):
-        from openlist_ani.assistant.tools import bangumi_tool as bt
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script import collect as bt
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
 
-        tool = BangumiCollectTool()
         mock_client = AsyncMock()
         mock_client.fetch_subject_episodes.return_value = [
             {"id": 1001, "ep": 1, "sort": 1, "type": 0},
@@ -904,7 +861,7 @@ class TestBangumiTools:
         ]
 
         with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await tool.execute(
+            result = await run(
                 subject_id=517057,
                 collection_type=3,
                 ep_status=5,
@@ -916,11 +873,10 @@ class TestBangumiTools:
         mock_client.patch_subject_episode_collections.assert_not_called()
 
     async def test_collect_tool_rolls_back_progress_when_target_lower(self):
-        from openlist_ani.assistant.tools import bangumi_tool as bt
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script import collect as bt
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
         from openlist_ani.core.bangumi.model import UserCollectionEntry
 
-        tool = BangumiCollectTool()
         mock_client = AsyncMock()
         mock_client.fetch_subject_episodes.return_value = [
             {"id": 1001, "ep": 1, "sort": 1, "type": 0},
@@ -940,7 +896,7 @@ class TestBangumiTools:
         ]
 
         with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await tool.execute(
+            result = await run(
                 subject_id=517057,
                 collection_type=3,
                 ep_status=4,
@@ -963,17 +919,16 @@ class TestBangumiTools:
         }
 
     async def test_collect_tool_allows_episode_collection_type_zero(self):
-        from openlist_ani.assistant.tools import bangumi_tool as bt
-        from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+        from openlist_ani.assistant.skills.bangumi.script import collect as bt
+        from openlist_ani.assistant.skills.bangumi.script.collect import run
 
-        tool = BangumiCollectTool()
         mock_client = AsyncMock()
         mock_client.fetch_subject_episodes.return_value = [
             {"id": 1028, "ep": 28, "sort": 28, "type": 0},
         ]
 
         with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await tool.execute(
+            result = await run(
                 subject_id=517057,
                 collection_type=3,
                 episode_number=28,
@@ -987,707 +942,12 @@ class TestBangumiTools:
             collection_type=0,
         )
 
-
-# ================================================================
-# User profile tests
-# ================================================================
-
-
-class TestUserProfile:
-    """Tests for user profile build/load/save functions."""
-
-    def test_load_profile_missing(self, tmp_path):
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        original = profile_helper._PROFILE_PATH
-        profile_helper._PROFILE_PATH = tmp_path / "nonexistent.json"
-        try:
-            result = profile_helper._load_profile()
-            assert result is None
-        finally:
-            profile_helper._PROFILE_PATH = original
-
-    def test_save_and_load_profile(self, tmp_path):
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        original_path = profile_helper._PROFILE_PATH
-        original_dir = profile_helper._DATA_DIR
-        profile_helper._PROFILE_PATH = tmp_path / "profile.json"
-        profile_helper._DATA_DIR = tmp_path
-        try:
-            profile = {
-                "version": 2,
-                "avg_rating": 8.0,
-                "total_rated": 3,
-                "rating_sum": 24.0,
-                "collection_stats": {"看过": 3},
-                "synced_subject_ids": [1, 2, 3],
-                "last_synced_at": "2026-01-01T00:00:00Z",
-                "llm_analysis": {
-                    "preferred_genres": [{"name": "搞笑", "weight": 0.9}],
-                    "preference_summary": "喜欢搞笑番",
-                },
-            }
-            profile_helper._save_profile(profile)
-            loaded = profile_helper._load_profile()
-            assert loaded is not None
-            assert loaded["version"] == 2
-            assert loaded["llm_analysis"]["preference_summary"] == "喜欢搞笑番"
-        finally:
-            profile_helper._PROFILE_PATH = original_path
-            profile_helper._DATA_DIR = original_dir
-
-    def test_format_profile_summary(self):
-        from openlist_ani.assistant.tools.helper.profile import _format_profile_summary
-
-        profile = {
-            "avg_rating": 8.0,
-            "total_rated": 3,
-            "collection_stats": {"看过": 3, "在看": 1},
-            "llm_analysis": {
-                "preferred_genres": [
-                    {"name": "搞笑", "weight": 0.9},
-                    {"name": "冒险", "weight": 0.7},
-                ],
-                "preferred_tags": [
-                    {"name": "热血", "weight": 0.8},
-                ],
-                "disliked_tags": ["恐怖"],
-                "rating_tendency": "moderate",
-                "preference_summary": "偏好轻松搞笑的冒险类番剧",
-            },
-        }
-        summary = _format_profile_summary(profile)
-        assert "8.0" in summary
-        assert "搞笑" in summary
-        assert "冒险" in summary
-        assert "热血" in summary
-        assert "恐怖" in summary
-        assert "moderate" in summary
-        assert "偏好轻松搞笑" in summary
-
-    def test_format_profile_summary_empty_analysis(self):
-        from openlist_ani.assistant.tools.helper.profile import _format_profile_summary
-
-        profile = {
-            "avg_rating": 7.5,
-            "total_rated": 2,
-            "collection_stats": {"在看": 2},
-            "llm_analysis": {},
-        }
-        summary = _format_profile_summary(profile)
-        assert "7.5" in summary
-        assert "在看" in summary
-
     def test_season_helpers(self):
-        from openlist_ani.assistant.tools.helper.bangumi import _season_label
+        from openlist_ani.assistant.skills.bangumi.script.helper.client import (
+            _season_label,
+        )
 
         assert _season_label(1) == "冬季/1月番"
         assert _season_label(4) == "春季/4月番"
         assert _season_label(7) == "夏季/7月番"
         assert _season_label(10) == "秋季/10月番"
-
-
-# ================================================================
-# End-to-end recommendation flow tests
-# ================================================================
-
-
-class TestEndToEndRecommendation:
-    """End-to-end tests for the recommendation tool with mocked dependencies.
-
-    Verifies the full recommend_anime flow:
-    - Builds/loads user profile from Bangumi collections (LLM-analyzed)
-    - Fetches calendar data for current season
-    - Filters out collected anime
-    - Returns properly formatted context for LLM
-    """
-
-    @pytest.fixture(autouse=True)
-    def _setup_env(self, tmp_path):
-        """Set up temporary profile path and reset shared client."""
-        from openlist_ani.assistant.tools.helper import bangumi as bangumi_helper
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        orig = (
-            profile_helper._PROFILE_PATH,
-            profile_helper._DATA_DIR,
-            profile_helper._STAFF_CACHE_PATH,
-            bangumi_helper._bangumi_client,
-        )
-        profile_helper._PROFILE_PATH = tmp_path / "user_profile.json"
-        profile_helper._DATA_DIR = tmp_path
-        profile_helper._STAFF_CACHE_PATH = tmp_path / "staff_cache.json"
-        bangumi_helper._bangumi_client = None
-        yield
-        (
-            profile_helper._PROFILE_PATH,
-            profile_helper._DATA_DIR,
-            profile_helper._STAFF_CACHE_PATH,
-            bangumi_helper._bangumi_client,
-        ) = orig
-
-    @staticmethod
-    def _make_calendar():
-        """Build a mock calendar with collected and fresh anime."""
-        return [
-            CalendarDay(
-                weekday=Weekday(en="Mon", cn="星期一", ja="月曜日", id=1),
-                items=[
-                    CalendarItem(
-                        id=100,
-                        name="Collected Anime",
-                        name_cn="已收藏动画",
-                        rating=BangumiRating(score=8.5),
-                        rank=10,
-                        air_date="2026-01-05",
-                    ),
-                    CalendarItem(
-                        id=200,
-                        name="Fresh Anime",
-                        name_cn="全新动画",
-                        rating=BangumiRating(score=7.0),
-                        rank=50,
-                        air_date="2026-01-12",
-                    ),
-                    CalendarItem(
-                        id=300,
-                        name="Another Fresh",
-                        name_cn="另一部新番",
-                        rating=BangumiRating(score=6.5),
-                        rank=80,
-                        air_date="2026-01-19",
-                    ),
-                ],
-            ),
-        ]
-
-    @staticmethod
-    def _make_collections():
-        """Build mock collection entries (subject 100 collected)."""
-        return [
-            UserCollectionEntry(
-                subject_id=100,
-                rate=9,
-                type=2,
-                tags=["搞笑", "校园"],
-                subject=SlimSubject(
-                    id=100,
-                    name="Collected Anime",
-                    name_cn="已收藏动画",
-                    tags=[BangumiTag(name="搞笑", count=300)],
-                ),
-            ),
-        ]
-
-    @staticmethod
-    def _mock_llm_analysis():
-        """Return a mock LLM analysis result."""
-        return {
-            "preferred_genres": [{"name": "搞笑", "weight": 0.9}],
-            "preferred_tags": [{"name": "校园", "weight": 0.8}],
-            "disliked_tags": [],
-            "rating_tendency": "generous",
-            "preference_summary": "喜欢搞笑校园番",
-        }
-
-    async def test_recommend_filters_collected_anime(self):
-        """Already-collected anime should not appear in candidate list."""
-        import openlist_ani.assistant.tools.bangumi_tool as bt
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = self._make_collections()
-        mock_client.fetch_calendar.return_value = self._make_calendar()
-
-        with (
-            patch.object(bt, "_get_client", return_value=mock_client),
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(
-                profile_helper,
-                "_analyze_with_llm",
-                return_value=self._mock_llm_analysis(),
-            ),
-        ):
-            tool = bt.BangumiRecommendTool()
-            result = await tool.execute()
-
-        # Extract only the candidate list (between "## Candidate Anime" and "---")
-        after_header = result.split("## Candidate Anime")[-1]
-        candidate_lines = after_header.split("---")[0]
-        assert "[100]" not in candidate_lines, (
-            "Collected anime 100 should be filtered from candidates"
-        )
-        assert "已收藏动画" not in candidate_lines
-        assert "全新动画" in candidate_lines
-        assert "另一部新番" in candidate_lines
-        # Blacklist section should contain collected ID
-        assert "NEVER recommend" in result
-        assert "[100]" in after_header.split("---")[-1]
-
-    async def test_recommend_output_format(self):
-        """Output should contain profile summary and candidate list."""
-        import openlist_ani.assistant.tools.bangumi_tool as bt
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = self._make_collections()
-        mock_client.fetch_calendar.return_value = self._make_calendar()
-
-        with (
-            patch.object(bt, "_get_client", return_value=mock_client),
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(
-                profile_helper,
-                "_analyze_with_llm",
-                return_value=self._mock_llm_analysis(),
-            ),
-        ):
-            tool = bt.BangumiRecommendTool()
-            result = await tool.execute()
-
-        assert "User Anime Profile" in result
-        assert "Candidate Anime" in result
-        assert "搞笑" in result
-        assert "MUST ONLY recommend" in result
-        assert "Recommendation Context" in result
-
-    async def test_recommend_all_collected(self):
-        """When all airing anime are in collection, show caught-up message."""
-        import openlist_ani.assistant.tools.bangumi_tool as bt
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=100,
-                rate=9,
-                type=2,
-                tags=[],
-                subject=SlimSubject(id=100, name="Only"),
-            ),
-        ]
-        mock_client.fetch_calendar.return_value = [
-            CalendarDay(
-                weekday=Weekday(en="Mon", cn="星期一", ja="月曜日", id=1),
-                items=[
-                    CalendarItem(
-                        id=100,
-                        name="Only",
-                        name_cn="唯一",
-                        rating=BangumiRating(score=8.0),
-                        rank=10,
-                    ),
-                ],
-            ),
-        ]
-
-        with (
-            patch.object(bt, "_get_client", return_value=mock_client),
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(profile_helper, "_analyze_with_llm", return_value={}),
-        ):
-            tool = bt.BangumiRecommendTool()
-            result = await tool.execute()
-
-        assert "caught up" in result.lower() or "0 titles" in result
-
-    async def test_recommend_profile_reflects_user_preferences(self):
-        """Profile embedded in output should reflect LLM-analyzed preferences."""
-        import openlist_ani.assistant.tools.bangumi_tool as bt
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=1,
-                rate=10,
-                type=2,
-                tags=["神作"],
-                subject=SlimSubject(
-                    id=1,
-                    name="Masterpiece",
-                    name_cn="神作动画",
-                    tags=[
-                        BangumiTag(name="奇幻", count=500),
-                        BangumiTag(name="战斗", count=400),
-                    ],
-                ),
-            ),
-            UserCollectionEntry(
-                subject_id=2,
-                rate=8,
-                type=2,
-                tags=["奇幻"],
-                subject=SlimSubject(
-                    id=2,
-                    name="Fantasy",
-                    name_cn="奇幻动画",
-                    tags=[BangumiTag(name="奇幻", count=600)],
-                ),
-            ),
-        ]
-        mock_client.fetch_calendar.return_value = [
-            CalendarDay(
-                weekday=Weekday(en="Tue", cn="星期二", ja="火曜日", id=2),
-                items=[
-                    CalendarItem(
-                        id=999,
-                        name="New Fantasy",
-                        name_cn="新奇幻",
-                        rating=BangumiRating(score=7.5),
-                        rank=30,
-                    ),
-                ],
-            ),
-        ]
-
-        llm_result = {
-            "preferred_genres": [{"name": "奇幻", "weight": 0.95}],
-            "preferred_tags": [{"name": "战斗", "weight": 0.8}],
-            "disliked_tags": [],
-            "rating_tendency": "generous",
-            "preference_summary": "深度喜欢奇幻战斗类番剧",
-        }
-
-        with (
-            patch.object(bt, "_get_client", return_value=mock_client),
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(profile_helper, "_analyze_with_llm", return_value=llm_result),
-        ):
-            tool = bt.BangumiRecommendTool()
-            result = await tool.execute()
-
-        assert "奇幻" in result
-        assert "9.0" in result or "9.00" in result
-        assert "新奇幻" in result
-
-
-# ================================================================
-# User profile generation and incremental update tests
-# ================================================================
-
-
-class TestUserProfileGeneration:
-    """Tests for user profile build, incremental update, and persistence."""
-
-    @pytest.fixture(autouse=True)
-    def _setup_env(self, tmp_path):
-        """Set up temporary profile path and reset shared client."""
-        from openlist_ani.assistant.tools.helper import bangumi as bangumi_helper
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        orig = (
-            profile_helper._PROFILE_PATH,
-            profile_helper._DATA_DIR,
-            profile_helper._STAFF_CACHE_PATH,
-            bangumi_helper._bangumi_client,
-        )
-        profile_helper._PROFILE_PATH = tmp_path / "user_profile.json"
-        profile_helper._DATA_DIR = tmp_path
-        profile_helper._STAFF_CACHE_PATH = tmp_path / "staff_cache.json"
-        bangumi_helper._bangumi_client = None
-        self.tmp_path = tmp_path
-        yield
-        (
-            profile_helper._PROFILE_PATH,
-            profile_helper._DATA_DIR,
-            profile_helper._STAFF_CACHE_PATH,
-            bangumi_helper._bangumi_client,
-        ) = orig
-
-    async def test_initial_profile_has_correct_structure(self):
-        """First-time build creates a profile with all required fields."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=100,
-                rate=9,
-                type=2,
-                tags=["搞笑", "校园"],
-                subject=SlimSubject(
-                    id=100,
-                    name="A",
-                    name_cn="甲",
-                    tags=[
-                        BangumiTag(name="搞笑", count=300),
-                        BangumiTag(name="冒险", count=200),
-                    ],
-                ),
-            ),
-            UserCollectionEntry(
-                subject_id=200,
-                rate=7,
-                type=3,
-                tags=["战斗"],
-                subject=SlimSubject(
-                    id=200,
-                    name="B",
-                    name_cn="乙",
-                    tags=[BangumiTag(name="战斗", count=150)],
-                ),
-            ),
-        ]
-
-        llm_result = {
-            "preferred_genres": [{"name": "搞笑", "weight": 0.8}],
-            "preferred_tags": [{"name": "校园", "weight": 0.7}],
-            "disliked_tags": [],
-            "rating_tendency": "generous",
-            "preference_summary": "偏好搞笑校园",
-        }
-
-        with (
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(profile_helper, "_analyze_with_llm", return_value=llm_result),
-        ):
-            profile = await profile_helper._build_or_update_profile(mock_client)
-
-        assert profile["version"] == 2
-        assert set(profile["synced_subject_ids"]) == {100, 200}
-        assert profile["total_rated"] == 2
-        assert profile["avg_rating"] == pytest.approx(8.0)
-        assert profile["collection_stats"]["看过"] == 1
-        assert profile["collection_stats"]["在看"] == 1
-        assert profile["last_synced_at"] != ""
-        assert profile["llm_analysis"]["preferred_genres"][0]["name"] == "搞笑"
-        assert (self.tmp_path / "user_profile.json").exists()
-
-    async def test_incremental_update_processes_only_new_entries(self):
-        """Incremental update should process only entries not yet synced."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        profile_helper._save_profile(
-            {
-                "version": 2,
-                "last_synced_at": "2026-01-01T00:00:00+00:00",
-                "synced_subject_ids": [100],
-                "avg_rating": 9.0,
-                "total_rated": 1,
-                "rating_sum": 9.0,
-                "collection_stats": {"看过": 1},
-                "llm_analysis": {
-                    "preferred_genres": [{"name": "搞笑", "weight": 0.8}],
-                    "preference_summary": "Old summary",
-                },
-            }
-        )
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=100,
-                rate=9,
-                type=2,
-                tags=["搞笑"],
-                subject=SlimSubject(id=100, name="A", name_cn="甲", tags=[]),
-            ),
-            UserCollectionEntry(
-                subject_id=200,
-                rate=6,
-                type=2,
-                tags=["战斗"],
-                subject=SlimSubject(
-                    id=200,
-                    name="B",
-                    name_cn="乙",
-                    tags=[BangumiTag(name="战斗", count=100)],
-                ),
-            ),
-        ]
-
-        new_llm_result = {
-            "preferred_genres": [
-                {"name": "搞笑", "weight": 0.7},
-                {"name": "战斗", "weight": 0.6},
-            ],
-            "preference_summary": "Updated summary with new data",
-        }
-
-        with (
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(
-                profile_helper, "_analyze_with_llm", return_value=new_llm_result
-            ),
-        ):
-            profile = await profile_helper._build_or_update_profile(mock_client)
-
-        assert set(profile["synced_subject_ids"]) == {100, 200}
-        assert profile["total_rated"] == 2
-        assert profile["avg_rating"] == pytest.approx(7.5)
-        assert profile["collection_stats"]["看过"] == 2
-        # LLM analysis should be updated
-        assert profile["llm_analysis"]["preference_summary"] == (
-            "Updated summary with new data"
-        )
-
-    async def test_no_new_entries_preserves_analysis(self):
-        """When no new entries exist, existing LLM analysis is preserved."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        existing_analysis = {
-            "preferred_genres": [{"name": "搞笑", "weight": 0.9}],
-            "preferred_studios": [],
-            "preferred_staff": [],
-            "preference_summary": "Existing analysis",
-        }
-        profile_helper._save_profile(
-            {
-                "version": 2,
-                "last_synced_at": "2026-01-01T00:00:00+00:00",
-                "synced_subject_ids": [100],
-                "avg_rating": 9.0,
-                "total_rated": 1,
-                "rating_sum": 9.0,
-                "collection_stats": {"看过": 1},
-                "llm_analysis": existing_analysis,
-            }
-        )
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=100,
-                rate=9,
-                type=2,
-                tags=["搞笑"],
-                subject=SlimSubject(id=100, name="A", name_cn="甲", tags=[]),
-            ),
-        ]
-
-        with (
-            patch.object(profile_helper, "_analyze_with_llm") as mock_llm,
-        ):
-            profile = await profile_helper._build_or_update_profile(mock_client)
-
-        # LLM should NOT be called when there are no new entries
-        # and existing analysis is non-empty
-        mock_llm.assert_not_called()
-        assert profile["llm_analysis"] == existing_analysis
-
-    async def test_version_mismatch_triggers_full_rebuild(self):
-        """Incompatible version in saved profile triggers a full rebuild."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        (self.tmp_path / "user_profile.json").write_text(
-            json.dumps({"version": 999, "llm_analysis": {"stale": True}}),
-            encoding="utf-8",
-        )
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=500,
-                rate=8,
-                type=2,
-                tags=["新"],
-                subject=SlimSubject(id=500, name="New", tags=[]),
-            ),
-        ]
-
-        llm_result = {
-            "preferred_genres": [{"name": "新", "weight": 0.5}],
-            "preference_summary": "Fresh rebuild",
-        }
-
-        with (
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(profile_helper, "_analyze_with_llm", return_value=llm_result),
-        ):
-            profile = await profile_helper._build_or_update_profile(mock_client)
-
-        assert profile["version"] == 2
-        assert 500 in profile["synced_subject_ids"]
-        assert profile["llm_analysis"]["preference_summary"] == "Fresh rebuild"
-
-    async def test_profile_persisted_to_disk(self):
-        """Built profile is saved to the expected file path."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = []
-
-        with (
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(profile_helper, "_analyze_with_llm", return_value={}),
-        ):
-            await profile_helper._build_or_update_profile(mock_client)
-
-        path = self.tmp_path / "user_profile.json"
-        assert path.exists()
-        data = json.loads(path.read_text("utf-8"))
-        assert data["version"] == 2
-        assert "last_synced_at" in data
-        assert "synced_subject_ids" in data
-        assert "llm_analysis" in data
-
-    async def test_repeated_build_is_idempotent(self):
-        """Running build twice with same data yields identical profiles."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        entries = [
-            UserCollectionEntry(
-                subject_id=10,
-                rate=8,
-                type=2,
-                tags=["恋爱"],
-                subject=SlimSubject(
-                    id=10,
-                    name="Romance",
-                    name_cn="恋爱",
-                    tags=[BangumiTag(name="恋爱", count=200)],
-                ),
-            ),
-        ]
-
-        llm_result = {
-            "preferred_genres": [{"name": "恋爱", "weight": 0.9}],
-            "preference_summary": "恋爱番爱好者",
-        }
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = entries
-
-        with (
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(profile_helper, "_analyze_with_llm", return_value=llm_result),
-        ):
-            p1 = await profile_helper._build_or_update_profile(mock_client)
-            p2 = await profile_helper._build_or_update_profile(mock_client)
-
-        assert set(p1["synced_subject_ids"]) == set(p2["synced_subject_ids"])
-        assert p1["avg_rating"] == p2["avg_rating"]
-        assert p1["total_rated"] == p2["total_rated"]
-
-    async def test_llm_analysis_called_on_first_build(self):
-        """LLM analysis should be invoked during initial profile build."""
-        from openlist_ani.assistant.tools.helper import profile as profile_helper
-
-        mock_client = AsyncMock()
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(
-                subject_id=1,
-                rate=8,
-                type=2,
-                tags=["冒险"],
-                subject=SlimSubject(id=1, name="Adventure", tags=[]),
-            ),
-        ]
-
-        with (
-            patch.object(profile_helper, "_enrich_with_staff", return_value={}),
-            patch.object(
-                profile_helper,
-                "_analyze_with_llm",
-                return_value={
-                    "preferred_genres": [{"name": "冒险", "weight": 0.8}],
-                    "preference_summary": "冒险番爱好者",
-                },
-            ) as mock_llm,
-        ):
-            profile = await profile_helper._build_or_update_profile(mock_client)
-
-        mock_llm.assert_called_once()
-        assert profile["llm_analysis"]["preference_summary"] == "冒险番爱好者"

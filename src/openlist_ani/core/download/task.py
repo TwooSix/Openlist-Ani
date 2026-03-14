@@ -163,6 +163,23 @@ class DownloadTask:
     }
 
     @classmethod
+    def _migrate_resource_info(cls, data: dict[str, Any]) -> None:
+        """Convert a raw resource_info dict to an AnimeResourceInfo object."""
+        resource_data = data["resource_info"]
+        from ..website.model import LanguageType, VideoQuality
+
+        if "quality" in resource_data and isinstance(resource_data["quality"], str):
+            resource_data["quality"] = VideoQuality(resource_data["quality"])
+        if "languages" in resource_data and isinstance(
+            resource_data["languages"], list
+        ):
+            resource_data["languages"] = [
+                LanguageType(lang) if isinstance(lang, str) else lang
+                for lang in resource_data["languages"]
+            ]
+        data["resource_info"] = AnimeResourceInfo(**resource_data)
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DownloadTask":
         """Create from dictionary, with backward-compatible field migration."""
         if isinstance(data.get("state"), str):
@@ -183,21 +200,7 @@ class DownloadTask:
             if key in data:
                 dd.setdefault(key, data.pop(key))
 
-        # Convert resource_info dict back to AnimeResourceInfo object
         if isinstance(data.get("resource_info"), dict):
-            resource_data = data["resource_info"]
-            # Convert quality and languages enums if they exist
-            from ..website.model import LanguageType, VideoQuality
-
-            if "quality" in resource_data and isinstance(resource_data["quality"], str):
-                resource_data["quality"] = VideoQuality(resource_data["quality"])
-            if "languages" in resource_data and isinstance(
-                resource_data["languages"], list
-            ):
-                resource_data["languages"] = [
-                    LanguageType(lang) if isinstance(lang, str) else lang
-                    for lang in resource_data["languages"]
-                ]
-            data["resource_info"] = AnimeResourceInfo(**resource_data)
+            cls._migrate_resource_info(data)
 
         return cls(**data)

@@ -238,7 +238,7 @@ class TestDetectDownloadedFile:
         assert result == "batch/ep01.mkv"
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_only_non_videos(self):
+    async def test_returns_none_when_only_non_videos(self, mock_async_sleep):
         d = _make_downloader()
         task = _make_task()
         task.downloader_data["initial_files"] = []
@@ -248,7 +248,14 @@ class TestDetectDownloadedFile:
             SimpleNamespace(name="notes.txt", is_dir=False, size=10),
             SimpleNamespace(name="cover.jpg", is_dir=False, size=20),
         ]
-        result = await d._detect_downloaded_file(task)
+
+        # Simulate time advancing past the timeout on second call
+        start = 0.0
+        with patch(
+            "openlist_ani.core.download.downloader.openlist_downloader.time.monotonic",
+            side_effect=[start, start + 31],
+        ):
+            result = await d._detect_downloaded_file(task)
         assert result is None
 
     @pytest.mark.asyncio
@@ -492,9 +499,9 @@ class TestBuildFinalFilenameEnumFields:
         d = _make_downloader("{anime_name} [{quality}]", with_mock_client=False)
         task = _make_task(quality=quality)
         result = d._build_final_filename(task, "A", 1, 1)
-        assert (
-            f"[{value_str}]" in result
-        ), f"Expected '[{value_str}]' in '{result}' for {quality!r}"
+        assert f"[{value_str}]" in result, (
+            f"Expected '[{value_str}]' in '{result}' for {quality!r}"
+        )
         _assert_no_enum_repr(result)
 
     def test_languages_in_format_is_joined_plain_string(self):
