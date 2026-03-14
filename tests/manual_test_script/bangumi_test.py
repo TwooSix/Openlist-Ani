@@ -8,54 +8,28 @@ Requires BANGUMI_TOKEN environment variable or config.toml [bangumi] access_toke
 
 Tests:
   1-5:  Basic API client tests (calendar, subject, collection, cache)
-  6:    End-to-end recommendation flow
-  7:    User profile generation and validation
-  8:    Profile incremental update (consistency check)
-  9:    Full LLM E2E test (optional, requires OpenAI API key)
-  10:   Fetch subject reviews
-  11:   Post user collection (mark anime as wish)
+  6:    Full LLM E2E test (optional, requires OpenAI API key)
+  7:    Fetch subject reviews
+  8:    Post user collection (mark anime as wish)
 """
 
 import asyncio
-import json
 import os
 import sys
-import tempfile
-from contextlib import contextmanager
-from pathlib import Path
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from openlist_ani.core.bangumi.client import BangumiClient
 
-_PROFILE_FILENAME = "user_profile.json"
-_STAFF_CACHE_FILENAME = "staff_cache.json"
-
-
 # ---- Helper utilities ----
 
 
-@contextmanager
-def _bt_temp_paths(bt_module, tmpdir: str):
-    """Temporarily redirect bt profile/cache paths into *tmpdir*."""
-    orig_path, orig_dir = bt_module._PROFILE_PATH, bt_module._DATA_DIR
-    orig_staff = bt_module._STAFF_CACHE_PATH
-    bt_module._PROFILE_PATH = Path(tmpdir) / _PROFILE_FILENAME
-    bt_module._STAFF_CACHE_PATH = Path(tmpdir) / _STAFF_CACHE_FILENAME
-    bt_module._DATA_DIR = Path(tmpdir)
-    try:
-        yield
-    finally:
-        bt_module._PROFILE_PATH, bt_module._DATA_DIR = orig_path, orig_dir
-        bt_module._STAFF_CACHE_PATH = orig_staff
-
-
-async def _reset_bt_client(bt_module) -> None:
-    """Reset bangumi_tool client singleton, closing the old one."""
-    if bt_module._bangumi_client is not None:
-        await bt_module._bangumi_client.close()
-    bt_module._bangumi_client = None
+async def _reset_bt_client(bt_client_module) -> None:
+    """Reset bangumi client singleton, closing the old one."""
+    if bt_client_module._bangumi_client is not None:
+        await bt_client_module._bangumi_client.close()
+    bt_client_module._bangumi_client = None
 
 
 def _print_header(title: str) -> None:
@@ -124,121 +98,9 @@ async def _test_basic_api(client: BangumiClient) -> tuple:
     return user, calendar, subject_id, collections
 
 
-async def _test_recommendation(bt_module, collections) -> None:
-    """Test 6: End-to-end recommendation flow."""
-    _print_header("Test 6: End-to-end recommendation flow")
-
-    with tempfile.TemporaryDirectory() as tmpdir, _bt_temp_paths(bt_module, tmpdir):
-        tool = bt_module.BangumiRecommendTool()
-        result = await tool.execute()
-
-        assert "User Anime Profile" in result, "Missing profile section"
-        assert "Candidate Anime" in result, "Missing candidate section"
-        assert "personalized" in result.lower(), "Missing recommendation prompt"
-
-        collected_ids = {e.subject_id for e in collections}
-        candidate_section = result.split("Candidate Anime")[-1]
-        leaked = [cid for cid in collected_ids if f"[{cid}]" in candidate_section]
-        assert not leaked, f"Collected anime leaked into candidates: {leaked}"
-
-        profile = json.loads(bt_module._PROFILE_PATH.read_text("utf-8"))
-        assert profile["version"] == 2
-        assert len(profile["synced_subject_ids"]) == len(collections)
-
-        llm_analysis = profile.get("llm_analysis", {})
-        candidate_count = candidate_section.count("  - [")
-        print(f"  \u2705 Output: {len(result)} chars")
-        print(f"  \u2705 Profile: {len(profile['synced_subject_ids'])} synced subjects")
-        print(f"  \u2705 Avg rating: {profile['avg_rating']}")
-        print(
-            f"  \u2705 LLM analysis: {list(llm_analysis.keys()) if llm_analysis else '(empty)'}"
-        )
-        print(
-            f"  \u2705 Candidates: {candidate_count} anime (filtered {len(collected_ids)} collected)"
-        )
-    print()
-
-
-async def _test_profile_generation(bt_module) -> None:
-    """Test 7: User profile generation and validation."""
-    _print_header("Test 7: User profile generation and validation")
-
-    with tempfile.TemporaryDirectory() as tmpdir, _bt_temp_paths(bt_module, tmpdir):
-        profile = await bt_module._build_or_update_profile()
-
-        required_keys = [
-            "version",
-            "last_synced_at",
-            "synced_subject_ids",
-            "avg_rating",
-            "total_rated",
-            "collection_stats",
-            "llm_analysis",
-        ]
-        for key in required_keys:
-            assert key in profile, f"Missing field: {key}"
-
-        assert profile["version"] == 2
-        assert len(profile["synced_subject_ids"]) > 0, "No subjects synced"
-        assert profile["last_synced_at"] != ""
-
-        llm_analysis = profile.get("llm_analysis", {})
-
-        if profile["total_rated"] > 0:
-            assert 1.0 <= profile["avg_rating"] <= 10.0, (
-                f"Avg rating {profile['avg_rating']} out of range"
-            )
-
-        assert len(profile["collection_stats"]) > 0, "No collection stats"
-
-        print(f"  \u2705 Profile version: {profile['version']}")
-        print(f"  \u2705 Synced subjects: {len(profile['synced_subject_ids'])}")
-        print(
-            f"  \u2705 Avg rating: {profile['avg_rating']} (from {profile['total_rated']} rated)"
-        )
-        print(f"  \u2705 Collection stats: {profile['collection_stats']}")
-        if llm_analysis:
-            pref = llm_analysis.get("preference_summary", "N/A")
-            genres = llm_analysis.get("preferred_genres", [])
-            print(f"  \u2705 LLM preference: {pref}")
-            print(f"  \u2705 LLM genres: {[g['name'] for g in genres[:5]]}")
-        else:
-            print("  \u26a0\ufe0f  LLM analysis empty (no API key?)")
-    print()
-
-
-async def _test_profile_incremental(bt_module) -> None:
-    """Test 8: Profile incremental update (consistency check)."""
-    _print_header("Test 8: Profile incremental update (consistency check)")
-
-    with tempfile.TemporaryDirectory() as tmpdir, _bt_temp_paths(bt_module, tmpdir):
-        profile1 = await bt_module._build_or_update_profile()
-        synced1 = set(profile1["synced_subject_ids"])
-        avg1 = profile1["avg_rating"]
-        rated1 = profile1["total_rated"]
-        analysis1 = profile1.get("llm_analysis", {})
-
-        profile2 = await bt_module._build_or_update_profile()
-        synced2 = set(profile2["synced_subject_ids"])
-        avg2 = profile2["avg_rating"]
-        rated2 = profile2["total_rated"]
-
-        assert synced1 == synced2, (
-            f"Synced IDs differ: {len(synced1)} vs {len(synced2)}"
-        )
-        assert avg1 == avg2, f"Avg rating changed: {avg1} -> {avg2}"
-        assert rated1 == rated2, f"Total rated changed: {rated1} -> {rated2}"
-
-        print(f"  \u2705 Both builds: {len(synced1)} synced subjects")
-        print(f"  \u2705 Avg rating stable: {avg1}")
-        print(f"  \u2705 LLM analysis preserved: {bool(analysis1)}")
-        print("  \u2705 Incremental update correctly detected 0 new entries")
-    print()
-
-
-async def _test_llm_e2e(bt_module) -> None:
-    """Test 9: Full LLM E2E test (optional, requires OpenAI API key)."""
-    _print_header("Test 9: Full LLM E2E test (optional)")
+async def _test_llm_e2e() -> None:
+    """Test 6: Full LLM E2E test (optional, requires OpenAI API key)."""
+    _print_header("Test 6: Full LLM E2E test (optional)")
 
     from openlist_ani.config import config as app_config
 
@@ -248,31 +110,32 @@ async def _test_llm_e2e(bt_module) -> None:
 
     from unittest.mock import MagicMock
 
-    import openlist_ani.assistant.tools as tools_mod
+    import openlist_ani.assistant.skills as skills_mod
     from openlist_ani.assistant.assistant import AniAssistant
     from openlist_ani.core.download import DownloadManager
 
-    tools_mod._default_registry = None
+    skills_mod._default_registry = None
 
-    with tempfile.TemporaryDirectory() as tmpdir, _bt_temp_paths(bt_module, tmpdir):
-        dm = MagicMock(spec=DownloadManager)
-        assistant = AniAssistant(download_manager=dm)
-        response = await assistant.process_message("推荐一部新番")
+    dm = MagicMock(spec=DownloadManager)
+    assistant = AniAssistant(download_manager=dm)
+    response = await assistant.process_message("推荐一部新番")
 
-        assert response, "LLM returned empty response"
-        assert not response.startswith("\u274c"), f"LLM error: {response[:100]}"
+    assert response, "LLM returned empty response"
+    assert not response.startswith("\u274c"), f"LLM error: {response[:100]}"
 
-        print(f"  \u2705 LLM response ({len(response)} chars):")
-        for line in response[:500].split("\n"):
-            print(f"    {line}")
-        if len(response) > 500:
-            print("    ...")
+    print(f"  \u2705 LLM response ({len(response)} chars):")
+    for line in response[:500].split("\n"):
+        print(f"    {line}")
+    if len(response) > 500:
+        print("    ...")
     print()
 
 
-async def _test_reviews(client: BangumiClient, bt_module, subject_id: int) -> None:
-    """Test 10: Fetch subject reviews."""
-    _print_header(f"Test 10: Fetch subject reviews (subject {subject_id})")
+async def _test_reviews(
+    client: BangumiClient, bt_client_module, subject_id: int
+) -> None:
+    """Test 7: Fetch subject reviews."""
+    _print_header(f"Test 7: Fetch subject reviews (subject {subject_id})")
 
     topics, blogs = await client.fetch_subject_reviews(subject_id)
     print(f"  Topics: {len(topics)}, Blogs: {len(blogs)}")
@@ -283,9 +146,9 @@ async def _test_reviews(client: BangumiClient, bt_module, subject_id: int) -> No
         print(f"    Blog: {b.title} (by {b.user_nickname}, {b.replies} replies)")
         print(f"      {summary_preview}...")
 
-    from openlist_ani.assistant.tools.bangumi_tool import BangumiReviewsTool
+    from openlist_ani.assistant.skills.bangumi.script.reviews import BangumiReviewsTool
 
-    await _reset_bt_client(bt_module)
+    await _reset_bt_client(bt_client_module)
     reviews_tool = BangumiReviewsTool()
     reviews_result = await reviews_tool.execute(subject_id=subject_id)
     assert "Reviews & Discussions" in reviews_result
@@ -293,10 +156,10 @@ async def _test_reviews(client: BangumiClient, bt_module, subject_id: int) -> No
 
 
 async def _test_collect_tool() -> None:
-    """Test 11: BangumiCollectTool validation tests."""
-    _print_header("Test 11: BangumiCollectTool validation tests")
+    """Test 8: BangumiCollectTool validation tests."""
+    _print_header("Test 8: BangumiCollectTool validation tests")
 
-    from openlist_ani.assistant.tools.bangumi_tool import BangumiCollectTool
+    from openlist_ani.assistant.skills.bangumi.script.collect import BangumiCollectTool
 
     collect_tool = BangumiCollectTool()
 
@@ -326,23 +189,19 @@ async def main() -> None:
         print("ERROR: Set BANGUMI_TOKEN environment variable")
         sys.exit(1)
 
-    import openlist_ani.assistant.tools.bangumi_tool as bt
+    from openlist_ani.assistant.skills.bangumi.script.helper import (
+        client as bt_client,
+    )
 
     client = BangumiClient(access_token=token)
     try:
-        _user, _calendar, subject_id, collections = await _test_basic_api(client)
+        _user, _calendar, subject_id, _collections = await _test_basic_api(client)
 
         os.environ["BANGUMI_TOKEN"] = token
-        await _reset_bt_client(bt)
+        await _reset_bt_client(bt_client)
 
-        await _test_recommendation(bt, collections)
-        await _reset_bt_client(bt)
-        await _test_profile_generation(bt)
-        await _reset_bt_client(bt)
-        await _test_profile_incremental(bt)
-        await _reset_bt_client(bt)
-        await _test_llm_e2e(bt)
-        await _test_reviews(client, bt, subject_id)
+        await _test_llm_e2e()
+        await _test_reviews(client, bt_client, subject_id)
         await _test_collect_tool()
 
         print("\u2705 All manual tests passed!")
@@ -354,9 +213,9 @@ async def main() -> None:
         sys.exit(1)
     finally:
         await client.close()
-        if bt._bangumi_client is not None:
-            await bt._bangumi_client.close()
-            bt._bangumi_client = None
+        if bt_client._bangumi_client is not None:
+            await bt_client._bangumi_client.close()
+            bt_client._bangumi_client = None
 
 
 if __name__ == "__main__":

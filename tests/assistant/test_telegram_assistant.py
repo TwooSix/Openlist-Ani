@@ -3,15 +3,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from openlist_ani.assistant.assistant import AssistantStatus
 from openlist_ani.assistant.telegram_assistant import TelegramAssistant
 
 
 class TestTelegramAssistant:
-    def test_build_memory_key_uses_telegram_user_id(self):
-        user = SimpleNamespace(id=12345)
-        assert TelegramAssistant._build_memory_key(user) == "telegram:12345"
-
     async def test_authorize_user_rejects_unknown_user(self):
         fake_assistant = MagicMock()
 
@@ -36,10 +31,8 @@ class TestTelegramAssistant:
             text=assistant.UNAUTHORIZED_MESSAGE,
         )
 
-    def test_format_status_text_for_download(self):
-        status_text = TelegramAssistant._format_status_text(
-            AssistantStatus.TOOL_EXECUTING,
-            {"tool_name": "download_resource", "title": "Frieren - 01"},
-        )
-
-        assert "Frieren - 01" in status_text
+    async def test_send_chunked_message_short(self):
+        """Short messages should be sent as-is."""
+        context = SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
+        await TelegramAssistant._send_chunked_message(context, 123, "Hello")
+        context.bot.send_message.assert_awaited_once_with(chat_id=123, text="Hello")

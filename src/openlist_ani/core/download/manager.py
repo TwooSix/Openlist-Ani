@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 
 
 class DownloadManager:
-
     def __init__(
         self,
         downloader: BaseDownloader,
@@ -279,5 +278,5 @@ class DownloadManager:
             if task.id in self._tasks:
                 del self._tasks[task.id]
                 logger.debug(
-                    f"Task finalized and removed: {task.id} " f"(success={success})"
+                    f"Task finalized and removed: {task.id} (success={success})"
                 )

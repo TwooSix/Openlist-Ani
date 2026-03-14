@@ -42,7 +42,6 @@ batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 
 
 [assistant]
 enabled = false  # Enable/disable assistant module
-max_history_messages = 10  # Maximum number of conversation history messages to keep
 
 # Telegram assistant configuration (required if assistant is enabled)
 [assistant.telegram]

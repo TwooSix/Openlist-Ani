@@ -71,7 +71,6 @@ python -m openlist-ani
 ```toml
 [assistant]
 enabled = true
-max_history_messages = 10
 
 [assistant.telegram]
 bot_token = ""        # 从 @BotFather 获取

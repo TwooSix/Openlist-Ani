@@ -1,13 +1,9 @@
-"""
-Mikan client singleton management.
-
-Provides lazy-initialized MikanClient management for Mikan-related tools.
-"""
+"""Mikan client singleton management."""
 
 from __future__ import annotations
 
-from ....config import config
-from ....core.mikan.client import MikanClient
+from openlist_ani.config import config
+from openlist_ani.core.mikan.client import MikanClient
 
 # Shared client instance (lazy init)
 _mikan_client: MikanClient | None = None

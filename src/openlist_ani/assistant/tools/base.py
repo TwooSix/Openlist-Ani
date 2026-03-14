@@ -29,21 +29,18 @@ class BaseTool(ABC):
 
     @abstractmethod
     async def execute(self, **kwargs) -> str:
-        """Execute the tool with given arguments.
-
-        Args:
-            **kwargs: Tool-specific arguments
+        """Execute the tool with given parameters.
 
         Returns:
-            Result message as string
+            Result string.
         """
         pass
 
-    def get_definition(self) -> dict[str, Any]:
-        """Get OpenAI function calling definition.
+    def get_definition(self) -> dict:
+        """Get OpenAI function-calling tool definition.
 
         Returns:
-            Tool definition dictionary
+            Dict in OpenAI tools format.
         """
         return {
             "type": "function",

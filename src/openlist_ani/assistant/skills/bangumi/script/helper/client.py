@@ -1,16 +1,11 @@
-"""
-Bangumi client singleton and season helpers.
-
-Provides lazy-initialized BangumiClient management and anime season
-utility functions used across Bangumi-related tools.
-"""
+"""Bangumi client singleton and season helpers."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from ....config import config
-from ....core.bangumi.client import BangumiClient
+from openlist_ani.config import config
+from openlist_ani.core.bangumi.client import BangumiClient
 
 # Shared client instance (lazy init)
 _bangumi_client: BangumiClient | None = None
