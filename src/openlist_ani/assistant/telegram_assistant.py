@@ -73,17 +73,23 @@ Start chatting with me!"""
         self.application = ApplicationBuilder().token(self.bot_token).build()
         self._register_handlers(self.application)
 
-        while True:
-            try:
-                await self._start_application()
-                await asyncio.Future()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception(f"Error in Telegram polling loop: {exc}")
+        try:
+            await self.application.initialize()
+            await self.application.bot.delete_webhook(drop_pending_updates=False)
+
+            while True:
+                try:
+                    await self._start_polling()
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.exception(f"Error in Telegram polling loop: {exc}")
+                finally:
+                    await self._stop_polling()
                 await asyncio.sleep(5)
-            finally:
-                await self._stop_application()
+        finally:
+            await self._shutdown_application()
 
     def _register_handlers(self, application: Application) -> None:
         """Register Telegram command and message handlers."""
@@ -93,12 +99,11 @@ Start chatting with me!"""
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message)
         )
 
-    async def _start_application(self) -> None:
-        """Initialize and start polling for Telegram updates."""
+    async def _start_polling(self) -> None:
+        """Start the application and begin polling for Telegram updates."""
         if self.application is None:
             raise RuntimeError("Telegram application is not initialized")
 
-        await self.application.initialize()
         await self.application.start()
 
         if self.application.updater is None:
@@ -109,26 +114,45 @@ Start chatting with me!"""
         bot_info = await self.application.bot.get_me()
         logger.info(f"Bot started: @{bot_info.username} ({bot_info.first_name})")
 
-    async def _stop_application(self) -> None:
-        """Stop Telegram polling and release runtime resources."""
+    async def _stop_polling(self) -> None:
+        """Stop polling and the application, keeping it ready for restart."""
         if self.application is None:
             return
 
         try:
             if self.application.updater is not None:
                 await self.application.updater.stop()
-        except TelegramError:
-            logger.debug("Telegram updater already stopped")
+        except Exception:
+            logger.debug("Telegram updater stop failed or already stopped")
 
         try:
             await self.application.stop()
-        except RuntimeError:
-            logger.debug("Telegram application already stopped")
+        except Exception:
+            logger.debug("Telegram application stop failed or already stopped")
+
+    async def _shutdown_application(self) -> None:
+        """Release all application resources on final exit."""
+        application = self.application
+        self.application = None
+
+        if application is None:
+            return
 
         try:
-            await self.application.shutdown()
-        except RuntimeError:
-            logger.debug("Telegram application already shut down")
+            if application.updater is not None:
+                await application.updater.stop()
+        except Exception:
+            logger.debug("Telegram updater stop failed or already stopped")
+
+        try:
+            await application.stop()
+        except Exception:
+            logger.debug("Telegram application stop failed or already stopped")
+
+        try:
+            await application.shutdown()
+        except Exception:
+            logger.debug("Telegram application shutdown failed or already shut down")
 
     @staticmethod
     def _format_status_text(status: AssistantStatus, payload: dict) -> str:
