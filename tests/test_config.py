@@ -98,7 +98,6 @@ class TestLogConfig:
     def test_defaults(self):
         cfg = LogConfig()
         assert cfg.level == "INFO"
-        assert cfg.file_level == "INFO"
 
 
 class TestProxyConfig:

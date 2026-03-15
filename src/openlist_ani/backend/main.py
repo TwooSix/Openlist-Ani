@@ -32,8 +32,7 @@ from .worker import dispatch_downloads, poll_rss_feeds
 async def run() -> None:
     """Start the backend process: API server + background workers."""
     configure_logger(
-        console_level=config.log.level,
-        file_level=config.log.file_level,
+        level=config.log.level,
         rotation=config.log.rotation,
         retention=config.log.retention,
         log_name="openlist_ani",

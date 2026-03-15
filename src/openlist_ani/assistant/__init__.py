@@ -15,8 +15,7 @@ from .telegram_assistant import TelegramAssistant
 async def run() -> None:
     """Start the assistant process."""
     configure_logger(
-        console_level=config.log.level,
-        file_level=config.log.file_level,
+        level=config.log.level,
         rotation=config.log.rotation,
         retention=config.log.retention,
         log_name="assistant",
