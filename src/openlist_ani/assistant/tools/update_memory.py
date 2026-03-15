@@ -46,8 +46,9 @@ class UpdateMemoryTool(BaseTool):
                     "type": "string",
                     "description": (
                         "A concise, durable fact to remember, e.g. "
-                        "'用户的 qBittorrent 运行在 8080 端口', "
-                        "'上次帮用户下载了《葬送的芙莉莲》全集'"
+                        "'User runs qBittorrent on port 8080', "
+                        "'Last time helped user download all episodes of "
+                        "Frieren: Beyond Journey's End'"
                     ),
                 },
                 "category": {

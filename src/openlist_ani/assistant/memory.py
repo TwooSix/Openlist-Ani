@@ -13,10 +13,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 from openai import AsyncOpenAI
 
 from ..logger import logger
@@ -42,6 +45,9 @@ class MemoryFact:
 _EMPTY_LIST_MARKER = "- None"
 _EMPTY_SUMMARY = "None"
 _SECTION_AGENT_OBSERVATIONS = "Agent Observations"
+_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+_USER_TEMPLATE = "USER.md.template"
+_SESSION_GLOB = "SESSION_*.md"
 
 _MEMORY_REFRESH_PROMPT = """\
 You are a long-term memory curator for a chat assistant.
@@ -85,11 +91,13 @@ class AssistantMemoryManager:
     No per-user isolation — designed for a single-user Telegram bot.
     """
 
-    _SESSION_STALE_AFTER = timedelta(hours=6)
-    _SESSION_MAX_TOKENS = 8000
+    _SESSION_MAX_TOKENS = 100_000
     _REFRESH_EVERY_N_TURNS = 6
     _FACT_LIMIT = 12
     _KEEP_RECENT_TURNS = 4
+    _PAST_SESSION_TOKEN_LIMIT = 4000
+    _PAST_SESSION_SEARCH_DAYS = 7
+    _SESSION_DATE_FORMAT = "%Y%m%d"
 
     def __init__(
         self,
@@ -126,15 +134,16 @@ class AssistantMemoryManager:
     # Public API
     # ------------------------------------------------------------------
 
-    async def build_system_messages(self, _user_message: str) -> list[dict[str, str]]:
+    async def build_system_messages(self, user_message: str) -> list[dict[str, str]]:
         """Build the full system + context message list for the LLM.
 
-        Reads SOUL.md, MEMORY.md, USER.md, and the active session transcript.
+        Reads SOUL.md, MEMORY.md, USER.md, today's session transcript,
+        and relevant past sessions matched by keyword search.
         Does **not** include the current ``user_message`` — that is appended
         by the caller.
 
         Args:
-            user_message: Current user message (used for logging, not appended).
+            user_message: Current user message (used for past-session retrieval).
 
         Returns:
             Ordered list of message dicts ready to prepend to the LLM call.
@@ -154,7 +163,7 @@ class AssistantMemoryManager:
         # 2. Long-term memory context
         if (
             memory_text.strip()
-            and memory_text.strip() != self._default_memory_text().strip()
+            and memory_text.strip() != self._load_template("MEMORY.md.template").strip()
         ):
             messages.append(
                 {
@@ -168,7 +177,10 @@ class AssistantMemoryManager:
             )
 
         # 3. User profile context
-        if user_text.strip() and user_text.strip() != self._default_user_text().strip():
+        if (
+            user_text.strip()
+            and user_text.strip() != self._load_template(_USER_TEMPLATE).strip()
+        ):
             messages.append(
                 {
                     "role": "system",
@@ -184,28 +196,50 @@ class AssistantMemoryManager:
                 {
                     "role": "system",
                     "content": (
-                        "## 首次用户初始化（强制）\n\n"
-                        "用户档案（USER.md）尚未初始化，这是一个新用户或首次对话。\n"
-                        "在执行任何其他操作之前，你**必须**先完成以下初始化流程：\n\n"
-                        "1. 先调用 `send_message` 向用户打招呼，自我介绍你是 oAni\n"
-                        "2. 询问用户：「我该怎么称呼你？」\n"
-                        "3. 询问用户：「需要我先看看你的 Bangumi 收藏吗？"
-                        "这样我可以了解你的番剧喜好，以后给你更好的推荐和服务 😊」\n\n"
-                        "等用户回答后：\n"
-                        "- 立即调用 `update_user_profile` 保存用户的称呼"
-                        "（例如：content='用户名字叫小明'）\n"
-                        "- 如果用户同意查看 Bangumi 收藏，执行收藏查询技能获取数据，"
-                        "然后**必须**调用 `update_user_profile` 并设置 "
-                        "section='bangumi_preferences'，将收藏分析结果"
-                        "（喜好类型、评分倾向、常看标签等）保存到用户档案\n\n"
-                        "**在用户回答这些问题之前，不要执行任何其他工具调用。**"
+                        "## First-Time User Initialization (Mandatory)\n\n"
+                        "The user profile (USER.md) has not been initialized yet. "
+                        "This is a new user or the first conversation.\n"
+                        "Before doing anything else, you **must** complete the "
+                        "following initialization flow:\n\n"
+                        "1. Call `send_message` to greet the user and introduce "
+                        "yourself as oAni\n"
+                        "2. Ask the user: 'What should I call you?'\n"
+                        "3. Ask the user: 'Would you like me to check your Bangumi "
+                        "collection? That way I can learn your anime preferences "
+                        "and give you better recommendations in the future.'\n\n"
+                        "After the user responds:\n"
+                        "- Immediately call `update_user_profile` to save the "
+                        "user's name (e.g. content='User's name is Alice')\n"
+                        "- If the user agrees to check their Bangumi collection, "
+                        "run the collection query skill to fetch data, then "
+                        "**must** call `update_user_profile` with "
+                        "section='bangumi_preferences' to save the collection "
+                        "analysis results (preferred genres, rating tendencies, "
+                        "frequently watched tags, etc.) to the user profile\n\n"
+                        "**Do not invoke any other tools until the user has "
+                        "answered these questions.**"
                     ),
                 }
             )
 
-        # 4. Session conversation history
+        # 4. Session conversation history (today)
         if session_messages:
             messages.extend(session_messages)
+
+        # 5. Relevant past sessions (keyword search, last N days)
+        past_context = await asyncio.to_thread(self._search_past_sessions, user_message)
+        if past_context.strip():
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "The following are relevant excerpts from past conversations "
+                        "(matched by keywords in the current message). "
+                        "Use them as additional context if helpful.\n\n"
+                        + past_context.strip()
+                    ),
+                }
+            )
 
         return messages
 
@@ -245,10 +279,8 @@ class AssistantMemoryManager:
             await self._refresh_memory(recent)
 
     async def start_new_session(self) -> None:
-        """Close the current session and start a fresh one on next turn."""
-        active = await asyncio.to_thread(self._get_active_session_path)
-        if active and active.exists():
-            await asyncio.to_thread(self._close_session, active)
+        """Delete all session files and reset conversation state."""
+        await asyncio.to_thread(self._delete_all_sessions)
         self._turn_counter = 0
 
     async def clear_all_memory(self) -> None:
@@ -312,60 +344,43 @@ class AssistantMemoryManager:
     # ------------------------------------------------------------------
 
     async def _ensure_active_session(self) -> Path:
-        """Return the active session file or create a new one."""
-        existing = await asyncio.to_thread(self._get_active_session_path)
+        """Return today's session file or create a new one."""
+        existing = await asyncio.to_thread(self._get_today_session_path)
         if existing is not None:
             return existing
         return await asyncio.to_thread(self._create_new_session)
 
-    def _get_active_session_path(self) -> Path | None:
-        """Return the newest non-closed session if it's still fresh."""
+    def _get_today_session_path(self) -> Path | None:
+        """Return today's session file if it exists."""
         sessions_dir = self._sessions_dir
         if not sessions_dir.exists():
             return None
 
-        candidates = sorted(
-            sessions_dir.glob("SESSION_*.md"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if not candidates:
-            return None
+        today_str = datetime.now().strftime(self._SESSION_DATE_FORMAT)
+        today_file = sessions_dir / f"SESSION_{today_str}.md"
+        if today_file.exists():
+            return today_file
 
-        newest = candidates[0]
-        last_modified = datetime.fromtimestamp(newest.stat().st_mtime)
-        if datetime.now() - last_modified > self._SESSION_STALE_AFTER:
-            return None
-
-        header = newest.read_text(encoding="utf-8")[:500]
-        if "status: closed" in header:
-            return None
-
-        return newest
+        return None
 
     def _create_new_session(self) -> Path:
-        """Create a fresh session file and return its path."""
+        """Create a fresh daily session file and return its path."""
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        session_path = self._sessions_dir / f"SESSION_{timestamp}.md"
+        today_str = datetime.now().strftime(self._SESSION_DATE_FORMAT)
+        session_path = self._sessions_dir / f"SESSION_{today_str}.md"
         started = datetime.now().isoformat(timespec="seconds")
         session_path.write_text(
-            f"# Session\n\n- started_at: {started}\n- status: active\n\n"
-            f"## Conversation\n\n",
+            f"# Session {today_str}\n\n- started_at: {started}\n\n## Conversation\n\n",
             encoding="utf-8",
         )
         return session_path
 
-    def _close_session(self, session_path: Path) -> None:
-        """Mark a session file as closed."""
-        # Reconstruct path from safe base to break taint chain (S2083)
-        safe_name = session_path.name
-        if not re.fullmatch(r"SESSION_\d{8}_\d{6}_\d{6}\.md", safe_name):
-            raise ValueError(f"Invalid session filename: {safe_name}")
-        sanitized = self._sessions_dir / safe_name
-        content = sanitized.read_text(encoding="utf-8")
-        content = content.replace("- status: active", "- status: closed", 1)
-        sanitized.write_text(content, encoding="utf-8")
+    def _delete_all_sessions(self) -> None:
+        """Delete all session files from the sessions directory."""
+        if not self._sessions_dir.exists():
+            return
+        for f in self._sessions_dir.glob(_SESSION_GLOB):
+            f.unlink()
 
     def _append_session_turn(
         self,
@@ -384,8 +399,8 @@ class AssistantMemoryManager:
             fh.write(block)
 
     def _load_active_session_messages(self) -> list[dict[str, str]]:
-        """Parse the active session transcript into chat message dicts."""
-        session_path = self._get_active_session_path()
+        """Parse today's session transcript into chat message dicts."""
+        session_path = self._get_today_session_path()
         if session_path is None:
             return []
 
@@ -423,6 +438,154 @@ class AssistantMemoryManager:
             if assistant_text:
                 messages.append({"role": "assistant", "content": assistant_text})
         return messages
+
+    def _search_past_sessions(self, query: str) -> str:
+        """Search past session files for turns relevant to *query* via BM25.
+
+        Uses *jieba* word segmentation for Chinese text tokenisation
+        combined with English word extraction. Scans
+        ``SESSION_YYYYMMDD.md`` files from the last
+        ``_PAST_SESSION_SEARCH_DAYS`` days (excluding today) and ranks
+        turns by Okapi BM25 score. Returns matching turn blocks
+        concatenated as plain text, capped at
+        ``_PAST_SESSION_TOKEN_LIMIT`` estimated tokens.
+        """
+        sessions_dir = self._sessions_dir
+        if not sessions_dir.exists():
+            return ""
+
+        entries, texts = self._collect_past_session_turns(sessions_dir)
+        if not entries:
+            return ""
+
+        return self._bm25_rank_turns(query, entries, texts)
+
+    def _collect_past_session_turns(
+        self, sessions_dir: Path
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Collect conversation turns from past session files.
+
+        Returns:
+            A tuple of (entries, texts) where entries are (date, turn_text)
+            pairs and texts are the raw turn strings for tokenisation.
+        """
+        today_str = datetime.now().strftime(self._SESSION_DATE_FORMAT)
+        cutoff = datetime.now() - timedelta(days=self._PAST_SESSION_SEARCH_DAYS)
+        cutoff_str = cutoff.strftime(self._SESSION_DATE_FORMAT)
+
+        turn_pattern = re.compile(
+            r"(### Turn \d+\n\*\*User:\*\* [^\n]*\n\n\*\*Assistant:\*\* [^\n]*\n)\n",
+        )
+
+        entries: list[tuple[str, str]] = []
+        texts: list[str] = []
+
+        for path in sorted(sessions_dir.glob(_SESSION_GLOB), reverse=True):
+            match = re.fullmatch(r"SESSION_(\d{8})\.md", path.name)
+            if match is None:
+                continue
+            date_str = match.group(1)
+            if date_str == today_str or date_str < cutoff_str:
+                continue
+            content = path.read_text(encoding="utf-8")
+            for turn_match in turn_pattern.finditer(content):
+                turn_text = turn_match.group(1)
+                entries.append((date_str, turn_text))
+                texts.append(turn_text)
+
+        return entries, texts
+
+    def _bm25_rank_turns(
+        self,
+        query: str,
+        entries: list[tuple[str, str]],
+        texts: list[str],
+    ) -> str:
+        """Rank turn texts by BM25 relevance and return top matches.
+
+        Args:
+            query: User search query.
+            entries: List of (date_str, turn_text) pairs.
+            texts: Raw turn texts for tokenisation.
+
+        Returns:
+            Concatenated matching turn blocks within the token budget.
+        """
+        import jieba  # noqa: E402 — lazy import to avoid startup cost
+
+        def _tokenize(text: str) -> list[str]:
+            words = jieba.lcut(text.lower())
+            return [
+                w.strip()
+                for w in words
+                if len(w.strip()) >= 2 and not w.strip().isspace()
+            ]
+
+        n_docs = len(texts)
+        doc_tokens = [_tokenize(t) for t in texts]
+        doc_lens = np.array([len(t) for t in doc_tokens], dtype=np.float64)
+        avgdl = doc_lens.mean() if n_docs > 0 else 1.0
+
+        scores = self._compute_bm25_scores(
+            _tokenize(query), doc_tokens, doc_lens, avgdl, n_docs
+        )
+
+        return self._select_top_turns(entries, scores)
+
+    @staticmethod
+    def _compute_bm25_scores(
+        query_tokens: list[str],
+        doc_tokens: list[list[str]],
+        doc_lens: np.ndarray,
+        avgdl: float,
+        n_docs: int,
+    ) -> np.ndarray:
+        """Compute BM25 scores for each document given query tokens."""
+        df: dict[str, int] = defaultdict(int)
+        for tokens in doc_tokens:
+            for tok in set(tokens):
+                df[tok] += 1
+
+        k1 = 1.5
+        b = 0.75
+        query_terms = list(set(query_tokens))
+
+        scores = np.zeros(n_docs)
+        for term in query_terms:
+            if term not in df:
+                continue
+            n_t = df[term]
+            idf = np.log((n_docs - n_t + 0.5) / (n_t + 0.5) + 1)
+            for i, tokens in enumerate(doc_tokens):
+                tf_val = tokens.count(term)
+                if tf_val > 0:
+                    numerator = tf_val * (k1 + 1)
+                    denominator = tf_val + k1 * (1 - b + b * doc_lens[i] / avgdl)
+                    scores[i] += idf * numerator / denominator
+        return scores
+
+    def _select_top_turns(
+        self,
+        entries: list[tuple[str, str]],
+        scores: np.ndarray,
+    ) -> str:
+        """Select top-scoring turns within the token budget."""
+        top_indices = np.argsort(scores)[::-1][:20]
+
+        matched_blocks: list[str] = []
+        total_tokens = 0
+        for idx in top_indices:
+            if scores[idx] <= 0:
+                break
+            file_date, turn_text = entries[idx]
+            block = f"[{file_date}]\n{turn_text}\n"
+            block_tokens = self._estimate_tokens(block)
+            if total_tokens + block_tokens > self._PAST_SESSION_TOKEN_LIMIT:
+                break
+            matched_blocks.append(block)
+            total_tokens += block_tokens
+
+        return "\n".join(matched_blocks)
 
     async def _compress_session(self, session_path: Path) -> None:
         """Compress older turns in a session, keeping recent ones verbatim."""
@@ -607,7 +770,11 @@ class AssistantMemoryManager:
         # Use hardcoded filename joined to base dir (no user-controlled path, S2083)
         safe_path = self._base_dir / "USER.md"
         if not safe_path.exists():
-            safe_path.write_text(self._default_user_text(), encoding="utf-8")
+            src = _PROMPTS_DIR / _USER_TEMPLATE
+            if src.exists():
+                shutil.copy2(src, safe_path)
+            else:
+                safe_path.write_text("", encoding="utf-8")
 
         content = safe_path.read_text(encoding="utf-8")
         pattern = rf"(## {re.escape(section_name)}\n\n)(.*?)(?=\n## |\Z)"
@@ -624,7 +791,11 @@ class AssistantMemoryManager:
     def _append_user_observations(self, observation: str) -> None:
         """Append a new observation to the ``## Agent Observations`` section."""
         if not self._user_path.exists():
-            self._user_path.write_text(self._default_user_text(), encoding="utf-8")
+            src = _PROMPTS_DIR / _USER_TEMPLATE
+            if src.exists():
+                shutil.copy2(src, self._user_path)
+            else:
+                self._user_path.write_text("", encoding="utf-8")
 
         content = self._user_path.read_text(encoding="utf-8")
         section = self._read_markdown_section(content, _SECTION_AGENT_OBSERVATIONS)
@@ -734,13 +905,17 @@ class AssistantMemoryManager:
         self._write_memory_file("", [])
 
         if self._user_path.exists():
+            default_user = self._load_template(_USER_TEMPLATE)
+            default_obs = self._read_markdown_section(
+                default_user, _SECTION_AGENT_OBSERVATIONS
+            )
             self._write_user_section(
                 _SECTION_AGENT_OBSERVATIONS,
-                "（由 AI 主动维护，记录与用户互动中观察到的偏好和习惯）",
+                default_obs or "",
             )
 
         if self._sessions_dir.exists():
-            for f in self._sessions_dir.glob("SESSION_*.md"):
+            for f in self._sessions_dir.glob(_SESSION_GLOB):
                 f.unlink()
 
         self._turn_counter = 0
@@ -850,12 +1025,17 @@ class AssistantMemoryManager:
         """Ensure the base directory tree and default template files exist."""
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
-        if not self._soul_path.exists():
-            self._soul_path.write_text(self._default_soul_text(), encoding="utf-8")
-        if not self._memory_path.exists():
-            self._memory_path.write_text(self._default_memory_text(), encoding="utf-8")
-        if not self._user_path.exists():
-            self._user_path.write_text(self._default_user_text(), encoding="utf-8")
+        for target, template_name in (
+            (self._soul_path, "SOUL.md.template"),
+            (self._memory_path, "MEMORY.md.template"),
+            (self._user_path, _USER_TEMPLATE),
+        ):
+            if not target.exists():
+                src = _PROMPTS_DIR / template_name
+                if src.exists():
+                    shutil.copy2(src, target)
+                else:
+                    target.write_text("", encoding="utf-8")
 
     @staticmethod
     def _read_file(path: Path) -> str:
@@ -893,36 +1073,17 @@ class AssistantMemoryManager:
         return max(0.0, min(1.0, v))
 
     @staticmethod
-    def _default_soul_text() -> str:
-        return (
-            "# Soul\n\n"
-            "你是 **oAni**，一个专注于动漫资源管理的私人助手。"
-            "你运行在 Telegram 上，通过工具调用帮助用户搜索、下载和管理动漫资源。\n\n"
-            "## 你是谁\n\n"
-            "- 你是用户的动漫资源管家，熟悉 Bangumi、蜜柑计划（Mikan）、"
-            "动漫花园（DMHY）、ACG.RIP 等平台\n"
-            "- 你有自己的个性：热情但不啰嗦，像一个靠谱的朋友，做事干脆利落\n"
-            "- 你用用户的语言回复（中文用户用中文，英文用户用英文）\n"
-            "- 你会主动记住用户的偏好和习惯，并在合适的时候使用这些信息\n\n"
-            "## 核心能力\n\n"
-            "1. **搜索动漫资源**：在 mikan / dmhy / acgrip 网站上搜索资源\n"
-            "2. **解析 RSS 订阅**：解析 RSS 链接获取资源列表\n"
-            "3. **下载资源**：通过后端 API 提交下载任务\n"
-            "4. **查询下载历史**：通过 SQL 查询已下载资源的记录\n"
-            "5. **Bangumi 集成**：查看日历、收藏、条目详情、评论、收藏管理、推荐\n"
-            "6. **Mikan 集成**：搜索番剧、订阅/退订字幕组\n"
-        )
+    def _load_template(template_name: str) -> str:
+        """Read a template file from the prompts directory.
 
-    @staticmethod
-    def _default_memory_text() -> str:
-        return "# Long-Term Memory\n\n## Summary\n\nNone\n\n## Facts\n\n- None\n"
+        Args:
+            template_name: Filename inside the ``prompts/`` directory,
+                e.g. ``"SOUL.md.template"``.
 
-    @staticmethod
-    def _default_user_text() -> str:
-        return (
-            "# User Profile\n\n"
-            "## Bangumi Preferences\n\n"
-            "（由系统自动生成，基于 Bangumi 收藏分析）\n\n"
-            f"## {_SECTION_AGENT_OBSERVATIONS}\n\n"
-            "（由 AI 主动维护，记录与用户互动中观察到的偏好和习惯）\n"
-        )
+        Returns:
+            Template content, or empty string if the file is missing.
+        """
+        path = _PROMPTS_DIR / template_name
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8")

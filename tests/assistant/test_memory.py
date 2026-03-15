@@ -1,6 +1,7 @@
 """Tests for Markdown file-based assistant memory management."""
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -36,6 +37,10 @@ class TestAssistantMemoryManager:
 
         session_files = list((temp_memory_dir / "sessions").glob("SESSION_*.md"))
         assert len(session_files) == 1
+
+        # Verify daily naming format SESSION_YYYYMMDD.md
+        today_str = datetime.now().strftime("%Y%m%d")
+        assert session_files[0].name == f"SESSION_{today_str}.md"
 
         content = session_files[0].read_text(encoding="utf-8")
         assert "### Turn 1" in content
@@ -153,6 +158,7 @@ class TestAssistantMemoryManager:
         )
 
     async def test_start_new_session(self, temp_memory_dir):
+        """Reset deletes all session files; next turn creates a fresh one."""
         manager = _create_manager(temp_memory_dir)
 
         await manager.append_turn("Hello", "Hi!")
@@ -160,14 +166,17 @@ class TestAssistantMemoryManager:
         assert len(session_files_before) == 1
 
         await manager.start_new_session()
+
+        # All sessions should be deleted after reset
+        session_files_after_reset = list(
+            (temp_memory_dir / "sessions").glob("SESSION_*.md")
+        )
+        assert len(session_files_after_reset) == 0
+
+        # New turn creates a fresh session
         await manager.append_turn("New topic", "Sure, what topic?")
-
         session_files_after = list((temp_memory_dir / "sessions").glob("SESSION_*.md"))
-        assert len(session_files_after) == 2
-
-        # Old session should be marked closed
-        old_content = session_files_before[0].read_text(encoding="utf-8")
-        assert "status: closed" in old_content
+        assert len(session_files_after) == 1
 
     async def test_clear_all_memory(self, temp_memory_dir):
         manager = _create_manager(temp_memory_dir)
@@ -247,7 +256,7 @@ class TestAssistantMemoryManager:
         # Create USER.md so observations can be written
         user_path = temp_memory_dir / "USER.md"
         user_path.write_text(
-            manager._default_user_text(),
+            manager._load_template("USER.md.template"),
             encoding="utf-8",
         )
 
@@ -318,3 +327,142 @@ class TestAssistantMemoryManager:
         old = next((f for f in merged if f.content == "Old fact"), None)
         assert old is not None
         assert abs(old.confidence - 0.4) < 1e-9
+
+    # ------------------------------------------------------------------
+    # Past session search tests
+    # ------------------------------------------------------------------
+
+    def _create_past_session(
+        self,
+        temp_memory_dir: Path,
+        days_ago: int,
+        turns: list[tuple[str, str]],
+    ) -> Path:
+        """Helper to create a past session file with the given turns."""
+        date = datetime.now() - timedelta(days=days_ago)
+        date_str = date.strftime("%Y%m%d")
+        session_path = temp_memory_dir / "sessions" / f"SESSION_{date_str}.md"
+        started = date.isoformat(timespec="seconds")
+        lines = [
+            f"# Session {date_str}\n\n- started_at: {started}\n\n## Conversation\n\n"
+        ]
+        for i, (user_msg, asst_msg) in enumerate(turns, 1):
+            lines.append(
+                f"### Turn {i}\n**User:** {user_msg}\n\n**Assistant:** {asst_msg}\n\n"
+            )
+        session_path.write_text("".join(lines), encoding="utf-8")
+        return session_path
+
+    async def test_search_past_sessions_finds_matching_turns(self, temp_memory_dir):
+        manager = _create_manager(temp_memory_dir)
+
+        self._create_past_session(
+            temp_memory_dir,
+            days_ago=1,
+            turns=[
+                ("search Frieren", "Found 3 Frieren resources"),
+                ("download first", "Downloading..."),
+            ],
+        )
+
+        messages = await manager.build_system_messages("help me find Frieren again")
+
+        past_msgs = [
+            m
+            for m in messages
+            if m["role"] == "system" and "past conversations" in m["content"].lower()
+        ]
+        assert len(past_msgs) == 1
+        assert "Frieren" in past_msgs[0]["content"]
+
+    async def test_search_past_sessions_excludes_today(self, temp_memory_dir):
+        manager = _create_manager(temp_memory_dir)
+
+        # Add a turn to today's session
+        await manager.append_turn("search Frieren", "Found 3 results")
+
+        # Search should NOT return today's session as "past" context
+        result = manager._search_past_sessions("Frieren")
+        assert result == ""
+
+    def test_search_past_sessions_respects_token_limit(self, temp_memory_dir):
+        manager = _create_manager(temp_memory_dir)
+        manager._PAST_SESSION_TOKEN_LIMIT = 50  # Very low limit
+
+        self._create_past_session(
+            temp_memory_dir,
+            days_ago=1,
+            turns=[
+                (
+                    "search Frieren episode one",
+                    "Found Frieren episode 1 resources on mikan",
+                ),
+                ("search Frieren episode two", "Found Frieren episode 2 on dmhy"),
+                ("search Frieren episode three", "Found Frieren episode 3 on acgrip"),
+            ],
+        )
+
+        result = manager._search_past_sessions("Frieren episode")
+        tokens = manager._estimate_tokens(result)
+        assert tokens <= 50
+
+    def test_search_past_sessions_7day_scope(self, temp_memory_dir):
+        manager = _create_manager(temp_memory_dir)
+
+        # 3 days ago — within scope
+        self._create_past_session(
+            temp_memory_dir,
+            days_ago=3,
+            turns=[("search Naruto", "Found Naruto resources")],
+        )
+
+        # 10 days ago — outside scope
+        self._create_past_session(
+            temp_memory_dir,
+            days_ago=10,
+            turns=[("search Bleach", "Found Bleach resources")],
+        )
+
+        result = manager._search_past_sessions("Naruto Bleach")
+        assert "Naruto" in result
+        assert "Bleach" not in result
+
+    async def test_reset_deletes_all_sessions(self, temp_memory_dir):
+        manager = _create_manager(temp_memory_dir)
+
+        # Create today's session + past sessions
+        await manager.append_turn("Hello", "Hi!")
+        self._create_past_session(
+            temp_memory_dir,
+            days_ago=1,
+            turns=[("old msg", "old reply")],
+        )
+        self._create_past_session(
+            temp_memory_dir,
+            days_ago=2,
+            turns=[("older msg", "older reply")],
+        )
+
+        all_before = list((temp_memory_dir / "sessions").glob("SESSION_*.md"))
+        assert len(all_before) == 3
+
+        await manager.start_new_session()
+
+        all_after = list((temp_memory_dir / "sessions").glob("SESSION_*.md"))
+        assert len(all_after) == 0
+
+    async def test_daily_session_reuse_across_calls(self, temp_memory_dir):
+        """Multiple append_turn calls on the same day use the same file."""
+        manager = _create_manager(temp_memory_dir)
+
+        await manager.append_turn("msg1", "reply1")
+        await manager.append_turn("msg2", "reply2")
+        await manager.append_turn("msg3", "reply3")
+
+        session_files = list((temp_memory_dir / "sessions").glob("SESSION_*.md"))
+        assert len(session_files) == 1
+
+        content = session_files[0].read_text(encoding="utf-8")
+        assert "### Turn 1" in content
+        assert "### Turn 2" in content
+        assert "### Turn 3" in content
