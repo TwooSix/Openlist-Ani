@@ -29,10 +29,10 @@ class UpdateSoulTool(BaseTool):
             "(SOUL.md). Call this ONLY when the user **explicitly** asks "
             "you to change how you behave, communicate, or respond. "
             "Examples:\n"
-            "- '以后回复简洁一点' → save communication style\n"
-            "- '别用emoji' → save format constraint\n"
-            "- '你应该更主动地推荐新番' → save proactivity preference\n"
-            "- '用日语回复我' → save language preference\n\n"
+            "- 'Keep replies short from now on' -> save communication style\n"
+            "- 'Stop using emoji' -> save format constraint\n"
+            "- 'You should proactively recommend new anime' -> save proactivity preference\n"
+            "- 'Reply to me in Japanese' -> save language preference\n\n"
             "Do NOT call this unless the user explicitly requests a "
             "personality or behaviour change."
         )
@@ -46,8 +46,8 @@ class UpdateSoulTool(BaseTool):
                     "type": "string",
                     "description": (
                         "The behaviour or personality instruction to save, "
-                        "e.g. '回复尽量简洁，不超过三句话', "
-                        "'不要使用 emoji'"
+                        "e.g. 'Keep replies concise, no more than three sentences', "
+                        "'Do not use emoji'"
                     ),
                 },
             },

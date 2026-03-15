@@ -45,7 +45,7 @@ class UpdateUserProfileTool(BaseTool):
                     "type": "string",
                     "description": (
                         "The information to save. For section='observation', "
-                        "a concise statement like '用户名字叫小明'. "
+                        "a concise statement like 'User's name is Alice'. "
                         "For section='bangumi_preferences', a multi-line "
                         "analysis of the user's anime preferences."
                     ),
