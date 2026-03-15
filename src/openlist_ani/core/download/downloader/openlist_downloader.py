@@ -335,6 +335,9 @@ class OpenListDownloader(BaseDownloader):
             raise DownloadError(f"Failed to create directory: {final_dir_path}")
 
         file_to_move = await self._rename_temp_file_if_needed(task, final_filename)
+        file_to_move = await self._resolve_filename_conflict(
+            temp_path, final_dir_path, file_to_move
+        )
 
         logger.debug(
             f"Moving file to final destination: {final_dir_path}/{file_to_move}"
@@ -435,6 +438,67 @@ class OpenListDownloader(BaseDownloader):
             final_filename_stem = f"{final_filename_stem} v{version}"
 
         return f"{final_filename_stem}{ext}".strip()
+
+    _MAX_CONFLICT_SUFFIX = 99
+
+    async def _resolve_filename_conflict(
+        self,
+        temp_path: str,
+        final_dir_path: str,
+        filename: str,
+    ) -> str:
+        """Check for filename conflicts in the destination and rename if needed.
+
+        If ``filename`` already exists in ``final_dir_path``, the file in
+        ``temp_path`` is renamed with an incrementing suffix like ``(1)``,
+        ``(2)``, etc. until a free name is found.
+
+        Returns:
+            The (possibly renamed) filename ready to be moved.
+
+        Raises:
+            DownloadError: When a free name cannot be found within the limit.
+        """
+        existing_files = await self.client.list_files(final_dir_path)
+        if existing_files is None:
+            # Cannot list destination — skip conflict check, let move_file
+            # decide the outcome.
+            return filename
+
+        existing_names = {f.name for f in existing_files}
+        if filename not in existing_names:
+            return filename
+
+        stem, ext = os.path.splitext(filename)
+        new_filename: str | None = None
+        for i in range(1, self._MAX_CONFLICT_SUFFIX + 1):
+            candidate = f"{stem} ({i}){ext}"
+            if candidate not in existing_names:
+                new_filename = candidate
+                break
+
+        if new_filename is None:
+            raise DownloadError(
+                f"Cannot resolve filename conflict: '{filename}' "
+                f"in {final_dir_path} (tried up to "
+                f"({self._MAX_CONFLICT_SUFFIX}))"
+            )
+
+        temp_file_path = f"{temp_path}/{filename}"
+        if not await self.client.rename_file(temp_file_path, new_filename):
+            raise DownloadError(
+                f"Failed to rename '{filename}' to '{new_filename}' "
+                f"for conflict resolution"
+            )
+
+        logger.debug("Waiting for remote server cache to refresh...")
+        await asyncio.sleep(5)
+
+        logger.warning(
+            f"File '{filename}' already exists in {final_dir_path}, "
+            f"renamed to '{new_filename}' to avoid conflict"
+        )
+        return new_filename
 
     async def _rename_temp_file_if_needed(
         self, task: DownloadTask, final_filename: str
