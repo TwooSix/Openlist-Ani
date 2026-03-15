@@ -1,0 +1,32 @@
+name: Sync Wiki from docs/
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync docs to Wiki
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_MAIL: ${{ github.actor }}@users.noreply.github.com
+          GH_NAME: ${{ github.actor }}
+          WIKI_DIR: docs/
+          EXCLUDED_FILES: ""
