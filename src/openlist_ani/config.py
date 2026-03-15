@@ -173,6 +173,7 @@ class ConfigManager:
         self.config_path = Path(os.getcwd()) / config_path
         self._config: UserConfig = UserConfig()
         self._last_mtime: float = 0
+        self._load_failed: bool = False
 
         self.reload()
 
@@ -197,8 +198,11 @@ class ConfigManager:
             raw = tomllib.loads(content.decode("utf-8"))
             self._config = UserConfig.model_validate(raw)
             self._last_mtime = self.config_file_stat.st_mtime
+            self._load_failed = False
             self._set_proxy_env()
         except Exception as e:
+            self._last_mtime = self.config_file_stat.st_mtime
+            self._load_failed = True
             logger.error(f"Failed to load configuration: {e}")
 
     @property
@@ -245,7 +249,12 @@ class ConfigManager:
         Returns:
             True if all required configuration is valid, False otherwise.
         """
-        self.reload()
+        # Access self.data to trigger mtime-based reload if needed,
+        # avoiding unconditional reload that duplicates error logs.
+        _ = self.data
+
+        if self._load_failed:
+            return False
 
         errors: list[str] = []
         warnings: list[str] = []

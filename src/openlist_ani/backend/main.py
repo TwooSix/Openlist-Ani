@@ -60,7 +60,7 @@ async def run() -> None:
     BackendService.init(manager)
     notification_manager = _setup_notifications(manager)
 
-    rss = RSSManager(download_manager=manager)
+    rss = RSSManager()
     rss_entry_queue: asyncio.Queue[AnimeResourceInfo] = asyncio.Queue()
     active_downloads: set[asyncio.Task[None]] = set()
 
@@ -119,7 +119,17 @@ def _create_download_manager() -> DownloadManager:
         except Exception as e:
             logger.error(f"Failed to save to database: {e}")
 
+    async def _rollback_database(task: DownloadTask, error: str) -> None:
+        try:
+            await db.remove_resource(task.resource_info.title)
+            logger.info(
+                f"Rolled back DB record for failed download: {task.resource_info.title}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to rollback DB record: {e}")
+
     manager.on_complete(_save_to_database)
+    manager.on_error(_rollback_database)
     return manager
 
 

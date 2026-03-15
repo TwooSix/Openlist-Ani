@@ -28,10 +28,9 @@ _EpisodeKey = tuple[str, int, int]  # (anime_name, season, episode)
 class ResourcePriorityFilter:
     """Filters a batch of parsed resources according to priority rules.
 
-    Designed to be instantiated once per dispatch cycle.  Config values
-    are read from the hot-reloadable ``config.priority`` on every call
-    to ``filter_batch``, so changes in *config.toml* take effect without
-    a restart.
+    Config values are read from the hot-reloadable ``config.priority``
+    on every call to ``filter_batch``, so changes in *config.toml*
+    take effect without a restart.
     """
 
     # ── public API ───────────────────────────────────────────────────
@@ -67,7 +66,12 @@ class ResourcePriorityFilter:
 
         for key, group in groups.items():
             filtered = await self._filter_group(
-                key, group, fansub_list, lang_list, quality_list, field_order
+                key,
+                group,
+                fansub_list,
+                lang_list,
+                quality_list,
+                field_order,
             )
             accepted.extend(filtered)
 
@@ -114,22 +118,23 @@ class ResourcePriorityFilter:
             return group
 
         anime_name, season, episode = key
-        downloaded = await db.find_resources_by_episode(anime_name, season, episode)
+        known = await db.find_resources_by_episode(anime_name, season, episode)
 
         accepted: list[AnimeResourceInfo] = []
         remaining: list[AnimeResourceInfo] = []
 
         for candidate in group:
             # Version bypass: always allow higher versions through.
-            if self._is_version_upgrade(candidate, downloaded):
+            if self._is_version_upgrade(candidate, known):
                 logger.debug(f"Priority: version upgrade bypass for {candidate.title}")
                 accepted.append(candidate)
                 continue
 
-            # DB priority check: skip if a better resource was already downloaded.
-            if downloaded and self._should_skip_by_db(
+            # Priority check: skip if a better resource is already downloaded
+            # or pending download.
+            if known and self._should_skip_by_db(
                 candidate,
-                downloaded,
+                known,
                 fansub_list,
                 lang_list,
                 quality_list,
