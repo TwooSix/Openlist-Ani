@@ -23,10 +23,43 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Sync docs to Wiki
-        uses: Andrew-Chen-Wang/github-wiki-action@v4
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_MAIL: ${{ github.actor }}@users.noreply.github.com
-          GH_NAME: ${{ github.actor }}
-          WIKI_DIR: docs/
-          EXCLUDED_FILES: ""
+        run: |
+          set -euo pipefail
+
+          # Configure git
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+
+          # Clone the wiki repo
+          WIKI_URL="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git"
+          WIKI_DIR="/tmp/wiki-$$"
+
+          echo "Cloning wiki repository..."
+          if ! git clone "$WIKI_URL" "$WIKI_DIR" 2>&1; then
+            echo "::error::Failed to clone wiki repository. Please make sure:"
+            echo "::error::1. Wiki is initialized (create the first page at https://github.com/${{ github.repository }}/wiki)"
+            echo "::error::2. Wiki is enabled in repository settings"
+            exit 1
+          fi
+
+          echo "Wiki cloned to $WIKI_DIR"
+          ls -la "$WIKI_DIR"
+
+          # Remove all existing wiki files (except .git)
+          find "$WIKI_DIR" -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+
+          # Copy docs/ content
+          cp -rv docs/* "$WIKI_DIR/"
+
+          # Commit and push
+          cd "$WIKI_DIR"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to sync."
+          else
+            git commit -m "Sync wiki from docs/ (${{ github.sha }})"
+            git push
+            echo "Wiki synced successfully."
+          fi
