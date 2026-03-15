@@ -24,8 +24,9 @@ class TestAnimeResourceInfo:
         """repr() must not crash even when optional fields are None."""
         info = AnimeResourceInfo(title="t", download_url="d")
         result = repr(info)
-        assert "title=" in result
-        assert "anime_name=None" in result
+        assert "[?]" in result
+        assert "S??E??" in result
+        assert "| t" in result
 
     def test_languages_list_independence(self):
         """Each instance must have its own languages list (no shared mutable default)."""

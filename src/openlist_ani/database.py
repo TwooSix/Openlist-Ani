@@ -77,6 +77,12 @@ class AniDatabase:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def remove_resource(self, title: str) -> None:
+        """Remove a resource record by title (used to rollback failed downloads)."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute("DELETE FROM resources WHERE title = ?", (title,))
+            await conn.commit()
+
     async def add_resource(
         self,
         resource_info: AnimeResourceInfo,

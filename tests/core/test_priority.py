@@ -763,3 +763,104 @@ class TestFieldOrder:
             result = await f.filter_batch(candidates)
         # Only fansub is checked: Fansub_B > Fansub_C → allow (quality ignored)
         assert len(result) == 1
+
+
+# ── pending tracking tests (cross-batch) ─────────────────────────────
+
+
+class TestPreInsertedDBFiltering:
+    """Test that pre-inserted DB records (from in-flight downloads) prevent duplicates.
+
+    With the pre-insert-to-DB approach, accepted entries are written to DB
+    before download starts.  Subsequent batches see them via
+    find_resources_by_episode.
+    """
+
+    @pytest.mark.asyncio
+    async def test_preinserted_blocks_lower_priority_language(self):
+        """简日 pre-inserted to DB → 繁日 candidate should be skipped."""
+        f = ResourcePriorityFilter()
+        candidates = [
+            _make_resource(
+                title="ep1-cht",
+                fansub="Fansub_A",
+                languages=[LanguageType.CHT],
+                url="magnet:cht",
+            ),
+        ]
+        cfg = _mock_config(
+            fansub=["Fansub_A"],
+            languages=["简", "繁"],
+        )
+        # Simulate pre-inserted record from a previous batch.
+        db_records = [
+            {
+                "fansub": "Fansub_A",
+                "quality": "1080p",
+                "languages": "简日",
+                "version": 1,
+            }
+        ]
+
+        with (
+            patch(_DB_FIND, new_callable=AsyncMock, return_value=db_records),
+            patch(_CFG_PRIORITY, cfg),
+        ):
+            result = await f.filter_batch(candidates)
+            assert result == []
+
+    @pytest.mark.asyncio
+    async def test_preinserted_allows_higher_priority(self):
+        """繁日 pre-inserted to DB → 简日 candidate (higher priority) still passes."""
+        f = ResourcePriorityFilter()
+        candidates = [
+            _make_resource(
+                title="ep1-chs",
+                fansub="Fansub_A",
+                languages=[LanguageType.CHS],
+                url="magnet:chs",
+            ),
+        ]
+        cfg = _mock_config(
+            fansub=["Fansub_A"],
+            languages=["简", "繁"],
+        )
+        db_records = [
+            {
+                "fansub": "Fansub_A",
+                "quality": "1080p",
+                "languages": "繁日",
+                "version": 1,
+            }
+        ]
+
+        with (
+            patch(_DB_FIND, new_callable=AsyncMock, return_value=db_records),
+            patch(_CFG_PRIORITY, cfg),
+        ):
+            result = await f.filter_batch(candidates)
+            assert len(result) == 1
+            assert result[0].title == "ep1-chs"
+
+    @pytest.mark.asyncio
+    async def test_preinserted_fansub_blocks_lower_fansub(self):
+        """Fansub_A pre-inserted to DB → Fansub_B candidate should be skipped."""
+        f = ResourcePriorityFilter()
+        candidates = [
+            _make_resource(
+                title="ep1-fanB",
+                fansub="Fansub_B",
+                url="magnet:b",
+            ),
+        ]
+        cfg = _mock_config(fansub=["Fansub_A", "Fansub_B"])
+        db_records = [
+            {"fansub": "Fansub_A", "quality": "1080p", "languages": "", "version": 1}
+        ]
+
+        with (
+            patch(_DB_FIND, new_callable=AsyncMock, return_value=db_records),
+            patch(_CFG_PRIORITY, cfg),
+        ):
+            result = await f.filter_batch(candidates)
+            assert result == []

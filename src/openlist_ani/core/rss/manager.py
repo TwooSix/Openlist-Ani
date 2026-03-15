@@ -1,13 +1,9 @@
 import asyncio
-from typing import TYPE_CHECKING
 
 from ...config import config
 from ...database import db
 from ...logger import logger
 from ..website import AnimeResourceInfo, WebsiteBase, WebsiteFactory
-
-if TYPE_CHECKING:
-    from ..download.manager import DownloadManager
 
 
 class RSSManager:
@@ -17,13 +13,8 @@ class RSSManager:
     checking for duplicates, and filtering already-downloaded content.
     """
 
-    def __init__(self, download_manager: "DownloadManager"):
-        """Initialize RSS Manager.
-
-        Args:
-            download_manager: DownloadManager for checking active tasks
-        """
-        self._download_manager = download_manager
+    def __init__(self):
+        """Initialize RSS Manager."""
         self._factory = WebsiteFactory()
 
     async def check_update(self) -> list[AnimeResourceInfo]:
@@ -43,11 +34,6 @@ class RSSManager:
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         new_entries = await self._collect_new_entries(results)
-
-        if new_entries:
-            logger.info(f"RSS check: {len(new_entries)} new entries found")
-        else:
-            logger.debug("RSS check: no new entries")
 
         return new_entries
 
@@ -101,10 +87,6 @@ class RSSManager:
 
         if await db.is_downloaded(entry.title):
             logger.debug(f"Skipping already downloaded: {entry.title}")
-            return False
-
-        if self._download_manager and self._download_manager.is_downloading(entry):
-            logger.debug(f"Skipping already queued: {entry.title}")
             return False
 
         return True

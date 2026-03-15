@@ -35,15 +35,16 @@ class AnimeResourceInfo:
     version: int = 1
 
     def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(\n"
-            f"    title={self.title!r},\n"
-            f"    anime_name={self.anime_name!r},\n"
-            f"    season={self.season},\n"
-            f"    episode={self.episode},\n"
-            f"    fansub={self.fansub!r},\n"
-            f"    quality={self.quality},\n"
-            f"    languages={self.languages}\n"
-            f"    version={self.version}\n"
-            f")"
-        )
+        season_str = f"S{self.season:02d}" if self.season is not None else "S??"
+        episode_str = f"E{self.episode:02d}" if self.episode is not None else "E??"
+        lang_str = "/".join(str(l) for l in self.languages) if self.languages else "?"
+        parts = [
+            f"[{self.anime_name or '?'}]",
+            f"{season_str}{episode_str}",
+            f"v{self.version}" if self.version > 1 else "",
+            f"| {self.fansub}" if self.fansub else "",
+            f"| {self.quality}" if self.quality and self.quality != VideoQuality.UNKNOWN else "",
+            f"| {lang_str}",
+            f"| {self.title}",
+        ]
+        return " ".join(p for p in parts if p)

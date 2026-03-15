@@ -48,6 +48,11 @@ async def parse_metadata(
     miss_entries = [entry for _, entry in to_parse]
     miss_indices = [idx for idx, _ in to_parse]
 
+    logger.info(
+        f"Starting metadata parsing for {len(miss_entries)} entries "
+        f"(batch_size={batch_size})"
+    )
+
     llm = OpenAILLMClient(
         api_key=config.llm.openai_api_key,
         base_url=config.llm.openai_base_url,
@@ -56,14 +61,35 @@ async def parse_metadata(
     tmdb_client = get_tmdb_client()
     resolver = TMDBResolver(llm_client=llm, tmdb_client=tmdb_client)
 
+    total_chunks = (len(miss_entries) + batch_size - 1) // batch_size
     fresh_results: list[ParseResult] = []
     for chunk_start in range(0, len(miss_entries), batch_size):
         chunk = miss_entries[chunk_start : chunk_start + batch_size]
+        chunk_idx = chunk_start // batch_size + 1
         titles = [e.title for e in chunk]
+        logger.info(
+            f"[{chunk_idx}/{total_chunks}] LLM parsing {len(chunk)} titles..."
+        )
+        logger.debug(
+            f"[{chunk_idx}/{total_chunks}] Titles: {titles}"
+        )
         parsed = await parse_title_batch_via_llm(llm, titles)
         for title, pr in zip(titles, parsed):
             pr.resource_title = title
+        llm_ok = sum(1 for p in parsed if p.success)
+        logger.info(
+            f"[{chunk_idx}/{total_chunks}] LLM done: "
+            f"{llm_ok}/{len(chunk)} succeeded, resolving TMDB..."
+        )
         await resolver.resolve_and_validate(parsed)
+        tmdb_ok = sum(1 for p in parsed if p.success)
+        logger.info(
+            f"[{chunk_idx}/{total_chunks}] TMDB resolved: "
+            f"{tmdb_ok}/{len(chunk)} succeeded"
+        )
+        logger.debug(
+            f"[{chunk_idx}/{total_chunks}] Results: {parsed}"
+        )
         fresh_results.extend(parsed)
 
     for idx, pr in zip(miss_indices, fresh_results):

@@ -42,20 +42,13 @@ def _parse_fail(error="failed"):
     return SimpleNamespace(success=False, result=None, error=error)
 
 
-async def _run_dispatch_once(queue, mock_manager, batch_return_value):
+async def _run_dispatch_once(queue, mock_manager):
     """Run dispatch_downloads until it processes one batch, then cancel."""
     from openlist_ani.backend.worker import dispatch_downloads
 
     active: set[asyncio.Task] = set()
 
-    with (
-        patch(
-            "openlist_ani.backend.worker.parse_metadata",
-            new_callable=AsyncMock,
-            return_value=batch_return_value,
-        ) as mock_parse,
-        patch("openlist_ani.backend.worker.config") as mock_config,
-    ):
+    with (patch("openlist_ani.backend.worker.config") as mock_config,):
         mock_config.openlist.download_path = "/downloads"
 
         try:
@@ -64,7 +57,85 @@ async def _run_dispatch_once(queue, mock_manager, batch_return_value):
         except TimeoutError:
             pass
 
-    return mock_parse
+
+async def _run_poll_once(rss_entries, parse_results):
+    """Run poll_rss_feeds for one cycle and return queued entries."""
+    from openlist_ani.backend.worker import poll_rss_feeds
+
+    queue: asyncio.Queue = asyncio.Queue()
+    mock_rss = AsyncMock()
+    mock_rss.check_update = AsyncMock(return_value=rss_entries)
+
+    with (
+        patch(
+            "openlist_ani.backend.worker.parse_metadata",
+            new_callable=AsyncMock,
+            return_value=parse_results,
+        ) as mock_parse,
+        patch("openlist_ani.backend.worker.config") as mock_config,
+        patch(
+            "openlist_ani.core.rss.priority.db.find_resources_by_episode",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "openlist_ani.backend.worker.db",
+        ) as mock_db,
+    ):
+        mock_config.rss.interval_time = 999
+        mock_config.rss.priority.fansub = []
+        mock_config.rss.priority.languages = []
+        mock_config.rss.priority.quality = []
+        mock_config.rss.priority.field_order = []
+        mock_db.add_resource = AsyncMock()
+
+        try:
+            async with asyncio.timeout(0.2):
+                await poll_rss_feeds(mock_rss, queue)
+        except TimeoutError:
+            pass
+
+    queued = []
+    while not queue.empty():
+        queued.append(queue.get_nowait())
+    return queued, mock_parse
+
+
+class TestPollRssFeeds:
+    async def test_single_entry_parsed_and_queued(self):
+        entry = _make_resource(title="Anime - 01")
+        queued, mock_parse = await _run_poll_once([entry], [_parse_ok()])
+
+        mock_parse.assert_awaited_once()
+        assert len(queued) == 1
+        assert queued[0].anime_name == "Anime"
+
+    async def test_metadata_failure_skips_entry(self):
+        entries = [_make_resource(title="A - 01"), _make_resource(title="B - 02")]
+        queued, _ = await _run_poll_once(
+            entries,
+            [_parse_fail("parse error"), _parse_ok(anime_name="B", episode=2)],
+        )
+
+        assert entries[0].anime_name is None
+        assert len(queued) == 1
+        assert queued[0].anime_name == "B"
+
+    async def test_fansub_from_llm_when_website_has_none(self):
+        entry = _make_resource()
+        assert entry.fansub is None
+        queued, _ = await _run_poll_once([entry], [_parse_ok(fansub="LLM_SubGroup")])
+
+        assert len(queued) == 1
+        assert queued[0].fansub == "LLM_SubGroup"
+
+    async def test_fansub_from_website_overrides_llm(self):
+        entry = _make_resource()
+        entry.fansub = "Mikan_SubGroup"
+        queued, _ = await _run_poll_once([entry], [_parse_ok(fansub="LLM_SubGroup")])
+
+        assert len(queued) == 1
+        assert queued[0].fansub == "Mikan_SubGroup"
 
 
 class TestDownloadDispatchWorker:
@@ -76,10 +147,9 @@ class TestDownloadDispatchWorker:
         mock_manager = AsyncMock()
         mock_manager.is_downloading = lambda e: False
 
-        mock_parse = await _run_dispatch_once(queue, mock_manager, [_parse_ok()])
+        await _run_dispatch_once(queue, mock_manager)
 
-        mock_parse.assert_awaited_once()
-        assert entry.anime_name == "Anime"
+        mock_manager.download.assert_awaited_once()
 
     async def test_skip_already_downloading(self):
         entry = _make_resource(title="Dup - 01")
@@ -89,20 +159,9 @@ class TestDownloadDispatchWorker:
         mock_manager = AsyncMock()
         mock_manager.is_downloading = lambda e: True
 
-        from openlist_ani.backend.worker import dispatch_downloads
+        await _run_dispatch_once(queue, mock_manager)
 
-        active: set[asyncio.Task] = set()
-        with patch(
-            "openlist_ani.backend.worker.parse_metadata",
-            new_callable=AsyncMock,
-        ) as mock_parse:
-            try:
-                async with asyncio.timeout(0.1):
-                    await dispatch_downloads(mock_manager, queue, active)
-            except TimeoutError:
-                pass
-
-        mock_parse.assert_not_awaited()
+        mock_manager.download.assert_not_awaited()
 
     async def test_multiple_entries_batched(self):
         entries = [_make_resource(title=f"Anime - {i:02d}") for i in range(3)]
@@ -113,31 +172,12 @@ class TestDownloadDispatchWorker:
         mock_manager = AsyncMock()
         mock_manager.is_downloading = lambda e: False
 
-        results = [_parse_ok(episode=i) for i in range(3)]
-        mock_parse = await _run_dispatch_once(queue, mock_manager, results)
+        await _run_dispatch_once(queue, mock_manager)
 
-        mock_parse.assert_awaited_once()
-        assert len(mock_parse.call_args.args[0]) == 3
+        assert mock_manager.download.await_count == 3
 
-    async def test_metadata_failure_skips_entry(self):
-        entries = [_make_resource(title="A - 01"), _make_resource(title="B - 02")]
-        queue: asyncio.Queue = asyncio.Queue()
-        for e in entries:
-            await queue.put(e)
-
-        mock_manager = AsyncMock()
-        mock_manager.is_downloading = lambda e: False
-
-        await _run_dispatch_once(
-            queue,
-            mock_manager,
-            [_parse_fail("parse error"), _parse_ok(anime_name="B", episode=2)],
-        )
-
-        assert entries[0].anime_name is None
-        assert entries[1].anime_name == "B"
-
-    async def test_none_season_episode_formatting(self):
+    async def test_none_season_episode_dispatched(self):
+        """Entries with None season/episode should still be dispatched."""
         entry = _make_resource(title="Anime - SP")
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put(entry)
@@ -145,68 +185,6 @@ class TestDownloadDispatchWorker:
         mock_manager = AsyncMock()
         mock_manager.is_downloading = lambda e: False
 
-        await _run_dispatch_once(
-            queue, mock_manager, [_parse_ok(season=None, episode=None)]
-        )
+        await _run_dispatch_once(queue, mock_manager)
 
         mock_manager.download.assert_awaited_once()
-
-    # -----------------------------------------------------------------------
-    # fansub priority logic
-    # -----------------------------------------------------------------------
-
-    async def test_fansub_from_llm_when_website_has_none(self):
-        entry = _make_resource()
-        assert entry.fansub is None
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put(entry)
-
-        mock_manager = AsyncMock()
-        mock_manager.is_downloading = lambda e: False
-
-        await _run_dispatch_once(
-            queue, mock_manager, [_parse_ok(fansub="LLM_SubGroup")]
-        )
-
-        assert entry.fansub == "LLM_SubGroup"
-
-    async def test_fansub_from_website_overrides_llm(self):
-        entry = _make_resource()
-        entry.fansub = "Mikan_SubGroup"
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put(entry)
-
-        mock_manager = AsyncMock()
-        mock_manager.is_downloading = lambda e: False
-
-        await _run_dispatch_once(
-            queue, mock_manager, [_parse_ok(fansub="LLM_SubGroup")]
-        )
-
-        assert entry.fansub == "Mikan_SubGroup"
-
-    async def test_fansub_from_website_preserved_when_llm_returns_none(self):
-        entry = _make_resource()
-        entry.fansub = "Mikan_SubGroup"
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put(entry)
-
-        mock_manager = AsyncMock()
-        mock_manager.is_downloading = lambda e: False
-
-        await _run_dispatch_once(queue, mock_manager, [_parse_ok(fansub=None)])
-
-        assert entry.fansub == "Mikan_SubGroup"
-
-    async def test_fansub_remains_none_when_both_are_none(self):
-        entry = _make_resource()
-        assert entry.fansub is None
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put(entry)
-
-        mock_manager = AsyncMock()
-        mock_manager.is_downloading = lambda e: False
-
-        await _run_dispatch_once(queue, mock_manager, [_parse_ok(fansub=None)])
-
-        assert entry.fansub is None

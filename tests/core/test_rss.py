@@ -1,6 +1,6 @@
 """Tests for RSSManager.check_update logic."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from openlist_ani.core.website.model import AnimeResourceInfo
 
@@ -12,8 +12,7 @@ class TestRSSManagerCheckUpdate:
         """No configured URLs → empty result, no crash."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         with patch("openlist_ani.core.rss.manager.config") as mock_config:
             mock_config.rss.urls = []
@@ -25,9 +24,7 @@ class TestRSSManagerCheckUpdate:
         """New entries that are not downloaded should be returned."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mock_dm.is_downloading = MagicMock(return_value=False)
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         resource = AnimeResourceInfo(
             title="New Anime - 01",
@@ -54,9 +51,7 @@ class TestRSSManagerCheckUpdate:
         """Entries already in DB should be filtered out."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mock_dm.is_downloading = MagicMock(return_value=False)
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         resource = AnimeResourceInfo(
             title="Old Anime - 01",
@@ -78,13 +73,11 @@ class TestRSSManagerCheckUpdate:
 
         assert len(result) == 0
 
-    async def test_currently_downloading_filtered(self):
-        """Entries currently being downloaded should be filtered out."""
+    async def test_inflight_download_filtered_via_db(self):
+        """Entries pre-inserted to DB (in-flight downloads) should be filtered out."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mock_dm.is_downloading = MagicMock(return_value=True)
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         resource = AnimeResourceInfo(
             title="Active Anime - 01",
@@ -100,7 +93,8 @@ class TestRSSManagerCheckUpdate:
             patch.object(mgr, "_get_website_handler", return_value=mock_handler),
         ):
             mock_config.rss.urls = ["https://acg.rip/.xml"]
-            mock_db.is_downloaded = AsyncMock(return_value=False)
+            # Pre-inserted to DB → is_downloaded returns True
+            mock_db.is_downloaded = AsyncMock(return_value=True)
 
             result = await mgr.check_update()
 
@@ -110,9 +104,7 @@ class TestRSSManagerCheckUpdate:
         """Entries with empty download_url must be silently skipped."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mock_dm.is_downloading = MagicMock(return_value=False)
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         resource_no_url = AnimeResourceInfo(title="No URL Anime", download_url="")
         resource_good = AnimeResourceInfo(
@@ -142,8 +134,7 @@ class TestRSSManagerCheckUpdate:
         """A handler raising an exception must not crash the whole check."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         mock_handler = AsyncMock()
         mock_handler.fetch_feed = AsyncMock(side_effect=Exception("Network error"))
@@ -162,8 +153,7 @@ class TestRSSManagerCheckUpdate:
         """If a handler returns unexpected type, it should be handled gracefully."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         mock_handler = AsyncMock()
         mock_handler.fetch_feed = AsyncMock(return_value="unexpected string")
@@ -182,8 +172,7 @@ class TestRSSManagerCheckUpdate:
         """When _get_website_handler returns None, URL should be skipped."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         with (
             patch("openlist_ani.core.rss.manager.config") as mock_config,
@@ -199,9 +188,7 @@ class TestRSSManagerCheckUpdate:
         """Entries from multiple feeds should be merged into one list."""
         from openlist_ani.core.rss import RSSManager
 
-        mock_dm = MagicMock()
-        mock_dm.is_downloading = MagicMock(return_value=False)
-        mgr = RSSManager(download_manager=mock_dm)
+        mgr = RSSManager()
 
         r1 = AnimeResourceInfo(title="Anime A - 01", download_url="magnet:?a")
         r2 = AnimeResourceInfo(title="Anime B - 01", download_url="magnet:?b")
