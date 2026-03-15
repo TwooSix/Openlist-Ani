@@ -109,8 +109,7 @@ password = ""   # Mikan 密码
 
 # ---------- 日志 ----------
 [log]
-level = "INFO"           # 控制台日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
-file_level = "INFO"      # 文件日志级别
+level = "INFO"           # 日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
 rotation = "00:00"       # 日志轮转时间
 retention = "1 week"     # 旧日志保留时长
 ```

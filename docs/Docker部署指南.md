@@ -86,7 +86,6 @@ password = ""
 # ---------- 日志 ----------
 [log]
 level = "INFO"
-file_level = "INFO"
 rotation = "00:00"
 retention = "1 week"
 ```

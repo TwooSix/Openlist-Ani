@@ -56,7 +56,6 @@ username = ""  # Mikan (mikanani.me) account username
 password = ""  # Mikan account password
 
 [log]
-level = "INFO"  # Console log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-file_level = "INFO"  # File log level
+level = "INFO"  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 rotation = "00:00"  # Log rotation: time-based "00:00" (midnight)
 retention = "1 week"  # How long to keep old logs: "1 week", "30 days", "3 months", etc.
