@@ -35,10 +35,6 @@ class AniDatabase:
                 """
             )
             await db.execute("CREATE INDEX IF NOT EXISTS idx_title ON resources(title)")
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_anime_episode "
-                "ON resources(anime_name, season, episode)"
-            )
             await db.commit()
 
     async def is_downloaded(self, title: str) -> bool:
@@ -49,33 +45,6 @@ class AniDatabase:
             )
             row = await cursor.fetchone()
             return row is not None
-
-    async def find_resources_by_episode(
-        self,
-        anime_name: str,
-        season: int,
-        episode: int,
-    ) -> list[dict]:
-        """Find all downloaded resources for a specific episode.
-
-        Args:
-            anime_name: Anime series name.
-            season: Season number.
-            episode: Episode number.
-
-        Returns:
-            List of dicts with keys: fansub, quality, languages, version.
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT fansub, quality, languages, version "
-                "FROM resources "
-                "WHERE anime_name = ? AND season = ? AND episode = ?",
-                (anime_name, season, episode),
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
 
     async def add_resource(
         self,

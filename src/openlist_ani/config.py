@@ -15,35 +15,9 @@ from .core.download.api.model import OfflineDownloadTool
 from .logger import logger
 
 
-class PriorityConfig(BaseModel):
-    """Configuration for resource download priority filtering.
-
-    Each field is an ordered list where earlier entries have higher priority.
-    When a higher-priority resource has already been downloaded for the same
-    (anime_name, season, episode), lower-priority resources are skipped.
-
-    The ``version`` field is exempt: a newer version is always downloaded
-    regardless of priority rules.
-    """
-
-    field_order: list[str] = Field(
-        default_factory=lambda: ["fansub", "quality", "languages"]
-    )  # Order in which fields are compared; earlier fields take precedence
-    fansub: list[str] = Field(
-        default_factory=list
-    )  # Fansub group priority, e.g. ["Fansub_A", "Fansub_B"]
-    languages: list[str] = Field(
-        default_factory=list
-    )  # Language priority, e.g. ["简", "繁"]
-    quality: list[str] = Field(
-        default_factory=lambda: ["2160p", "1080p", "720p", "480p"]
-    )  # Quality priority (high to low); set to [] to disable
-
-
 class RSSConfig(BaseModel):
     urls: list[str] = Field(default_factory=list)
     interval_time: int = 300  # RSS fetch interval in seconds (default: 5 minutes)
-    priority: PriorityConfig = PriorityConfig()
 
 
 class OpenListConfig(BaseModel):

@@ -1,5 +1,3 @@
-from cachetools import TTLCache
-
 from ...config import config
 from ...logger import logger
 from ..website.model import AnimeResourceInfo
@@ -9,10 +7,6 @@ from .llm.client import OpenAILLMClient
 from .model import ParseResult
 from .tmdb.api import get_tmdb_client
 from .tmdb.resolver import TMDBResolver
-
-# Cache parsed results by title to avoid redundant LLM calls for
-# entries that reappear after being skipped by priority filtering.
-_parse_cache: TTLCache[str, ParseResult] = TTLCache(maxsize=1024, ttl=86400)
 
 
 async def parse_metadata(
@@ -25,29 +19,6 @@ async def parse_metadata(
             ParseResult(success=False, error="OpenAI API key not set") for _ in entries
         ]
 
-    # Separate cached hits from misses.
-    cached_results: dict[int, ParseResult] = {}
-    to_parse: list[tuple[int, AnimeResourceInfo]] = []
-    for i, entry in enumerate(entries):
-        cached = _parse_cache.get(entry.title)
-        if cached is not None:
-            logger.debug(f"Parse cache hit: {entry.title}")
-            cached_results[i] = cached
-        else:
-            to_parse.append((i, entry))
-
-    if to_parse:
-        logger.info(f"Parse cache: {len(cached_results)} hits, {len(to_parse)} misses")
-
-    # Parse only cache-miss entries via LLM.
-    parsed_map: dict[int, ParseResult] = {}
-    if not to_parse:
-        logger.info("All entries parsed from cache, skipping LLM.")
-        return [cached_results[i] for i in range(len(entries))]
-
-    miss_entries = [entry for _, entry in to_parse]
-    miss_indices = [idx for idx, _ in to_parse]
-
     llm = OpenAILLMClient(
         api_key=config.llm.openai_api_key,
         base_url=config.llm.openai_base_url,
@@ -56,28 +27,14 @@ async def parse_metadata(
     tmdb_client = get_tmdb_client()
     resolver = TMDBResolver(llm_client=llm, tmdb_client=tmdb_client)
 
-    fresh_results: list[ParseResult] = []
-    for chunk_start in range(0, len(miss_entries), batch_size):
-        chunk = miss_entries[chunk_start : chunk_start + batch_size]
+    results: list[ParseResult] = []
+    for chunk_start in range(0, len(entries), batch_size):
+        chunk = entries[chunk_start : chunk_start + batch_size]
         titles = [e.title for e in chunk]
         parsed = await parse_title_batch_via_llm(llm, titles)
         for title, pr in zip(titles, parsed):
             pr.resource_title = title
         await resolver.resolve_and_validate(parsed)
-        fresh_results.extend(parsed)
-
-    for idx, pr in zip(miss_indices, fresh_results):
-        parsed_map[idx] = pr
-        # Cache successful results.
-        title = entries[idx].title
-        _parse_cache[title] = pr
-
-    # Reassemble in original order.
-    results: list[ParseResult] = []
-    for i in range(len(entries)):
-        if i in cached_results:
-            results.append(cached_results[i])
-        else:
-            results.append(parsed_map[i])
+        results.extend(parsed)
 
     return results

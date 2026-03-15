@@ -6,13 +6,6 @@ port = 26666  # Backend API listening port
 urls = []
 interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)
 
-
-[rss.priority]
-field_order = ["fansub", "quality", "languages"]  # Field comparison order, earlier fields take precedence
-fansub = []  # Fansub group priority, earlier = higher (e.g. ["Fansub_A", "Fansub_B"])
-languages = []  # Language priority, earlier = higher (available: "简", "繁", "日", "英")
-quality = ["2160p", "1080p", "720p", "480p"]  # Quality priority, earlier = higher. Set [] to disable
-
 [proxy]
 http = ""  # HTTP proxy URL (e.g., "http://127.0.0.1:7890")
 https = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
