@@ -48,7 +48,7 @@ urls = ["RSS订阅链接"]
 url = "http://localhost:5244"       # Openlist 访问地址
 token = ""                          # 令牌，见「设置 → 其他 → 令牌」
 download_path = "/PikPak/Anime"     # 下载保存路径
-offline_download_tool = "qBittorrent"  # 离线下载工具
+offline_download_tool = "QBITTORRENT"  # 离线下载工具
 
 [llm]
 openai_api_key = ""                 # API Key
@@ -56,12 +56,12 @@ openai_base_url = "https://api.deepseek.com/v1"
 openai_model = "deepseek-chat"
 ```
 
-> 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E)
+> 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/配置说明)
 
 **3. 启动**
 
 ```bash
-python -m openlist-ani
+openlist-ani
 ```
 
 **4.（可选）启动 AI 助理**
@@ -78,7 +78,7 @@ allowed_users = []    # 允许的用户 ID 列表，留空则不限制
 ```
 
 ```bash
-python -m openlist-ani-assistant
+openlist-ani-assistant
 ```
 
 </details>
@@ -96,6 +96,7 @@ python -m openlist-ani-assistant
 
 ```bash
 docker run -d \
+  --name openlist-ani \
   --network host \
   -e ENABLE_ASSISTANT=false \
   -v /path/to/config.toml:/config.toml \
@@ -104,7 +105,8 @@ docker run -d \
 ```
 
 > 将 `/path/to/` 替换为你的实际路径。  
-> 如需启用 AI 助理，填写好配置后将 `ENABLE_ASSISTANT` 设为 `true`。
+> 如需启用 AI 助理，填写好配置后将 `ENABLE_ASSISTANT` 设为 `true`。  
+> 详细说明见 [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/Docker部署指南)。
 
 </details>
 
@@ -156,8 +158,11 @@ uv run openlist-ani-assistant
 
 ## 📖 文档
 
-- [快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
-- [配置说明](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E)
+- [快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/快速开始)
+- [PIP 安装指南](https://github.com/TwooSix/Openlist-Ani/wiki/PIP安装指南)
+- [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/Docker部署指南)
+- [源码编译指南](https://github.com/TwooSix/Openlist-Ani/wiki/源码编译指南)
+- [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/配置说明)
 
 ## 🖼️ 效果展示
 
