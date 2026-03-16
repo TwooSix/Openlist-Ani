@@ -688,14 +688,14 @@ class TestBangumiClient:
 
         client._request = AsyncMock(side_effect=side_effect_fetch)
         await client.fetch_user_collections()
-        assert len(client._collection_cache) > 0
+        assert len(client._cache_fetch_user_collections) > 0
 
         # Now post a collection update
         client._request = AsyncMock(return_value=None)
         await client.post_user_collection(subject_id=100, collection_type=3)
 
         # Cache should be cleared
-        assert len(client._collection_cache) == 0
+        assert len(client._cache_fetch_user_collections) == 0
 
 
 # ================================================================

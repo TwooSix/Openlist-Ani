@@ -71,6 +71,7 @@ class TestCachedTMDBClient:
             await client.search_tv_show("nonexistent")
             await client.search_tv_show("nonexistent")
 
+        # Empty list is not cached (falsy values are skipped)
         assert call_count == 2
 
     async def test_details_cache_hit(self):
@@ -109,6 +110,7 @@ class TestCachedTMDBClient:
             await client.get_tv_show_details(999)
             await client.get_tv_show_details(999)
 
+        # Empty dict is not cached (falsy values are skipped)
         assert call_count == 2
 
     async def test_different_queries_cached_separately(self):

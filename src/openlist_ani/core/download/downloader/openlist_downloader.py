@@ -27,7 +27,6 @@ def sanitize_filename(name: str) -> str:
     return sanitized
 
 
-# list of video file extensions we consider when detecting downloads
 _VIDEO_EXTENSIONS = {
     ".mp4",
     ".mkv",
@@ -181,7 +180,7 @@ class OpenListDownloader(BaseDownloader):
 
     # ── Step 2: Wait for offline download ────────────────────────────
 
-    def _check_done_task_state(self, matching_done, label: str) -> None:
+    def _ensure_task_succeeded(self, matching_done, label: str) -> None:
         """Raise if a completed task has a non-success state."""
         if matching_done.state != OpenlistTaskState.SUCCEEDED:
             logger.error(f"{label} failed with state: {matching_done.state}")
@@ -211,7 +210,7 @@ class OpenListDownloader(BaseDownloader):
 
             matching_done = next((t for t in done if t.id == task_id), None)
             if matching_done is not None:
-                self._check_done_task_state(matching_done, "Task")
+                self._ensure_task_succeeded(matching_done, "Task")
                 return
 
             raise DownloadError(f"Task {task_id} not found in undone or done lists")
@@ -246,7 +245,7 @@ class OpenListDownloader(BaseDownloader):
 
             matching_done = next((t for t in done if task_uuid in t.name), None)
             if matching_done is not None:
-                self._check_done_task_state(matching_done, "Transfer")
+                self._ensure_task_succeeded(matching_done, "Transfer")
                 return
 
             not_found_count += 1

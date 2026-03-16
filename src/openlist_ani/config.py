@@ -426,7 +426,7 @@ class ConfigManager:
 
         # Step 1: health check
         logger.info("Verifying OpenList server health...")
-        if not await client.check_health():
+        if not await client.is_healthy():
             logger.error(
                 f"Cannot connect to OpenList server at {self.openlist.url}. "
                 "Please check that the server is running and the URL is correct."

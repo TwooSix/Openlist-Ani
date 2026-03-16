@@ -1,8 +1,9 @@
-"""Tests for OpenListClient.check_health method."""
+"""Tests for OpenListClient.is_healthy method."""
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from openlist_ani.core.download.api.client import OpenListClient
 from openlist_ani.core.download.api.model import OpenlistTaskState
 
@@ -18,7 +19,7 @@ def client():
 
 
 # ---------------------------------------------------------------------------
-# check_health
+# is_healthy
 # ---------------------------------------------------------------------------
 
 
@@ -32,7 +33,7 @@ class TestCheckHealth:
             new_callable=AsyncMock,
             return_value={"code": 200, "data": {}},
         ):
-            result = await client.check_health()
+            result = await client.is_healthy()
             assert result is True
 
     @pytest.mark.asyncio
@@ -44,7 +45,7 @@ class TestCheckHealth:
             new_callable=AsyncMock,
             return_value={"code": 500, "message": "Server error"},
         ):
-            result = await client.check_health()
+            result = await client.is_healthy()
             assert result is False
 
     @pytest.mark.asyncio
@@ -56,7 +57,7 @@ class TestCheckHealth:
             new_callable=AsyncMock,
             return_value=None,
         ):
-            result = await client.check_health()
+            result = await client.is_healthy()
             assert result is False
 
     @pytest.mark.asyncio
@@ -64,7 +65,7 @@ class TestCheckHealth:
         """Should call the public settings endpoint."""
         mock_get = AsyncMock(return_value={"code": 200, "data": {}})
         with patch.object(client, "_get", mock_get):
-            await client.check_health()
+            await client.is_healthy()
             mock_get.assert_called_once_with(
                 "http://localhost:5244/api/public/settings"
             )

@@ -43,8 +43,8 @@ def _parse_fail(error="failed"):
 
 
 async def _run_dispatch_once(queue, mock_manager):
-    """Run dispatch_downloads until it processes one batch, then cancel."""
-    from openlist_ani.backend.worker import dispatch_downloads
+    """Run DownloadDispatcher until it processes one batch, then cancel."""
+    from openlist_ani.backend.worker import DownloadDispatcher
 
     active: set[asyncio.Task] = set()
 
@@ -55,14 +55,14 @@ async def _run_dispatch_once(queue, mock_manager):
 
         try:
             async with asyncio.timeout(0.1):
-                await dispatch_downloads(mock_manager, queue, active)
+                await DownloadDispatcher(mock_manager, queue, active).run()
         except TimeoutError:
             pass
 
 
 async def _run_poll_once(rss_entries, parse_results):
-    """Run poll_rss_feeds for one cycle and return queued entries."""
-    from openlist_ani.backend.worker import poll_rss_feeds
+    """Run RSSPollWorker for one cycle and return queued entries."""
+    from openlist_ani.backend.worker import RSSPollWorker
 
     queue: asyncio.Queue = asyncio.Queue()
     mock_rss = AsyncMock()
@@ -93,7 +93,7 @@ async def _run_poll_once(rss_entries, parse_results):
 
         try:
             async with asyncio.timeout(0.2):
-                await poll_rss_feeds(mock_rss, queue)
+                await RSSPollWorker(mock_rss, queue).run()
         except TimeoutError:
             pass
 
