@@ -67,12 +67,8 @@ async def parse_metadata(
         chunk = miss_entries[chunk_start : chunk_start + batch_size]
         chunk_idx = chunk_start // batch_size + 1
         titles = [e.title for e in chunk]
-        logger.info(
-            f"[{chunk_idx}/{total_chunks}] LLM parsing {len(chunk)} titles..."
-        )
-        logger.debug(
-            f"[{chunk_idx}/{total_chunks}] Titles: {titles}"
-        )
+        logger.info(f"[{chunk_idx}/{total_chunks}] LLM parsing {len(chunk)} titles...")
+        logger.debug(f"[{chunk_idx}/{total_chunks}] Titles: {titles}")
         parsed = await parse_title_batch_via_llm(llm, titles)
         for title, pr in zip(titles, parsed):
             pr.resource_title = title
@@ -87,9 +83,7 @@ async def parse_metadata(
             f"[{chunk_idx}/{total_chunks}] TMDB resolved: "
             f"{tmdb_ok}/{len(chunk)} succeeded"
         )
-        logger.debug(
-            f"[{chunk_idx}/{total_chunks}] Results: {parsed}"
-        )
+        logger.debug(f"[{chunk_idx}/{total_chunks}] Results: {parsed}")
         fresh_results.extend(parsed)
 
     for idx, pr in zip(miss_indices, fresh_results):
