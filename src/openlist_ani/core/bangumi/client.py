@@ -12,9 +12,9 @@ import json
 from typing import Any
 
 import aiohttp
-from cachetools import TTLCache
 
 from ...logger import logger
+from ...utils.cache import clear_cache, ttl_cached
 from .model import (
     BangumiBlog,
     BangumiSubject,
@@ -50,21 +50,6 @@ class BangumiClient:
         self._access_token = access_token
         self._session: aiohttp.ClientSession | None = None
         self._last_request_time: float = 0.0
-
-        # Caches
-        self._user_cache: BangumiUser | None = None
-        self._calendar_cache: TTLCache[str, list[CalendarDay]] = TTLCache(
-            maxsize=1, ttl=6 * 3600
-        )
-        self._subject_cache: TTLCache[int, BangumiSubject] = TTLCache(
-            maxsize=256, ttl=3600
-        )
-        self._collection_cache: TTLCache[str, list[UserCollectionEntry]] = TTLCache(
-            maxsize=1, ttl=600
-        )
-        self._related_cache: TTLCache[int, list[RelatedSubject]] = TTLCache(
-            maxsize=64, ttl=3600
-        )
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         """Create or return the shared aiohttp session."""
@@ -165,6 +150,7 @@ class BangumiClient:
 
     # ---- Public API methods ----
 
+    @ttl_cached(maxsize=1, ttl=60 * 60 * 24)
     async def fetch_current_user(self) -> BangumiUser:
         """Fetch the current authenticated user info (GET /v0/me).
 
@@ -176,17 +162,12 @@ class BangumiClient:
         Raises:
             aiohttp.ClientResponseError: On auth failure.
         """
-        if self._user_cache is not None:
-            return self._user_cache
-
         data = await self._request("GET", "/v0/me")
-        self._user_cache = parse_user(data)
-        logger.info(
-            f"Bangumi: Authenticated as {self._user_cache.nickname} "
-            f"(@{self._user_cache.username})"
-        )
-        return self._user_cache
+        user = parse_user(data)
+        logger.info(f"Bangumi: Authenticated as {user.nickname} (@{user.username})")
+        return user
 
+    @ttl_cached(maxsize=1, ttl=6 * 3600)
     async def fetch_calendar(self) -> list[CalendarDay]:
         """Fetch the weekly anime airing calendar (GET /calendar).
 
@@ -195,19 +176,14 @@ class BangumiClient:
         Returns:
             List of CalendarDay, one per day of the week.
         """
-        cache_key = "calendar"
-        if cache_key in self._calendar_cache:
-            logger.debug("Bangumi: Calendar cache hit")
-            return self._calendar_cache[cache_key]
-
         data = await self._request("GET", "/calendar")
         days = [parse_calendar_day(d) for d in data]
-        self._calendar_cache[cache_key] = days
         logger.info(
             f"Bangumi: Fetched calendar with {sum(len(d.items) for d in days)} titles"
         )
         return days
 
+    @ttl_cached(maxsize=256, ttl=3600)
     async def fetch_subject(self, subject_id: int) -> BangumiSubject:
         """Fetch full subject details (GET /v0/subjects/{id}).
 
@@ -219,13 +195,8 @@ class BangumiClient:
         Returns:
             BangumiSubject with full details.
         """
-        if subject_id in self._subject_cache:
-            logger.debug(f"Bangumi: Subject {subject_id} cache hit")
-            return self._subject_cache[subject_id]
-
         data = await self._request("GET", f"/v0/subjects/{subject_id}")
         subject = parse_subject(data)
-        self._subject_cache[subject_id] = subject
         logger.debug(f"Bangumi: Fetched subject {subject_id} – {subject.display_name}")
         return subject
 
@@ -288,6 +259,7 @@ class BangumiClient:
         )
         return data
 
+    @ttl_cached(maxsize=1, ttl=600)
     async def fetch_user_collections(
         self,
         subject_type: int | None = 2,
@@ -306,11 +278,6 @@ class BangumiClient:
         Returns:
             List of UserCollectionEntry objects.
         """
-        cache_key = f"{subject_type}_{collection_type}"
-        if cache_key in self._collection_cache:
-            logger.debug("Bangumi: User collection cache hit")
-            return self._collection_cache[cache_key]
-
         user = await self.fetch_current_user()
         username = user.username
 
@@ -340,12 +307,12 @@ class BangumiClient:
             if offset >= total:
                 break
 
-        self._collection_cache[cache_key] = all_entries
         logger.info(
             f"Bangumi: Fetched {len(all_entries)} collection entries for @{username}"
         )
         return all_entries
 
+    @ttl_cached(maxsize=64, ttl=3600)
     async def fetch_related_subjects(self, subject_id: int) -> list[RelatedSubject]:
         """Fetch subjects related to the given subject.
 
@@ -358,13 +325,8 @@ class BangumiClient:
         Returns:
             List of RelatedSubject with relation type and slim subject info.
         """
-        if subject_id in self._related_cache:
-            logger.debug(f"Bangumi: Related subjects {subject_id} cache hit")
-            return self._related_cache[subject_id]
-
         data = await self._request("GET", f"/v0/subjects/{subject_id}/subjects")
         items = [parse_related_subject(item) for item in (data or [])]
-        self._related_cache[subject_id] = items
         logger.debug(
             f"Bangumi: Fetched {len(items)} related subjects for subject {subject_id}"
         )
@@ -451,7 +413,7 @@ class BangumiClient:
             await self._request("PATCH", path, json_body={"ep_status": ep_status})
 
         # Invalidate collection cache since we modified it
-        self._collection_cache.clear()
+        clear_cache(self.fetch_user_collections)
 
         logger.info(
             f"Bangumi: Updated collection for subject {subject_id} "
@@ -533,7 +495,7 @@ class BangumiClient:
         )
 
         # Episode updates also affect visible progress; invalidate cache.
-        self._collection_cache.clear()
+        clear_cache(self.fetch_user_collections)
         logger.info(
             f"Bangumi: Updated {len(episode_ids)} episodes for subject "
             f"{subject_id} (type={collection_type})"

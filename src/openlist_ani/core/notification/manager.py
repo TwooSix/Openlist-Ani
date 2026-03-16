@@ -126,7 +126,7 @@ class NotificationManager:
                         f"Sent batch notification ({count} items) via {type(bot).__name__}"
                     )
                 else:
-                    logger.warning(
+                    logger.error(
                         f"Failed to send batch notification via {type(bot).__name__} after retries. "
                         f"Keeping {count} items in {type(bot).__name__} queue."
                     )

@@ -26,7 +26,7 @@ from ..database import db
 from ..logger import configure_logger, logger
 from .app import create_app
 from .service import BackendService
-from .worker import dispatch_downloads, poll_rss_feeds
+from .worker import DownloadDispatcher, RSSPollWorker
 
 
 async def run() -> None:
@@ -64,9 +64,9 @@ async def run() -> None:
     rss_entry_queue: asyncio.Queue[AnimeResourceInfo] = asyncio.Queue()
     active_downloads: set[asyncio.Task[None]] = set()
 
-    poll_task = asyncio.create_task(poll_rss_feeds(rss, rss_entry_queue))
+    poll_task = asyncio.create_task(RSSPollWorker(rss, rss_entry_queue).run())
     dispatch_task = asyncio.create_task(
-        dispatch_downloads(manager, rss_entry_queue, active_downloads)
+        DownloadDispatcher(manager, rss_entry_queue, active_downloads).run()
     )
 
     server = _create_api_server()

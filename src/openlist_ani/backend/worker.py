@@ -1,10 +1,3 @@
-"""
-Background workers for RSS polling and download dispatching.
-
-These workers run as asyncio tasks alongside the FastAPI server
-within the backend process.
-"""
-
 import asyncio
 import time
 
@@ -21,144 +14,208 @@ from ..database import db
 from ..logger import logger
 
 
-async def poll_rss_feeds(
-    rss: RSSManager,
-    rss_entry_queue: asyncio.Queue[AnimeResourceInfo],
-) -> None:
-    """Poll RSS updates continuously and enqueue new entries."""
-    logger.info("RSS poll worker started.")
+class RSSPollWorker:
+    """Continuously poll RSS feeds, parse & filter entries, then enqueue for download.
 
-    # Skip cache state — local to this worker, no globals needed.
-    priority_filter = ResourcePriorityFilter()
-    skip_cache: TTLCache[str, float] = TTLCache(
-        maxsize=8192, ttl=60 * 60 * 24 * 7
-    )  # 7 days
-    last_priority = config.rss.priority.model_copy(deep=True)
+    The ``run()`` method is the pipeline entry point — each private method
+    corresponds to exactly one stage, making the data flow self-documenting.
+    """
 
-    while True:
-        try:
-            # Detect priority config changes and rebuild caches.
-            current_priority = config.rss.priority
-            if current_priority != last_priority:
-                logger.info(
-                    "Priority config changed, clearing skip cache "
-                    f"({len(skip_cache)} entries)"
-                )
-                skip_cache.clear()
-                last_priority = current_priority.model_copy(deep=True)
+    _SKIP_CACHE_MAXSIZE = 8192
+    _SKIP_CACHE_TTL = 60 * 60 * 24 * 7  # 7 days
 
-            logger.info("Checking RSS updates...")
-            new_entries = await rss.check_update()
-            # Filter out entries recently skipped or failed to parse.
-            fresh_entries = [e for e in new_entries if e.title not in skip_cache]
+    def __init__(
+        self,
+        rss: RSSManager,
+        queue: asyncio.Queue[AnimeResourceInfo],
+    ) -> None:
+        self._rss = rss
+        self._queue = queue
+        self._priority_filter = ResourcePriorityFilter()
+        self._skip_cache: TTLCache[str, float] = TTLCache(
+            maxsize=self._SKIP_CACHE_MAXSIZE, ttl=self._SKIP_CACHE_TTL
+        )
+        self._last_priority = config.rss.priority.model_copy(deep=True)
 
-            if fresh_entries:
-                logger.info(f"Fetched {len(new_entries)} entries from RSS feeds")
-                await _process_fresh_entries(
-                    fresh_entries, priority_filter, skip_cache, rss_entry_queue
-                )
-            else:
-                logger.info("No new entries found in RSS feeds")
-        except Exception:
-            logger.exception("Error in RSS poll worker")
+    # ── pipeline entry point ─────────────────────────────────────────
 
-        await asyncio.sleep(config.rss.interval_time)
+    async def run(self) -> None:
+        """Main loop: fetch → parse → filter → enqueue."""
+        logger.info("RSS poll worker started.")
 
+        while True:
+            try:
+                self._detect_config_changes()
 
-async def _process_fresh_entries(
-    fresh_entries: list[AnimeResourceInfo],
-    priority_filter: ResourcePriorityFilter,
-    skip_cache: TTLCache[str, float],
-    rss_entry_queue: asyncio.Queue[AnimeResourceInfo],
-) -> None:
-    """Parse, enrich, filter and enqueue fresh RSS entries."""
-    parsed_results = await parse_metadata(fresh_entries)
-    # Apply metadata from parse results.
-    enriched: list[AnimeResourceInfo] = []
-    for entry, parse_result in zip(fresh_entries, parsed_results):
-        if _apply_metadata(entry, parse_result):
-            enriched.append(entry)
+                entries = await self._fetch_new_entries()
+                fresh = self._exclude_recently_skipped(entries)
 
-    # Priority filtering: skip resources dominated by already-downloaded ones.
-    filtered = await priority_filter.filter_batch(enriched)
+                if fresh:
+                    logger.info(f"Fetched {len(entries)} entries from RSS feeds")
+                    enriched = await self._enrich_by_parser(fresh)
+                    filtered = await self._apply_priority_filter(enriched)
+                    self._cache_skipped_entries(enriched, filtered)
+                    await self._enqueue_accepted_entries(filtered)
+                else:
+                    logger.info("No new entries found in RSS feeds")
+            except Exception:
+                logger.exception("Error in RSS poll worker")
 
-    # Record entries that were enriched but rejected by priority filter.
-    filtered_titles = {e.title for e in filtered}
-    now = time.monotonic()
-    priority_skipped = [e for e in enriched if e.title not in filtered_titles]
-    for entry in priority_skipped:
-        skip_cache[entry.title] = now
+            await asyncio.sleep(config.rss.interval_time)
 
-    if filtered:
-        logger.info(f"Found {len(filtered)} new entries from RSS feeds")
-        for entry in filtered:
-            await rss_entry_queue.put(entry)
-            # pre-insert into DB to prevent duplicates in next RSS polls
-            # it should be auto remove when download fails
+    # ── pipeline stages ──────────────────────────────────────────────
+
+    def _detect_config_changes(self) -> None:
+        """Clear skip cache when priority config is modified at runtime."""
+        current = config.rss.priority
+        if current != self._last_priority:
+            logger.info(
+                "Priority config changed, clearing skip cache "
+                f"({len(self._skip_cache)} entries)"
+            )
+            self._skip_cache.clear()
+            self._last_priority = current.model_copy(deep=True)
+
+    async def _fetch_new_entries(self) -> list[AnimeResourceInfo]:
+        """Fetch latest entries from all configured RSS feeds."""
+        logger.info("Checking RSS updates...")
+        return await self._rss.check_update()
+
+    def _exclude_recently_skipped(
+        self, entries: list[AnimeResourceInfo]
+    ) -> list[AnimeResourceInfo]:
+        """Remove entries that recently failed parsing or were skipped by priority."""
+        return [e for e in entries if e.title not in self._skip_cache]
+
+    async def _enrich_by_parser(
+        self, entries: list[AnimeResourceInfo]
+    ) -> list[AnimeResourceInfo]:
+        """Run LLM-based metadata extraction and apply results to entries.
+
+        Entries that fail parsing are silently dropped (logged as errors).
+        Website-provided fansub takes precedence over LLM-extracted fansub.
+        """
+        parsed_results = await parse_metadata(entries)
+
+        enriched: list[AnimeResourceInfo] = []
+        for entry, result in zip(entries, parsed_results):
+            if self._apply_metadata(entry, result):
+                enriched.append(entry)
+        return enriched
+
+    async def _apply_priority_filter(
+        self, enriched: list[AnimeResourceInfo]
+    ) -> list[AnimeResourceInfo]:
+        """Keep only entries that are not dominated by already-downloaded resources."""
+        return await self._priority_filter.filter_batch(enriched)
+
+    def _cache_skipped_entries(
+        self,
+        enriched: list[AnimeResourceInfo],
+        filtered: list[AnimeResourceInfo],
+    ) -> None:
+        """Record rejected entries in skip cache to avoid re-processing."""
+        filtered_titles = {e.title for e in filtered}
+        now = time.monotonic()
+        for entry in enriched:
+            if entry.title not in filtered_titles:
+                self._skip_cache[entry.title] = now
+
+    async def _enqueue_accepted_entries(self, entries: list[AnimeResourceInfo]) -> None:
+        """Push accepted entries into the download queue and pre-insert into DB."""
+        if not entries:
+            return
+        logger.info(f"Enqueuing {len(entries)} entries for download")
+        for entry in entries:
+            await self._queue.put(entry)
+            # Pre-insert to prevent duplicates in the next RSS poll cycle;
+            # the record is auto-removed on download failure.
             await db.add_resource(entry)
 
+    # ── helpers ───────────────────────────────────────────────────────
 
-async def dispatch_downloads(
-    manager: DownloadManager,
-    rss_entry_queue: asyncio.Queue[AnimeResourceInfo],
-    active_downloads: set[asyncio.Task[None]],
-) -> None:
-    """Dispatch queued entries to background download tasks using batch parsing."""
-    logger.info("Download dispatch worker started (batch mode).")
+    @staticmethod
+    def _apply_metadata(
+        entry: AnimeResourceInfo,
+        parse_result: ParseResult,
+    ) -> bool:
+        """Write parse result fields onto *entry*. Return True on success."""
+        if not parse_result.success:
+            logger.error(
+                f"Metadata extraction failed for {entry.title}: "
+                f"{parse_result.error}. Skipping."
+            )
+            return False
 
-    while True:
-        entry = await rss_entry_queue.get()
-        batch: list[AnimeResourceInfo] = [entry]
+        meta = parse_result.result
+        entry.anime_name = meta.anime_name
+        entry.season = meta.season
+        entry.episode = meta.episode
+        entry.quality = meta.quality
+        entry.fansub = meta.fansub if entry.fansub is None else entry.fansub
+        entry.languages = meta.languages
+        entry.version = meta.version
 
-        while not rss_entry_queue.empty():
-            batch.append(rss_entry_queue.get_nowait())
-
-        batch = [e for e in batch if not manager.is_downloading(e)]
-        if not batch:
-            continue
-
-        for entry in batch:
-            _schedule_download(manager, entry, active_downloads)
-
-
-def _apply_metadata(
-    entry: AnimeResourceInfo,
-    parse_result: ParseResult,
-) -> bool:
-    """Apply parse result to entry. Return True if successful."""
-    if not parse_result.success:
-        logger.error(
-            f"Metadata extraction failed for {entry.title}: {parse_result.error}. Skipping."
-        )
-        return False
-
-    meta = parse_result.result
-    entry.anime_name = meta.anime_name
-    entry.season = meta.season
-    entry.episode = meta.episode
-    entry.quality = meta.quality
-    entry.fansub = meta.fansub if entry.fansub is None else entry.fansub
-    entry.languages = meta.languages
-    entry.version = meta.version
-
-    logger.info(f"Parsed: {entry!r}")
-    return True
+        logger.info(f"Parsed: {entry!r}")
+        return True
 
 
-def _schedule_download(
-    manager: DownloadManager,
-    entry: AnimeResourceInfo,
-    active_downloads: set[asyncio.Task[None]],
-) -> None:
-    """Create an asyncio.Task for downloading *entry*."""
-    download_task = asyncio.create_task(_download_entry(manager, entry))
-    active_downloads.add(download_task)
-    download_task.add_done_callback(lambda t: active_downloads.discard(t))
+class DownloadDispatcher:
+    """Drain the entry queue and spawn an asyncio download task per entry.
 
+    The ``run()`` method is the pipeline entry point — collect a batch,
+    filter out duplicates, then dispatch each remaining entry.
+    """
 
-async def _download_entry(manager: DownloadManager, entry: AnimeResourceInfo) -> None:
-    """Execute a single download and log errors."""
-    try:
-        await manager.download(entry, config.openlist.download_path)
-    except Exception:
-        logger.exception(f"Error downloading {entry.title}")
+    def __init__(
+        self,
+        manager: DownloadManager,
+        queue: asyncio.Queue[AnimeResourceInfo],
+        active_downloads: set[asyncio.Task[None]],
+    ) -> None:
+        self._manager = manager
+        self._queue = queue
+        self._active_downloads = active_downloads
+
+    # ── pipeline entry point ─────────────────────────────────────────
+
+    async def run(self) -> None:
+        """Main loop: collect → filter → dispatch."""
+        logger.info("Download dispatch worker started (batch mode).")
+
+        while True:
+            resources = await self._collect_resources()
+            resources_filter = self._filter_downloading(resources)
+            if not resources_filter:
+                continue
+            for entry in resources_filter:
+                self._spawn_download(entry)
+
+    # ── pipeline stages ──────────────────────────────────────────────
+
+    async def _collect_resources(self) -> list[AnimeResourceInfo]:
+        """Block until at least one entry arrives, then drain whatever else is ready."""
+        first = await self._queue.get()
+        resources: list[AnimeResourceInfo] = [first]
+        while not self._queue.empty():
+            resources.append(self._queue.get_nowait())
+        return resources
+
+    def _filter_downloading(
+        self, batch: list[AnimeResourceInfo]
+    ) -> list[AnimeResourceInfo]:
+        """Remove entries whose downloads are already in progress."""
+        return [e for e in batch if not self._manager.is_downloading(e)]
+
+    def _spawn_download(self, entry: AnimeResourceInfo) -> None:
+        """Create an asyncio task for a single download and track it."""
+        task = asyncio.create_task(self._execute_download(entry))
+        self._active_downloads.add(task)
+        task.add_done_callback(lambda t: self._active_downloads.discard(t))
+
+    async def _execute_download(self, entry: AnimeResourceInfo) -> None:
+        """Execute a single download and log errors."""
+        try:
+            await self._manager.download(entry, config.openlist.download_path)
+        except Exception:
+            logger.exception(f"Error downloading {entry.title}")

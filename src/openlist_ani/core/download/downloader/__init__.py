@@ -1,8 +1,4 @@
-"""Downloader implementations module.
-
-Each downloader lives in its own sub-package (e.g. ``openlist/``).
-New downloaders should subclass ``BaseDownloader`` and register here.
-"""
+"""Downloader implementations — subclass ``BaseDownloader`` to add new ones."""
 
 from .base import BaseDownloader, DownloadError
 from .openlist_downloader import OpenListDownloader

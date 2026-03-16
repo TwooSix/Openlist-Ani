@@ -13,7 +13,7 @@ class PushPlusChannel(Enum):
 
 
 class PushPlusBot(BotBase):
-    def __init__(self, user_token, channel=None) -> None:
+    def __init__(self, user_token: str, channel: str | None = None) -> None:
         self.user_token = user_token
         if channel:
             try:
@@ -26,7 +26,7 @@ class PushPlusBot(BotBase):
     async def send_message(self, message: str) -> bool:
         api_url = f"http://www.pushplus.plus/send/{self.user_token}"
         body = {
-            "title": "Alist MikananiRSS更新推送",
+            "title": "OpenList-Ani 通知",
             "content": message,
             "channel": self.channel.value,
             "template": "html",

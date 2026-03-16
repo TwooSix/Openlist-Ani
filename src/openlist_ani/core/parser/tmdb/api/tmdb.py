@@ -3,10 +3,10 @@ import atexit
 from typing import Any
 
 import aiohttp
-from cachetools import TTLCache
 
 from .....config import config
 from .....logger import logger
+from .....utils.cache import ttl_cached
 
 
 class TMDBClient:
@@ -127,50 +127,19 @@ class TMDBClient:
 
 
 class CachedTMDBClient(TMDBClient):
-    def __init__(
-        self,
-        search_maxsize: int = 256,
-        details_maxsize: int = 128,
-        ttl: int = 3600,
-    ):
-        super().__init__()
-        self._search_cache: TTLCache = TTLCache(maxsize=search_maxsize, ttl=ttl)
-        self._details_cache: TTLCache = TTLCache(maxsize=details_maxsize, ttl=ttl)
-        self._season_eps_cache: TTLCache = TTLCache(maxsize=details_maxsize, ttl=ttl)
-
+    @ttl_cached(maxsize=256, ttl=3600, key=lambda query: query.strip().lower())
     async def search_tv_show(self, query: str) -> list[dict[str, Any]]:
-        cache_key = query.strip().lower()
-        cached = self._search_cache.get(cache_key)
-        if cached is not None:
-            logger.debug(f"TMDB search cache hit: {query}")
-            return cached
-        result = await super().search_tv_show(query)
-        if result:
-            self._search_cache[cache_key] = result
-        return result
+        return await super().search_tv_show(query)
 
+    @ttl_cached(maxsize=128, ttl=3600)
     async def get_tv_show_details(self, tmdb_id: int) -> dict[str, Any]:
-        cached = self._details_cache.get(tmdb_id)
-        if cached is not None:
-            logger.debug(f"TMDB details cache hit: {tmdb_id}")
-            return cached
-        result = await super().get_tv_show_details(tmdb_id)
-        if result:
-            self._details_cache[tmdb_id] = result
-        return result
+        return await super().get_tv_show_details(tmdb_id)
 
+    @ttl_cached(maxsize=128, ttl=3600)
     async def get_season_episodes(
         self, tmdb_id: int, season_number: int
     ) -> list[dict[str, Any]]:
-        cache_key = (tmdb_id, season_number)
-        cached = self._season_eps_cache.get(cache_key)
-        if cached is not None:
-            logger.debug(f"TMDB season episodes cache hit: {tmdb_id} S{season_number}")
-            return cached
-        result = await super().get_season_episodes(tmdb_id, season_number)
-        if result:
-            self._season_eps_cache[cache_key] = result
-        return result
+        return await super().get_season_episodes(tmdb_id, season_number)
 
 
 _cached_client: CachedTMDBClient | None = None

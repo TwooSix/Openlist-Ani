@@ -76,19 +76,13 @@ class OpenListClient:
             return None
 
     async def _post(self, url: str, json: dict) -> dict | None:
-        """Helper to perform post request with aiohttp"""
         return await self._request("POST", url, json=json)
 
     async def _get(self, url: str, params: dict = None) -> dict | None:
-        """Helper to perform get request with aiohttp"""
         return await self._request("GET", url, params=params)
 
-    async def check_health(self) -> bool:
-        """
-        Check whether the OpenList server is healthy / reachable.
-        Uses the public settings endpoint which requires no authentication.
-        :return: True if the server is reachable and responds correctly, False otherwise.
-        """
+    async def is_healthy(self) -> bool:
+        """Return True if the OpenList server is reachable and responds correctly."""
         url = f"{self.base_url}/api/public/settings"
         data = await self._get(url)
         if data is not None and data.get("code") == 200:
@@ -105,12 +99,16 @@ class OpenListClient:
         tool: str | OfflineDownloadTool,
         delete_policy: str = "delete_always",
     ) -> list[OpenlistTask] | None:
-        """
-        Add offline download tasks.
-        :param urls: List of download URLs (http/magnet/torrent)
-        :param path: Destination path in OpenList
-        :param tool: Offline download tool to use (OfflineDownloadTool or string)
-        :return: List of created tasks on success, or None on error.
+        """Add offline download tasks.
+
+        Args:
+            urls: Download URLs (http/magnet/torrent).
+            path: Destination path in OpenList.
+            tool: Offline download tool to use.
+            delete_policy: Policy for source file deletion after transfer.
+
+        Returns:
+            List of created tasks on success, or None on error.
         """
         if not self.token:
             return None
@@ -135,10 +133,7 @@ class OpenListClient:
             return None
 
     async def get_offline_download_tools(self) -> list[dict[str, Any]] | None:
-        """
-        Get available offline download tools (public).
-        :return: List of tools or None on error.
-        """
+        """Get available offline download tools (public endpoint)."""
         url = f"{self.base_url}/api/public/offline_download_tools"
         data = await self._get(url)
         if data and data.get("code") == 200:
@@ -149,11 +144,7 @@ class OpenListClient:
             return None
 
     async def get_offline_download_done(self) -> list[OpenlistTask] | None:
-        """
-        Get list of completed offline download tasks.
-        Endpoint: GET /api/task/offline_download/done
-        :return: List of OpenlistTask or None on error.
-        """
+        """Get completed offline download tasks."""
         url = f"{self.base_url}/api/task/offline_download/done"
         data = await self._get(url)
         if data and data.get("code") == 200:
@@ -165,11 +156,7 @@ class OpenListClient:
             return None
 
     async def get_offline_download_undone(self) -> list[OpenlistTask] | None:
-        """
-        Get list of not-yet-completed offline download tasks.
-        Endpoint: GET /api/task/offline_download/undone
-        :return: List of OpenlistTask or None on error.
-        """
+        """Get in-progress offline download tasks."""
         url = f"{self.base_url}/api/task/offline_download/undone"
         data = await self._get(url)
         if data and data.get("code") == 200:
@@ -183,11 +170,7 @@ class OpenListClient:
     async def get_offline_download_transfer_done(
         self,
     ) -> list[OpenlistTask] | None:
-        """
-        Get list of completed offline download transfer tasks.
-        Endpoint: GET /api/task/offline_download_transfer/done
-        :return: List of OpenlistTask or None on error.
-        """
+        """Get completed offline download transfer tasks."""
         url = f"{self.base_url}/api/task/offline_download_transfer/done"
         data = await self._get(url)
         if data and data.get("code") == 200:
@@ -201,11 +184,7 @@ class OpenListClient:
     async def get_offline_download_transfer_undone(
         self,
     ) -> list[OpenlistTask] | None:
-        """
-        Get list of not-yet-completed offline download transfer tasks.
-        Endpoint: GET /api/task/offline_download_transfer/undone
-        :return: List of OpenlistTask or None on error.
-        """
+        """Get in-progress offline download transfer tasks."""
         url = f"{self.base_url}/api/task/offline_download_transfer/undone"
         data = await self._get(url)
         if data and data.get("code") == 200:
@@ -240,11 +219,7 @@ class OpenListClient:
             return None
 
     async def rename_file(self, full_path: str, new_name: str) -> bool:
-        """
-        Rename a file.
-        :param full_path: Full path to the file (e.g., /videos/movie.mp4)
-        :param new_name: New filename (e.g., specific_name.mp4)
-        """
+        """Rename a file at *full_path* to *new_name*."""
         if not self.token:
             return False
 

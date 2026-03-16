@@ -8,9 +8,5 @@ class BotType(Enum):
 
 
 class BotBase(ABC):
-    def __init__(self) -> None:
-        super().__init__()
-
     @abstractmethod
-    async def send_message(self, message: str) -> bool:
-        raise NotImplementedError
+    async def send_message(self, message: str) -> bool: ...
