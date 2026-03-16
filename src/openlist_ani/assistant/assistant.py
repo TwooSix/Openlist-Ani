@@ -2,11 +2,11 @@
 
 Architecture:
 
-- **Tools** (read_file, search_files, run_command, send_message): exposed
+- **Tools** (read_file, search_files, run_skill, send_message): exposed
   as OpenAI function-calling tools via :class:`ToolRegistry`.
 - **Domain skills** (bangumi, mikan, oani): completely independent
   standalone scripts.  The LLM discovers them by searching for SKILL.md
-  files and executes them via ``run_command``.
+  files and executes them via ``run_skill``.
 """
 
 import json
@@ -37,7 +37,7 @@ _BEHAVIORAL_RULES = (
     "exceptions. The user must never wait in silence.\n\n"
     "Example flow:\n"
     '1. Call `send_message`: "Let me search for resources for this anime 🔍"\n'
-    "2. Call `run_command` to execute the search skill\n"
+    "2. Call `run_skill` to execute the search skill\n"
     '3. Call `send_message`: "Found some results, let me organize them 📋"\n'
     "4. Return final results to the user\n\n"
     "### 2. Operational Safety\n\n"
@@ -75,11 +75,10 @@ _SKILL_DISCOVERY_HINT = (
     "`src/openlist_ani/assistant/skills/**/SKILL.md` "
     "to find available skills.\n"
     "2. Use `read_file` to read the SKILL.md and learn about "
-    "available actions and their CLI arguments.\n"
-    "3. Use `run_command` to execute the skill script, e.g.:\n"
-    "   `uv run python -m "
-    "openlist_ani.assistant.skills.<skill>.script.<action> "
-    "[--arg value ...]`\n\n"
+    "available actions and their arguments.\n"
+    "3. Use `run_skill` to execute the skill, e.g.:\n"
+    '   `run_skill(skill_module="bangumi.script.calendar", '
+    'arguments={"weekday": 1})`\n\n'
     "Always read SKILL.md first so you know the correct arguments.\n"
 )
 

@@ -9,7 +9,7 @@ executed by the agent at runtime through these basic tools.
 from ...logger import logger
 from .base import BaseTool
 from .read_file import ReadFileTool
-from .run_command import RunCommandTool
+from .run_skill import RunSkillTool
 from .search_file import SearchFileTool
 from .send_message import MessageCallback, SendMessageTool
 from .update_memory import UpdateMemoryTool
@@ -19,7 +19,7 @@ from .update_user_profile import UpdateUserProfileTool
 _TOOL_CLASSES: list[type[BaseTool]] = [
     ReadFileTool,
     SearchFileTool,
-    RunCommandTool,
+    RunSkillTool,
     SendMessageTool,
     UpdateUserProfileTool,
     UpdateMemoryTool,
