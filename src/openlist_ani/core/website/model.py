@@ -43,7 +43,9 @@ class AnimeResourceInfo:
             f"{season_str}{episode_str}",
             f"v{self.version}" if self.version > 1 else "",
             f"| {self.fansub}" if self.fansub else "",
-            f"| {self.quality}" if self.quality and self.quality != VideoQuality.UNKNOWN else "",
+            f"| {self.quality}"
+            if self.quality and self.quality != VideoQuality.UNKNOWN
+            else "",
             f"| {lang_str}",
             f"| {self.title}",
         ]

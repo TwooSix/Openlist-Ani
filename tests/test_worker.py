@@ -48,7 +48,9 @@ async def _run_dispatch_once(queue, mock_manager):
 
     active: set[asyncio.Task] = set()
 
-    with (patch("openlist_ani.backend.worker.config") as mock_config,):
+    with (
+        patch("openlist_ani.backend.worker.config") as mock_config,
+    ):
         mock_config.openlist.download_path = "/downloads"
 
         try:

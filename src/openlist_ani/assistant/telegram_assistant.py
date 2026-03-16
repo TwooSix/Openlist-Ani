@@ -8,7 +8,7 @@ indicator to keep the user informed.
 """
 
 import asyncio
-import time
+from functools import partial
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -25,12 +25,13 @@ from telegram.ext import (
 from ..backend.client import BackendClient
 from ..config import config
 from ..logger import logger
-from .assistant import AniAssistant, StreamCallback
+from .assistant import AniAssistant
 
 # Telegram message length limit
 _MAX_MESSAGE_LENGTH = 4096
-# Min interval between stream messages (seconds)
-_STREAM_MIN_INTERVAL = 0.5
+# Interval for sending typing indicators (seconds).
+# Telegram typing status expires after ~5 s, so we resend just before.
+_TYPING_INTERVAL = 5.0
 
 
 class TelegramAssistant:
@@ -257,15 +258,19 @@ Start chatting with me!"""
             f"Received message from {getattr(user, 'id', None)}: {message.text}"
         )
 
-        # Send initial typing indicator
-        await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
-
-        stream_callback = self._build_stream_callback(context, chat.id)
+        # Background task keeps typing indicator alive for the entire turn.
+        typing_task = asyncio.create_task(
+            self._keep_typing(context, chat.id),
+        )
 
         try:
             response = await self.assistant.process_message(
                 message.text,
-                stream_callback=stream_callback,
+                stream_callback=partial(
+                    self._send_chunked_message,
+                    context,
+                    chat.id,
+                ),
             )
             await self._send_chunked_message(context, chat.id, response)
         except Exception as exc:
@@ -276,37 +281,32 @@ Start chatting with me!"""
                 chat_id=chat.id,
                 text=f"❌ Error processing message: {str(exc)}",
             )
+        finally:
+            typing_task.cancel()
 
     # ------------------------------------------------------------------
-    # Streaming helpers
+    # Streaming / typing helpers
     # ------------------------------------------------------------------
 
-    def _build_stream_callback(
-        self,
+    @staticmethod
+    async def _keep_typing(
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-    ) -> StreamCallback:
-        """Create a stream callback that sends messages and typing."""
-        last_sent: list[float] = [0.0]
+    ) -> None:
+        """Continuously send typing indicators until cancelled.
 
-        async def _stream_cb(text: str) -> None:
-            now = time.monotonic()
-            elapsed = now - last_sent[0]
-            if elapsed < _STREAM_MIN_INTERVAL:
-                await asyncio.sleep(_STREAM_MIN_INTERVAL - elapsed)
-
-            await self._send_chunked_message(context, chat_id, text)
-            last_sent[0] = time.monotonic()
-
-            # Re-send typing indicator after the message
+        Runs as a background ``asyncio.Task``.  The caller **must**
+        cancel the task when the turn is finished.
+        """
+        while True:
             try:
                 await context.bot.send_chat_action(
-                    chat_id=chat_id, action=ChatAction.TYPING
+                    chat_id=chat_id,
+                    action=ChatAction.TYPING,
                 )
             except TelegramError:
                 pass
-
-        return _stream_cb
+            await asyncio.sleep(_TYPING_INTERVAL)
 
     @staticmethod
     async def _send_chunked_message(
