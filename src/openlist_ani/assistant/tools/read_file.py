@@ -26,6 +26,7 @@ _SENSITIVE_EXTENSIONS = frozenset(
         ".pfx",
         ".jks",
         ".keystore",
+        ".toml",
     }
 )
 
