@@ -1,8 +1,14 @@
+---
+name: "bangumi"
+description: "Bangumi (bangumi.tv) API integration skill. This is a community info site. Best for finding anime synopsis, staff, user reviews, collections, and airing dates. Does NOT contain download links."
+usage: "Use this to search for anime community information on Bangumi (synopsis, staff, reviews, progress). Do NOT use this for finding download resources as it does not provide them."
+---
+
 # Bangumi Skill
 
 ## Description
 
-Bangumi (bangumi.tv) API integration skill. Provides actions for fetching anime calendar, subject details, user collection management, and reviews/discussions.
+Bangumi (bangumi.tv) API integration skill. Bangumi is an information and community website. Use this skill when you need anime metadata, synopses, staff/cast details, airing calendars, user ratings, and reviews. **It does not contain any resource download information.**
 
 ## Actions
 

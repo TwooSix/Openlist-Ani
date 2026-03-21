@@ -34,6 +34,10 @@ class BackendClient:
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
+            # Allow underlying connections to close properly to avoid aiohttp warnings
+            import asyncio
+
+            await asyncio.sleep(0.250)
 
     async def _request(
         self,

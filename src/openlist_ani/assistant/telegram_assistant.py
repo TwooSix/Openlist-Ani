@@ -137,12 +137,12 @@ Start chatting with me!"""
             if self.application.updater is not None:
                 await self.application.updater.stop()
         except Exception:
-            logger.debug("Telegram updater stop failed or already stopped")
+            pass
 
         try:
             await self.application.stop()
         except Exception:
-            logger.debug("Telegram application stop failed or already stopped")
+            pass
 
     async def _shutdown_application(self) -> None:
         """Release all application resources on final exit."""
@@ -156,17 +156,17 @@ Start chatting with me!"""
             if application.updater is not None:
                 await application.updater.stop()
         except Exception:
-            logger.debug("Telegram updater stop failed or already stopped")
+            pass
 
         try:
             await application.stop()
         except Exception:
-            logger.debug("Telegram application stop failed or already stopped")
+            pass
 
         try:
             await application.shutdown()
         except Exception:
-            logger.debug("Telegram application shutdown failed or already shut down")
+            pass
 
     # ------------------------------------------------------------------
     # Authorization

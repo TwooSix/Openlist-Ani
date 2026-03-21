@@ -25,3 +25,5 @@ data/
 .github/agents/
 .github/instructions/
 .github/skills/
+
+.agents/

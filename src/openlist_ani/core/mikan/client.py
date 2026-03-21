@@ -317,14 +317,63 @@ class MikanClient:
         return self._parse_subgroups(html)
 
     @staticmethod
+    def _extract_group_episodes(
+        soup: BeautifulSoup, group_id: int, max_episodes: int = 5
+    ) -> list[dict[str, str]]:
+        """Extract latest episodes for a subtitle group from the parsed page.
+
+        Args:
+            soup: Parsed BeautifulSoup page.
+            group_id: Subtitle group ID whose episodes to extract.
+            max_episodes: Maximum number of episodes to return.
+
+        Returns:
+            List of dicts with ``title`` and ``date`` keys.
+        """
+        _DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
+
+        header_div = soup.find("div", id=str(group_id))
+        if not header_div:
+            return []
+
+        ep_table = header_div.find_next_sibling("div", class_="episode-table")
+        if not ep_table:
+            return []
+
+        episodes: list[dict[str, str]] = []
+        for row in ep_table.select("tr")[:max_episodes]:
+            title_tag = row.select_one("a.magnet-link-wrap")
+            if not title_tag:
+                continue
+            ep_title = title_tag.get_text(strip=True)
+            ep_date = next(
+                (
+                    td.get_text(strip=True)
+                    for td in row.select("td")
+                    if _DATE_RE.match(td.get_text(strip=True))
+                ),
+                "",
+            )
+            if ep_title:
+                episodes.append({"title": ep_title, "date": ep_date})
+
+        return episodes
+
+    @staticmethod
     def _parse_subgroups(html: str) -> list[dict[str, Any]]:
-        """Parse subtitle groups from a bangumi detail page.
+        """Parse subtitle groups and their latest episodes from a bangumi page.
+
+        Each group dict contains:
+        - ``id`` (int) — subtitle group ID
+        - ``name`` (str) — group name
+        - ``episodes`` (list[dict]) — latest episodes with ``title`` and
+          ``date`` keys (up to 5 per group)
 
         Args:
             html: Raw HTML of the bangumi page.
 
         Returns:
-            List of dicts with ``id`` and ``name``.
+            List of group dicts with episode details.
         """
         soup = BeautifulSoup(html, "lxml")
         results: list[dict[str, Any]] = []
@@ -337,9 +386,12 @@ class MikanClient:
                 continue
             group_id = int(match.group(1))
             name = link.get_text(strip=True)
-            if group_id and name and group_id not in seen:
-                seen.add(group_id)
-                results.append({"id": group_id, "name": name})
+            if not group_id or not name or group_id in seen:
+                continue
+            seen.add(group_id)
+
+            episodes = MikanClient._extract_group_episodes(soup, group_id)
+            results.append({"id": group_id, "name": name, "episodes": episodes})
 
         return results
 
