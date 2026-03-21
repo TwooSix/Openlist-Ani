@@ -1,8 +1,14 @@
+---
+name: "oani"
+description: "Openlist-Ani backend API integration skill. Best for direct RSS searches and downloading resources when you only care about mapping a resource title to a download link."
+usage: "Use this for searching pure RSS feeds and downloading raw resources. It directly maps a Resource Title to a Download Link, taking the shortest path to downloading without fansub/community organization."
+---
+
 # O-Ani Skill
 
 ## Description
 
-Openlist-Ani backend API integration skill. Provides actions for searching anime resources across multiple websites (Mikan, DMHY, ACG.RIP), parsing RSS feeds, downloading resources via the backend API, and querying the download history database.
+Openlist-Ani backend API integration skill. Use this skill when you specifically need to search and parse RSS feeds across resources, mapping directly from **Resource Title -> Download Link**. It is the most effective interface when initiating raw downloads where fansub grouping and community metadata are not required.
 
 ## Actions
 

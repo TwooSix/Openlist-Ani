@@ -48,6 +48,12 @@ async def run() -> None:
     except Exception as e:
         logger.exception(f"Assistant error: {e}")
     finally:
+        # Close skill client sessions that may have been initialized
+        from .skills.bangumi.script.helper.client import close_bangumi_client
+        from .skills.mikan.script.helper.client import close_mikan_client
+
+        await close_bangumi_client()
+        await close_mikan_client()
         await backend_client.close()
 
 

@@ -2,11 +2,12 @@
 
 Architecture:
 
-- **Tools** (read_file, search_files, run_skill, send_message): exposed
-  as OpenAI function-calling tools via :class:`ToolRegistry`.
-- **Domain skills** (bangumi, mikan, oani): completely independent
-  standalone scripts.  The LLM discovers them by searching for SKILL.md
-  files and executes them via ``run_skill``.
+- **Context Engine** (``context_engine/``): Handles all prompt assembly,
+  session pruning, compaction, skill discovery, and memory-flush logic.
+- **Tools** (``tools/``): Exposed as OpenAI function-calling tools via
+  :class:`ToolRegistry`.
+- **Domain skills** (``skills/``): Standalone scripts discovered by the
+  context engine and executed via ``run_skill``.
 """
 
 import json
@@ -16,6 +17,12 @@ from openai import AsyncOpenAI
 from ..backend.client import BackendClient
 from ..config import config
 from ..logger import logger
+from .context_engine import (
+    ContextPromptBuilder,
+    MemoryFlushGuard,
+    SessionCompactor,
+    SkillCatalog,
+)
 from .memory import AssistantMemoryManager
 from .tools import (
     MessageCallback,
@@ -29,59 +36,6 @@ from .tools import (
 # Re-export so integration layers (telegram, etc.) can import from here.
 StreamCallback = MessageCallback
 
-_BEHAVIORAL_RULES = (
-    "## Behavioral Rules (MANDATORY)\n\n"
-    "### 1. Message-First Principle\n\n"
-    "Before EVERY tool call, you MUST call `send_message` first to tell "
-    "the user what you are about to do. This is a hard rule with NO "
-    "exceptions. The user must never wait in silence.\n\n"
-    "Example flow:\n"
-    '1. Call `send_message`: "Let me search for resources for this anime 🔍"\n'
-    "2. Call `run_skill` to execute the search skill\n"
-    '3. Call `send_message`: "Found some results, let me organize them 📋"\n'
-    "4. Return final results to the user\n\n"
-    "### 2. Operational Safety\n\n"
-    "- If no download link is available, search for resources first.\n"
-    "- When given an RSS link, always parse it before downloading.\n"
-    "- NEVER download resources already marked as downloaded.\n"
-    "- Check download history via database query before downloading.\n"
-    "- If tool arguments are uncertain or conflicting, ask the user "
-    "instead of guessing.\n"
-    "- When a tool returns confirmation or conflict info, relay it "
-    "to the user verbatim — do NOT retry on your own.\n\n"
-    "### 3. Thinking Approach\n\n"
-    "- Break complex requests into atomic steps.\n"
-    "- Report progress to the user after each step.\n"
-    "- On error, explain the situation and suggest alternatives.\n\n"
-    "### 4. Memory Management\n\n"
-    "You have three tools for persisting information across conversations. "
-    "Be **proactive** — save important info immediately, don't wait.\n\n"
-    "- `update_user_profile`: Save personal user info (name, preferences, "
-    "habits, Bangumi collection analysis) to USER.md. Call this whenever "
-    "you discover anything about the user.\n"
-    "- `update_memory`: Save valuable contextual facts (task outcomes, "
-    "environment details, workflow patterns) to MEMORY.md. Call this for "
-    "durable knowledge that isn't personal info.\n"
-    "- `update_soul`: Save personality/behaviour changes to SOUL.md. "
-    "Call this ONLY when the user explicitly asks you to change how you "
-    "behave or communicate.\n"
-)
-
-_SKILL_DISCOVERY_HINT = (
-    "## Skill Discovery\n\n"
-    "You have domain-specific skills available as standalone scripts.\n"
-    "To discover and use them:\n\n"
-    "1. Use `search_files` with pattern "
-    "`src/openlist_ani/assistant/skills/**/SKILL.md` "
-    "to find available skills.\n"
-    "2. Use `read_file` to read the SKILL.md and learn about "
-    "available actions and their arguments.\n"
-    "3. Use `run_skill` to execute the skill, e.g.:\n"
-    '   `run_skill(skill_module="bangumi.script.calendar", '
-    'arguments={"weekday": 1})`\n\n'
-    "Always read SKILL.md first so you know the correct arguments.\n"
-)
-
 
 class AniAssistant:
     """Core assistant for interacting with LLM and executing tools."""
@@ -91,8 +45,12 @@ class AniAssistant:
     def __init__(self, backend_client: BackendClient):
         """Initialize assistant.
 
+        Sets up the LLM client, tool registry, memory manager, and the
+        context engine sub-systems (skill catalog, session compactor,
+        prompt builder).
+
         Args:
-            backend_client: BackendClient instance for backend API interaction
+            backend_client: BackendClient instance for backend API interaction.
         """
         self.backend_client = backend_client
         self.client: AsyncOpenAI | None = None
@@ -100,9 +58,25 @@ class AniAssistant:
         self.tool_registry = ToolRegistry()
         self.tools = self.tool_registry.get_definitions()
         self.client = self._create_openai_client()
+
+        # Core memory file manager (CRUD for SOUL/MEMORY/USER/session).
         self.memory_manager = AssistantMemoryManager(
             client=self.client,
             model=self.model,
+        )
+
+        # Context engine sub-systems.
+        self._flush_guard = MemoryFlushGuard()
+        self._skill_catalog = SkillCatalog()
+        self._compactor = SessionCompactor(
+            client=self.client,
+            model=self.model,
+            flush_guard=self._flush_guard,
+        )
+        self._prompt_builder = ContextPromptBuilder(
+            memory_manager=self.memory_manager,
+            skill_catalog=self._skill_catalog,
+            flush_guard=self._flush_guard,
         )
 
         # Wire memory manager into all memory-related tools.
@@ -114,6 +88,10 @@ class AniAssistant:
             tool = self.tool_registry.get_tool(tool_name)
             if isinstance(tool, tool_type):
                 tool.set_memory_manager(self.memory_manager)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def process_message(
         self,
@@ -136,7 +114,8 @@ class AniAssistant:
 
         try:
             logger.info(f"Assistant: Processing message: {user_message}")
-            messages = await self._build_messages(user_message)
+            messages = await self._prompt_builder.build_messages(user_message)
+            start_messages_len = len(messages)
 
             # Set the stream callback on SendMessageTool for this turn
             send_tool = self.tool_registry.get_tool("send_message")
@@ -145,7 +124,18 @@ class AniAssistant:
 
             try:
                 response = await self._run_conversation_loop(messages)
-                await self.memory_manager.append_turn(user_message, response)
+
+                # Format intermediate tool calls that were appended during this turn
+                new_messages = messages[start_messages_len:]
+                tool_context = self._format_tool_context(new_messages)
+
+                await self.memory_manager.append_turn(
+                    user_message, response, tool_context=tool_context
+                )
+
+                # Check if compaction is needed after this turn
+                await self._maybe_compact()
+
                 return response
             finally:
                 if isinstance(send_tool, SendMessageTool):
@@ -154,6 +144,18 @@ class AniAssistant:
         except Exception as e:
             logger.exception("Assistant: Error processing message")
             return f"❌ Error processing message: {str(e)}"
+
+    async def clear_memory(self) -> None:
+        """Clear all persisted memory."""
+        await self.memory_manager.clear_all_memory()
+
+    async def start_new_session(self) -> None:
+        """Close the current session and start a new one."""
+        await self.memory_manager.start_new_session()
+
+    # ------------------------------------------------------------------
+    # LLM Conversation Loop
+    # ------------------------------------------------------------------
 
     async def _run_conversation_loop(
         self,
@@ -248,24 +250,70 @@ class AniAssistant:
             or "Operation completed but unable to generate response"
         )
 
-    async def _build_messages(self, user_message: str) -> list[dict]:
-        """Build the message list from memory + skill discovery hint."""
-        messages = await self.memory_manager.build_system_messages(user_message)
+    # ------------------------------------------------------------------
+    # Tool Context Formatting
+    # ------------------------------------------------------------------
 
-        # Behavioral rules + skill discovery hint
-        messages.append({"role": "system", "content": _BEHAVIORAL_RULES})
-        messages.append({"role": "system", "content": _SKILL_DISCOVERY_HINT})
+    def _format_tool_context(self, messages: list) -> str:
+        """Format intermediate tool calls into a structured string for disk.
 
-        messages.append({"role": "user", "content": user_message})
-        return messages
+        Preserves original formatting (newlines, indentation) so the
+        session Markdown is human-readable.  Pruning happens at
+        read-time via the context engine, not here.
 
-    async def clear_memory(self) -> None:
-        """Clear all persisted memory."""
-        await self.memory_manager.clear_all_memory()
+        Returns an empty string if no meaningful tool calls were made.
+        """
+        blocks: list[str] = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                self._collect_tool_result(msg, blocks)
+            else:
+                self._collect_tool_calls(msg, blocks)
 
-    async def start_new_session(self) -> None:
-        """Close the current session and start a new one."""
-        await self.memory_manager.start_new_session()
+        return "\n".join(blocks) if blocks else ""
+
+    @staticmethod
+    def _collect_tool_result(msg: dict, blocks: list[str]) -> None:
+        """Append a formatted tool result block if *msg* is a tool result."""
+        if msg.get("role") != "tool":
+            return
+        content = str(msg.get("content", ""))
+        indented = "\n".join("    " + line for line in content.splitlines())
+        blocks.append(f"  Result:\n{indented or '    (empty result)'}")
+
+    @staticmethod
+    def _collect_tool_calls(msg: object, blocks: list[str]) -> None:
+        """Append formatted tool call entries from a ChatCompletionMessage."""
+        tool_calls = getattr(msg, "tool_calls", None)
+        if not tool_calls:
+            return
+        for tc in tool_calls:
+            name = getattr(tc.function, "name", "")
+            if name == "send_message":
+                continue
+            args = getattr(tc.function, "arguments", "")
+            blocks.append(f"  Called {name}({args})")
+
+    # ------------------------------------------------------------------
+    # Post-turn Compaction
+    # ------------------------------------------------------------------
+
+    async def _maybe_compact(self) -> None:
+        """Run session compaction if the token budget is exceeded."""
+        import asyncio
+
+        session_path = await asyncio.to_thread(
+            self.memory_manager._get_today_session_path
+        )
+        if session_path is None:
+            return
+        content = session_path.read_text(encoding="utf-8")
+        if self._compactor.should_compress(content):
+            await self._compactor.compress(session_path)
+
+    # ------------------------------------------------------------------
+    # Client Factory
+    # ------------------------------------------------------------------
 
     def _create_openai_client(self) -> AsyncOpenAI | None:
         """Create OpenAI client from configuration."""

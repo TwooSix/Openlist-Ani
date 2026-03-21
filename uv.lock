@@ -897,7 +897,7 @@ wheels = [
 
 [[package]]
 name = "openlist-ani"
-version = "1.0.0.dev260314"
+version = "1.0.0.dev260317"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
