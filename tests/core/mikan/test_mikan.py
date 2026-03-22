@@ -382,9 +382,9 @@ class TestFetchBangumiSubgroups:
 
         subgroups = await client.fetch_bangumi_subgroups(3826)
         assert len(subgroups) == 3
-        assert subgroups[0] == {"id": 1210, "name": "黑白字幕组"}
-        assert subgroups[1] == {"id": 1243, "name": "六四位元字幕组"}
-        assert subgroups[2] == {"id": 615, "name": "Kirara Fantasia"}
+        assert subgroups[0] == {"id": 1210, "name": "黑白字幕组", "episodes": []}
+        assert subgroups[1] == {"id": 1243, "name": "六四位元字幕组", "episodes": []}
+        assert subgroups[2] == {"id": 615, "name": "Kirara Fantasia", "episodes": []}
 
     @pytest.mark.asyncio
     async def test_fetch_subgroups_empty(self):
