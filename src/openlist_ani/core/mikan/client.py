@@ -291,13 +291,14 @@ class MikanClient:
 
         Scrapes the bangumi detail page to extract the list of fansub
         groups that have released episodes for this bangumi.
+        Returns up to 20 episodes per group (newest first).
 
         Args:
             bangumi_id: Mikan bangumi ID.
 
         Returns:
-            List of dicts with ``id`` (int) and ``name`` (str) for each
-            subtitle group.
+            List of dicts with ``id`` (int), ``name`` (str), and
+            ``episodes`` (list[dict]) for each subtitle group.
         """
         session = self._ensure_session()
         url = f"{_MIKAN_BASE_URL}/Home/Bangumi/{bangumi_id}"
@@ -318,9 +319,11 @@ class MikanClient:
 
     @staticmethod
     def _extract_group_episodes(
-        soup: BeautifulSoup, group_id: int, max_episodes: int = 5
+        soup: BeautifulSoup,
+        group_id: int,
+        max_episodes: int = 20,
     ) -> list[dict[str, str]]:
-        """Extract latest episodes for a subtitle group from the parsed page.
+        """Extract episodes for a subtitle group from the parsed page.
 
         Args:
             soup: Parsed BeautifulSoup page.
@@ -328,7 +331,8 @@ class MikanClient:
             max_episodes: Maximum number of episodes to return.
 
         Returns:
-            List of dicts with ``title`` and ``date`` keys.
+            List of dicts with ``title``, ``date``, and optionally
+            ``url`` (episode page) and ``magnet`` (magnet link) keys.
         """
         _DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
 
@@ -346,6 +350,18 @@ class MikanClient:
             if not title_tag:
                 continue
             ep_title = title_tag.get_text(strip=True)
+
+            # Episode detail page URL
+            ep_url = title_tag.get("href", "")
+            if ep_url and not ep_url.startswith("http"):
+                ep_url = f"{_MIKAN_BASE_URL}{ep_url}"
+
+            # Magnet link from the magnet button
+            magnet = ""
+            magnet_tag = row.select_one("a.js-magnet")
+            if magnet_tag:
+                magnet = magnet_tag.get("data-clipboard-text", "")
+
             ep_date = next(
                 (
                     td.get_text(strip=True)
@@ -355,19 +371,24 @@ class MikanClient:
                 "",
             )
             if ep_title:
-                episodes.append({"title": ep_title, "date": ep_date})
+                episode: dict[str, str] = {"title": ep_title, "date": ep_date}
+                if ep_url:
+                    episode["url"] = ep_url
+                if magnet:
+                    episode["magnet"] = magnet
+                episodes.append(episode)
 
         return episodes
 
     @staticmethod
     def _parse_subgroups(html: str) -> list[dict[str, Any]]:
-        """Parse subtitle groups and their latest episodes from a bangumi page.
+        """Parse subtitle groups and their episodes from a bangumi page.
 
         Each group dict contains:
         - ``id`` (int) — subtitle group ID
         - ``name`` (str) — group name
-        - ``episodes`` (list[dict]) — latest episodes with ``title`` and
-          ``date`` keys (up to 5 per group)
+        - ``episodes`` (list[dict]) — up to 20 episodes with ``title``,
+          ``date``, and optionally ``url``/``magnet`` keys.
 
         Args:
             html: Raw HTML of the bangumi page.

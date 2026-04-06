@@ -111,6 +111,11 @@ class AssistantConfig(BaseModel):
     """Configuration for assistant module."""
 
     enabled: bool = False
+    provider_type: str = "openai"  # "openai" | "anthropic"
+    max_context_tokens: int = 128_000
+    session_compact_threshold: int = 100_000
+    skills_dir: str = "skills"  # Skill search directory
+    data_dir: str = "data/assistant"  # Memory file directory
     telegram: TelegramAssistantConfig = TelegramAssistantConfig()
 
 
@@ -327,20 +332,32 @@ class ConfigManager:
         if not self.assistant.enabled:
             return
 
-        if not self.assistant.telegram.bot_token:
-            errors.append(
-                "Assistant is enabled but Telegram bot token is missing. "
-                "Please set [assistant.telegram] bot_token."
-            )
-        if not self.assistant.telegram.allowed_users:
-            errors.append(
-                "Assistant is enabled but no allowed users are configured. "
-                "Please set [assistant.telegram] allowed_users."
-            )
+        # API key is required for any provider
         if not self.llm.openai_api_key:
             errors.append(
-                "Assistant is enabled but OpenAI API key is missing. "
+                "Assistant is enabled but API key is missing. "
                 "Assistant requires LLM. Please set [llm] openai_api_key."
+            )
+
+        # Validate provider_type
+        if self.assistant.provider_type not in ("openai", "anthropic"):
+            errors.append(
+                f"Unknown assistant provider_type: '{self.assistant.provider_type}'. "
+                "Supported values: 'openai', 'anthropic'."
+            )
+
+        # Telegram bot_token is required
+        if not self.assistant.telegram.bot_token:
+            errors.append(
+                "Assistant is enabled but Telegram bot_token is missing. "
+                "Please set [assistant.telegram] bot_token."
+            )
+
+        # allowed_users is required
+        if not self.assistant.telegram.allowed_users:
+            errors.append(
+                "Assistant is enabled but no allowed_users configured. "
+                "Please add user IDs in [assistant.telegram] allowed_users."
             )
 
     def _log_validation_results(self, errors: list[str], warnings: list[str]) -> None:

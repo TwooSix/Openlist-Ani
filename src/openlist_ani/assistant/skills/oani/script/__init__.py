@@ -1,3 +1,0 @@
-"""
-OAni skill script package.
-"""

@@ -1,3 +1,0 @@
-"""
-Mikan skill script package.
-"""
