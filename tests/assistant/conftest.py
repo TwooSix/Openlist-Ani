@@ -4,6 +4,7 @@ Shared fixtures for assistant tests.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,6 +46,33 @@ class MockProvider(Provider):
             self._call_count += 1
             return resp
         return ProviderResponse(text="Default mock response.")
+
+    async def chat_completion_stream(
+        self,
+        messages: list[Message],
+        tools: list[dict] | None = None,
+        max_tokens_override: int | None = None,
+        temperature: float | None = None,
+    ) -> AsyncGenerator[ProviderResponse, None]:
+        """Async generator that yields the same response as chat_completion.
+
+        If the response contains text, a partial text-delta is yielded first,
+        followed by a final chunk carrying ``stop_reason`` and ``tool_calls``
+        but **no** duplicate text.  This mirrors real provider streaming
+        behaviour so that ``AgenticLoop._collect_stream`` can emit
+        ``TEXT_DELTA`` events without double-counting text.
+        """
+        response = await self.chat_completion(
+            messages, tools, max_tokens_override, temperature
+        )
+        if response.text:
+            # Yield a text-only delta (no stop_reason / tool_calls)
+            yield ProviderResponse(text=response.text)
+        # Yield the final chunk with metadata only (stop_reason, tool_calls)
+        yield ProviderResponse(
+            tool_calls=response.tool_calls,
+            stop_reason=response.stop_reason or "stop",
+        )
 
     def format_tool_definitions(self, tools: list[BaseTool]) -> list[dict]:
         return [

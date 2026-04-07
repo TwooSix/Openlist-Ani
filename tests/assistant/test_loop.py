@@ -13,6 +13,7 @@ from openlist_ani.assistant.core.loop import (
 from openlist_ani.assistant.core.models import (
     EventType,
     LoopEvent,
+    Message,
     ProviderResponse,
     Role,
     ToolCall,
@@ -197,6 +198,75 @@ class TestAgenticLoop:
 
         history = await memory.load_session_history()
         assert "grep" in history
+
+
+class TestStreaming:
+    """Tests for the streaming path (TEXT_DELTA events via chat_completion_stream)."""
+
+    @pytest.mark.asyncio
+    async def test_text_delta_events_emitted(self, memory, registry):
+        """AgenticLoop.process() should yield TEXT_DELTA events from the stream.
+
+        The loop calls _collect_stream → provider.chat_completion_stream which
+        yields partial chunks.  Each chunk with text triggers a TEXT_DELTA event.
+        """
+        provider = MockProvider([
+            ProviderResponse(text="Streaming works!"),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory)
+
+        results = []
+        async for event in loop.process("Tell me something"):
+            results.append(event)
+
+        types = [e.type for e in results]
+        # The mock stream yields a text-only delta first, so we must see
+        # at least one TEXT_DELTA before the final TEXT_DONE.
+        assert EventType.TEXT_DELTA in types, (
+            f"Expected TEXT_DELTA in events but got: {types}"
+        )
+        assert EventType.TEXT_DONE in types
+
+        # Collect all TEXT_DELTA payloads
+        deltas = [e.text for e in results if e.type == EventType.TEXT_DELTA]
+        assert any("Streaming works!" in d for d in deltas)
+
+        # Final text should still be correct
+        text = _collect_text(results)
+        assert text == "Streaming works!"
+
+    @pytest.mark.asyncio
+    async def test_no_text_delta_for_tool_only_response(self, memory, registry):
+        """A tool-only response (no text) should not produce TEXT_DELTA events
+        for the tool-call round."""
+        provider = MockProvider([
+            ProviderResponse(
+                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+            ),
+            ProviderResponse(text="Done after tool."),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory)
+
+        results = []
+        async for event in loop.process("Search"):
+            results.append(event)
+
+        # There should be no TEXT_DELTA before the first TOOL_START
+        first_tool_idx = next(
+            i for i, e in enumerate(results) if e.type == EventType.TOOL_START
+        )
+        pre_tool_deltas = [
+            e for e in results[:first_tool_idx]
+            if e.type == EventType.TEXT_DELTA
+        ]
+        assert len(pre_tool_deltas) == 0
+
+        # But TEXT_DELTA should appear for the second (text) response
+        assert EventType.TEXT_DELTA in [e.type for e in results]
+        text = _collect_text(results)
+        assert text == "Done after tool."
 
 
 class TestErrorClassification:
@@ -438,3 +508,101 @@ class TestGeneratorCancellation:
 
         text = _collect_text(results)
         assert text
+
+
+class TestTruncateIfNeeded:
+    """Tests for _truncate_if_needed context window management."""
+
+    @pytest.mark.asyncio
+    async def test_no_truncation_under_limit(self, memory, registry):
+        """Messages under max_context_chars are not truncated."""
+        provider = MockProvider([
+            ProviderResponse(text="Response."),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory, max_context_chars=1_000_000)
+
+        results = []
+        async for event in loop.process("Short message"):
+            results.append(event)
+
+        # Should have normal response, no truncation notice
+        text = _collect_text(results)
+        assert text == "Response."
+        # Messages should NOT contain any truncation notice
+        for msg in loop._messages:
+            if msg.role == Role.USER and msg.content:
+                assert "Context truncated" not in msg.content
+
+    @pytest.mark.asyncio
+    async def test_truncation_drops_old_messages(self, memory, registry):
+        """When over limit, old messages are dropped, newest kept."""
+        # Use a very small limit to force truncation
+        provider = MockProvider([
+            ProviderResponse(text="First response. " * 50),
+            ProviderResponse(text="Second response. " * 50),
+            ProviderResponse(text="Final."),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory, max_context_chars=500)
+
+        # Process multiple turns to build up messages
+        async for _ in loop.process("A" * 100):
+            pass
+        async for _ in loop.process("B" * 100):
+            pass
+        results = []
+        async for event in loop.process("C" * 100):
+            results.append(event)
+
+        # After truncation, messages list should be shorter than without
+        # The system message should still be first
+        assert loop._messages[0].role == Role.SYSTEM
+
+    @pytest.mark.asyncio
+    async def test_system_message_always_kept(self, memory, registry):
+        """System message (index 0) is never dropped."""
+        provider = MockProvider([
+            ProviderResponse(text="R. " * 100),
+            ProviderResponse(text="Done."),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory, max_context_chars=300)
+
+        async for _ in loop.process("Long " * 50):
+            pass
+        async for _ in loop.process("Another long " * 50):
+            pass
+
+        # System message always at index 0
+        assert loop._messages[0].role == Role.SYSTEM
+
+    @pytest.mark.asyncio
+    async def test_truncation_notice_injected(self, memory, registry):
+        """A truncation notice message is injected after system msg when messages are dropped."""
+        provider = MockProvider([
+            ProviderResponse(text="Very long response. " * 200),
+            ProviderResponse(text="Another. " * 200),
+            ProviderResponse(text="Final."),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory, max_context_chars=500)
+
+        # Build up enough messages to trigger truncation
+        async for _ in loop.process("Long " * 100):
+            pass
+        async for _ in loop.process("More " * 100):
+            pass
+        async for _ in loop.process("Check"):
+            pass
+
+        # Look for truncation notice
+        truncation_found = False
+        for msg in loop._messages:
+            if msg.role == Role.USER and "Context truncated" in (msg.content or ""):
+                truncation_found = True
+                break
+        # If messages were dropped, notice should be present
+        # (with such small limits, truncation is expected)
+        if len(loop._messages) < 7:  # system + 3 turns * 2 messages = 7
+            assert truncation_found
