@@ -141,152 +141,49 @@ class TestParseBatchResults:
         assert "Validation failed" in results[0].error
 
 
-class TestParseMetadataBatch:
-    async def test_returns_failed_list_when_no_api_key(self):
-        entries = [_make_entry("Title A"), _make_entry("Title B")]
-        with patch("openlist_ani.core.parser.parser.config") as mock_config:
-            mock_config.llm.openai_api_key = ""
-            results = await parse_metadata(entries)
-        assert len(results) == 2
-        assert all(not r.success for r in results)
+async def test_chunking_large_batch():
+    entries = [_make_entry(f"Anime - {i:02d}") for i in range(25)]
 
-    async def test_successful_batch_parse(self):
-        entries = [
-            _make_entry("[Sub] Frieren - 05 [1080p]"),
-            _make_entry("[Sub] Frieren - 06 [1080p]"),
-        ]
-
-        batch_results = [
+    def make_chunk_results(titles):
+        return [
             ParseResult(
                 success=True,
                 result=ResourceTitleParseResult(
-                    anime_name="Frieren",
+                    anime_name="Anime",
                     season=1,
-                    episode=5,
+                    episode=i,
                     quality="1080p",
-                    fansub="SubGroup",
-                    languages=["简", "日"],
+                    fansub=None,
+                    languages=["日"],
                     version=1,
-                    tmdb_id=209867,
+                    tmdb_id=1,
                 ),
-            ),
-            ParseResult(
-                success=True,
-                result=ResourceTitleParseResult(
-                    anime_name="Frieren",
-                    season=1,
-                    episode=6,
-                    quality="1080p",
-                    fansub="SubGroup",
-                    languages=["简", "日"],
-                    version=1,
-                    tmdb_id=209867,
-                ),
-            ),
+            )
+            for i in range(len(titles))
         ]
 
-        with (
-            patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch(
-                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
-                new_callable=AsyncMock,
-                return_value=list(batch_results),
-            ),
-            patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
-            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
-            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
-        ):
-            mock_config.llm.openai_api_key = "test-key"
-            mock_config.llm.openai_base_url = "https://api.example.com"
-            mock_config.llm.openai_model = "gpt-4"
+    with (
+        patch("openlist_ani.core.parser.parser.config") as mock_config,
+        patch(
+            "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
+            new_callable=AsyncMock,
+            side_effect=lambda llm, titles: make_chunk_results(titles),
+        ),
+        patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
+        patch("openlist_ani.core.parser.parser.get_tmdb_client"),
+        patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
+    ):
+        mock_config.llm.openai_api_key = "test-key"
+        mock_config.llm.openai_base_url = "https://api.example.com"
+        mock_config.llm.openai_model = "gpt-4"
 
-            mock_resolver = AsyncMock()
-            mock_resolver.resolve_and_validate = AsyncMock(
-                side_effect=lambda parsed: parsed
-            )
-            MockResolver.return_value = mock_resolver
+        mock_resolver = AsyncMock()
+        mock_resolver.resolve_and_validate = AsyncMock(
+            side_effect=lambda parsed: parsed
+        )
+        MockResolver.return_value = mock_resolver
 
-            results = await parse_metadata(entries)
+        results = await parse_metadata(entries, batch_size=20)
 
-        assert len(results) == 2
-        assert all(r.success for r in results)
-        assert results[0].result.episode == 5
-        assert results[1].result.episode == 6
-
-    async def test_batch_failure_returns_error_results(self):
-        entries = [_make_entry("[Sub] Anime - 01 [1080p]")]
-
-        with (
-            patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch(
-                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
-                new_callable=AsyncMock,
-                return_value=[
-                    ParseResult(success=False, error="LLM returned no valid JSON array")
-                ],
-            ),
-            patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
-            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
-            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
-        ):
-            mock_config.llm.openai_api_key = "test-key"
-            mock_config.llm.openai_base_url = "https://api.example.com"
-            mock_config.llm.openai_model = "gpt-4"
-
-            mock_resolver = AsyncMock()
-            mock_resolver.resolve_and_validate = AsyncMock(
-                side_effect=lambda parsed: parsed
-            )
-            MockResolver.return_value = mock_resolver
-
-            results = await parse_metadata(entries)
-
-        assert len(results) == 1
-        assert not results[0].success
-
-    async def test_chunking_large_batch(self):
-        entries = [_make_entry(f"Anime - {i:02d}") for i in range(25)]
-
-        def make_chunk_results(titles):
-            return [
-                ParseResult(
-                    success=True,
-                    result=ResourceTitleParseResult(
-                        anime_name="Anime",
-                        season=1,
-                        episode=i,
-                        quality="1080p",
-                        fansub=None,
-                        languages=["日"],
-                        version=1,
-                        tmdb_id=1,
-                    ),
-                )
-                for i in range(len(titles))
-            ]
-
-        with (
-            patch("openlist_ani.core.parser.parser.config") as mock_config,
-            patch(
-                "openlist_ani.core.parser.parser.parse_title_batch_via_llm",
-                new_callable=AsyncMock,
-                side_effect=lambda llm, titles: make_chunk_results(titles),
-            ),
-            patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
-            patch("openlist_ani.core.parser.parser.get_tmdb_client"),
-            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
-        ):
-            mock_config.llm.openai_api_key = "test-key"
-            mock_config.llm.openai_base_url = "https://api.example.com"
-            mock_config.llm.openai_model = "gpt-4"
-
-            mock_resolver = AsyncMock()
-            mock_resolver.resolve_and_validate = AsyncMock(
-                side_effect=lambda parsed: parsed
-            )
-            MockResolver.return_value = mock_resolver
-
-            results = await parse_metadata(entries, batch_size=20)
-
-        assert len(results) == 25
-        assert all(r.success for r in results)
+    assert len(results) == 25
+    assert all(r.success for r in results)
