@@ -133,6 +133,13 @@ class TestStateTransitions:
         """COMPLETED state has no valid outgoing transitions."""
         assert STATE_TRANSITIONS[DownloadState.COMPLETED] == set()
 
+    def test_cancelled_to_pending_transition(self):
+        """CANCELLED tasks can be transitioned back to PENDING."""
+        task = _make_task()
+        task.state = DownloadState.CANCELLED
+        task.update_state(DownloadState.PENDING)
+        assert task.state == DownloadState.PENDING
+
     def test_update_state_refreshes_timestamp(self):
         task = _make_task()
         old_ts = task.updated_at
