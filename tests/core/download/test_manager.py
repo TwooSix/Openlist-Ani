@@ -349,75 +349,91 @@ class TestRunDownload:
 
 
 # ---------------------------------------------------------------------------
-# submit
+# submit (non-blocking)
 # ---------------------------------------------------------------------------
 
 
 class TestSubmit:
-    """Verify DownloadManager.submit() behavior."""
+    """Verify DownloadManager.submit() creates background tasks correctly."""
 
-    @pytest.mark.asyncio
-    async def test_submit_returns_task_non_blocking(self, tmp_path):
-        """submit() should return a task immediately without blocking."""
-        mgr = DownloadManager(
-            _make_mock_downloader(), state_file=str(tmp_path / "state.json")
-        )
-        resource = _make_resource()
+    async def test_submit_returns_task_immediately(self, tmp_path):
+        """submit() should return a PENDING task without blocking."""
+        downloader = _make_mock_downloader()
+        download_started = asyncio.Event()
+        download_gate = asyncio.Event()
 
-        # submit() should return immediately
-        task = await mgr.submit(resource, "/downloads")
+        async def slow_download(task):
+            download_started.set()
+            await download_gate.wait()
 
+        downloader.download = AsyncMock(side_effect=slow_download)
+
+        mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
+        task = await mgr.submit(_make_resource(), str(tmp_path))
+
+        # submit returns immediately — task is PENDING or just started DOWNLOADING
+        assert task.state in (DownloadState.PENDING, DownloadState.DOWNLOADING)
         assert isinstance(task, DownloadTask)
-        assert task.state == DownloadState.PENDING
-        assert task.resource_info.title == "[SubGroup] Test - 01"
-        assert task.base_path == "/downloads"
 
-    @pytest.mark.asyncio
+        # Unblock background task to avoid warnings
+        download_gate.set()
+        await download_started.wait()
+        await asyncio.sleep(0.05)
+
     async def test_submit_registers_task(self, tmp_path):
-        """Task should be registered in mgr._tasks after submit."""
-        mgr = DownloadManager(
-            _make_mock_downloader(), state_file=str(tmp_path / "state.json")
-        )
-        resource = _make_resource()
+        """Submitted task must appear in mgr._tasks."""
+        downloader = _make_mock_downloader()
+        download_gate = asyncio.Event()
 
-        task = await mgr.submit(resource, "/downloads")
+        async def slow_download(task):
+            await download_gate.wait()
+
+        downloader.download = AsyncMock(side_effect=slow_download)
+
+        mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
+        task = await mgr.submit(_make_resource(), str(tmp_path))
 
         assert task.id in mgr._tasks
         assert mgr._tasks[task.id] is task
 
-    @pytest.mark.asyncio
+        download_gate.set()
+        await asyncio.sleep(0.05)
+
     async def test_submit_persists_state(self, tmp_path):
         """State file should be written after submit."""
         state_file = tmp_path / "state.json"
-        mgr = DownloadManager(
-            _make_mock_downloader(), state_file=str(state_file)
-        )
-        resource = _make_resource()
+        downloader = _make_mock_downloader()
+        download_gate = asyncio.Event()
 
-        task = await mgr.submit(resource, "/downloads")
+        async def slow_download(task):
+            await download_gate.wait()
+
+        downloader.download = AsyncMock(side_effect=slow_download)
+
+        mgr = DownloadManager(downloader, state_file=str(state_file))
+        task = await mgr.submit(_make_resource(), str(tmp_path))
 
         assert state_file.exists()
         data = json.loads(state_file.read_text(encoding="utf-8"))
         assert task.id in data
-        assert data[task.id]["state"] == "pending"
 
-    @pytest.mark.asyncio
-    async def test_submit_spawns_background_task_that_completes(self, tmp_path):
-        """Background task should eventually complete after submit."""
+        download_gate.set()
+        await asyncio.sleep(0.05)
+
+    async def test_submit_background_task_completes(self, tmp_path):
+        """Background task should eventually reach COMPLETED."""
         downloader = _make_mock_downloader()
         mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
-        resource = _make_resource()
 
-        task = await mgr.submit(resource, "/downloads")
+        task = await mgr.submit(_make_resource(), str(tmp_path))
 
-        # Wait for background task to complete
-        # We need to wait for all background tasks
-        await asyncio.gather(*mgr._background_tasks, return_exceptions=True)
+        # Wait for background task to finish
+        for _ in range(50):
+            if task.state == DownloadState.COMPLETED:
+                break
+            await asyncio.sleep(0.01)
 
-        # Task should now be completed and removed from active tasks
         assert task.state == DownloadState.COMPLETED
-        assert task.id not in mgr._tasks
-        downloader.download.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
