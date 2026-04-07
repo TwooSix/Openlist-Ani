@@ -105,6 +105,7 @@ class TestStateTransitions:
             (DownloadState.DOWNLOADING, DownloadState.FAILED),
             (DownloadState.DOWNLOADING, DownloadState.CANCELLED),
             (DownloadState.FAILED, DownloadState.PENDING),
+            (DownloadState.CANCELLED, DownloadState.PENDING),
         ],
     )
     def test_valid_transitions(self, from_state, to_state):
@@ -145,6 +146,15 @@ class TestStateTransitions:
         old_ts = task.updated_at
         task.update_state(DownloadState.DOWNLOADING)
         assert task.updated_at >= old_ts
+
+    def test_cancelled_task_can_return_to_pending(self):
+        """CANCELLED tasks must be restartable by transitioning back to PENDING."""
+        task = _make_task()
+        task.update_state(DownloadState.CANCELLED)
+        assert task.state == DownloadState.CANCELLED
+
+        task.update_state(DownloadState.PENDING)
+        assert task.state == DownloadState.PENDING
 
 
 # ---------------------------------------------------------------------------
