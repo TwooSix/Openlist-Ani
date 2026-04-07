@@ -53,10 +53,10 @@ class TestWebsiteBaseFetchFeed:
         """Normal path: fetch RSS, parse entries, return results."""
         parser = CommonRSSWebsite()
 
-        # Mock HTTP response
-        mock_response = AsyncMock()
+        # Mock HTTP response — raise_for_status is sync, text() is async
+        mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        mock_response.text.return_value = "<rss>fake content</rss>"
+        mock_response.text = AsyncMock(return_value="<rss>fake content</rss>")
 
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = mock_response
@@ -100,10 +100,10 @@ class TestWebsiteBaseFetchFeed:
         """parse_entry exceptions should be caught and ignored."""
         parser = CommonRSSWebsite()
 
-        # Mock HTTP response
-        mock_response = AsyncMock()
+        # Mock HTTP response — raise_for_status is sync, text() is async
+        mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        mock_response.text.return_value = "<rss>fake content</rss>"
+        mock_response.text = AsyncMock(return_value="<rss>fake content</rss>")
 
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = mock_response
@@ -146,10 +146,10 @@ class TestWebsiteBaseFetchFeed:
         """parse_entry returning None should be filtered out."""
         parser = CommonRSSWebsite()
 
-        # Mock HTTP response
-        mock_response = AsyncMock()
+        # Mock HTTP response — raise_for_status is sync, text() is async
+        mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        mock_response.text.return_value = "<rss>fake content</rss>"
+        mock_response.text = AsyncMock(return_value="<rss>fake content</rss>")
 
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = mock_response
@@ -187,10 +187,10 @@ class TestWebsiteBaseFetchFeed:
         """Empty RSS feed should return empty list."""
         parser = CommonRSSWebsite()
 
-        # Mock HTTP response
-        mock_response = AsyncMock()
+        # Mock HTTP response — raise_for_status is sync, text() is async
+        mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        mock_response.text.return_value = "<rss>empty feed</rss>"
+        mock_response.text = AsyncMock(return_value="<rss>empty feed</rss>")
 
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = mock_response
