@@ -14,6 +14,7 @@ root for codebase-specific instructions.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,10 @@ from loguru import logger
 
 # Max lines for MEMORY.md to prevent context bloat
 MAX_MEMORY_LINES = 200
+
+# File name constants (avoid duplication)
+_MEMORY_FILENAME = "MEMORY.md"
+_USER_FILENAME = "USER.md"
 
 CLAUDE_MD_INSTRUCTION_PROMPT = (
     "Codebase and user instructions are shown below. "
@@ -143,7 +148,7 @@ class MemoryManager:
 
     def load_memory(self) -> str:
         """Load persistent long-term memory from MEMORY.md."""
-        content = self._read_file(self._data_dir / "MEMORY.md")
+        content = self._read_file(self._data_dir / _MEMORY_FILENAME)
         if not content.strip():
             return ""
 
@@ -160,12 +165,11 @@ class MemoryManager:
 
     async def append_memory(self, fact: str) -> None:
         """Append a fact to MEMORY.md."""
-        memory_file = self._data_dir / "MEMORY.md"
+        memory_file = self._data_dir / _MEMORY_FILENAME
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry = f"- [{timestamp}] {fact}\n"
         try:
-            with open(memory_file, "a", encoding="utf-8") as f:
-                f.write(entry)
+            await asyncio.to_thread(self._append_text, memory_file, entry)
         except OSError as e:
             logger.error(f"Failed to append memory: {e}")
 
@@ -175,16 +179,15 @@ class MemoryManager:
 
     def load_user(self) -> str:
         """Load the user profile from USER.md."""
-        return self._read_file(self._data_dir / "USER.md")
+        return self._read_file(self._data_dir / _USER_FILENAME)
 
     async def append_user_fact(self, fact: str) -> None:
         """Append a fact to USER.md."""
-        user_file = self._data_dir / "USER.md"
+        user_file = self._data_dir / _USER_FILENAME
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry = f"- [{timestamp}] {fact}\n"
         try:
-            with open(user_file, "a", encoding="utf-8") as f:
-                f.write(entry)
+            await asyncio.to_thread(self._append_text, user_file, entry)
         except OSError as e:
             logger.error(f"Failed to append user fact: {e}")
 
@@ -195,7 +198,7 @@ class MemoryManager:
     async def load_session_history(self) -> str:
         """Load the current day's session history."""
         session_file = self._current_session_file()
-        return self._read_file(session_file)
+        return await asyncio.to_thread(self._read_file, session_file)
 
     async def append_turn(
         self,
@@ -220,8 +223,7 @@ class MemoryManager:
 
         entry = "\n".join(lines)
         try:
-            with open(session_file, "a", encoding="utf-8") as f:
-                f.write(entry)
+            await asyncio.to_thread(self._append_text, session_file, entry)
         except OSError as e:
             logger.error(f"Failed to append session turn: {e}")
 
@@ -232,7 +234,9 @@ class MemoryManager:
             date_str = datetime.now().strftime("%Y-%m-%d")
             header = f"# Session {date_str}\n\n"
             try:
-                session_file.write_text(header, encoding="utf-8")
+                await asyncio.to_thread(
+                    session_file.write_text, header, encoding="utf-8"
+                )
             except OSError as e:
                 logger.error(f"Failed to create session file: {e}")
 
@@ -310,7 +314,7 @@ class MemoryManager:
         """Clear all session history files (keeps SOUL/MEMORY/USER)."""
         for session_file in self._sessions_dir.glob("SESSION_*.md"):
             try:
-                session_file.unlink()
+                await asyncio.to_thread(session_file.unlink)
             except OSError as e:
                 logger.error(f"Failed to delete session file {session_file}: {e}")
 
@@ -318,17 +322,21 @@ class MemoryManager:
         """Clear sessions + MEMORY.md + USER.md (keeps SOUL.md)."""
         await self.clear_session()
         # Clear MEMORY.md
-        memory_file = self._data_dir / "MEMORY.md"
+        memory_file = self._data_dir / _MEMORY_FILENAME
         try:
-            memory_file.write_text("", encoding="utf-8")
+            await asyncio.to_thread(
+                memory_file.write_text, "", encoding="utf-8"
+            )
         except OSError as e:
-            logger.error(f"Failed to clear MEMORY.md: {e}")
+            logger.error(f"Failed to clear {_MEMORY_FILENAME}: {e}")
         # Clear USER.md
-        user_file = self._data_dir / "USER.md"
+        user_file = self._data_dir / _USER_FILENAME
         try:
-            user_file.write_text("", encoding="utf-8")
+            await asyncio.to_thread(
+                user_file.write_text, "", encoding="utf-8"
+            )
         except OSError as e:
-            logger.error(f"Failed to clear USER.md: {e}")
+            logger.error(f"Failed to clear {_USER_FILENAME}: {e}")
 
     # ------------------------------------------------------------------ #
     # Utilities
@@ -337,6 +345,12 @@ class MemoryManager:
     def estimate_tokens(self, text: str) -> int:
         """Rough token estimate (1 token ~ 4 chars)."""
         return len(text) // 4
+
+    @staticmethod
+    def _append_text(path: Path, text: str) -> None:
+        """Synchronous helper to append text to a file (used via asyncio.to_thread)."""
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(text)
 
     def _read_file(self, path: Path) -> str:
         """Read a text file, returning empty string if not found."""

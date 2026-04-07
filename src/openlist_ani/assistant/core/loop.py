@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, NoReturn
 
 from openlist_ani.assistant._constants import (
     API_RETRY_BACKOFF_BASE,
@@ -277,6 +277,54 @@ class AgenticLoop:
             chars += len(tr.content) + len(tr.name) + 50
         return chars
 
+    async def _handle_provider_error(
+        self,
+        error: Exception,
+        attempt: int,
+        has_attempted_reactive_compact: bool,
+    ) -> Literal["compact_applied", "retry", "break"]:
+        """Classify a provider error and apply recovery.
+
+        Returns an action literal:
+        - ``"compact_applied"``: reactive compact succeeded, caller should
+          signal retry-round (return None).
+        - ``"retry"``: caller should continue to the next attempt.
+        - ``"break"``: caller should stop retrying immediately.
+        """
+        if _is_prompt_too_long(error) and not has_attempted_reactive_compact:
+            logger.info("Prompt-too-long detected — attempting reactive compact")
+            compacted = await self._autocompactor.force_compact(self._messages)
+            if compacted is not None:
+                self._messages = compacted
+                logger.info("Reactive compact succeeded — retrying")
+                return "compact_applied"
+            # Compact failed — also try emergency truncation
+            logger.warning(
+                "Reactive compact failed — attempting aggressive truncation"
+            )
+            self._truncate_if_needed()
+            return "retry"
+
+        if _is_transient(error) and attempt < MAX_API_RETRIES - 1:
+            delay = API_RETRY_BACKOFF_BASE * (2 ** attempt)
+            logger.info(f"Transient error — retrying in {delay:.1f}s")
+            await asyncio.sleep(delay)
+            return "retry"
+
+        if not _is_prompt_too_long(error) and not _is_transient(error):
+            return "break"
+
+        return "retry"
+
+    @staticmethod
+    def _raise_exhausted(last_error: Exception | None) -> NoReturn:
+        """Raise RuntimeError after all retry attempts are exhausted."""
+        error_msg = (
+            f"Provider error after {MAX_API_RETRIES} attempts: {last_error}"
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg) from last_error
+
     async def _call_with_recovery(
         self,
         tool_defs: list[dict] | None,
@@ -304,65 +352,30 @@ class AgenticLoop:
         Raises:
             RuntimeError: If all recovery attempts are exhausted.
         """
-
         last_error: Exception | None = None
 
         for attempt in range(MAX_API_RETRIES):
             try:
-                response = await self._provider.chat_completion(
+                return await self._provider.chat_completion(
                     self._messages,
                     tool_defs if tool_defs else None,
                     max_tokens_override=max_tokens_override,
                 )
-                return response
-
             except Exception as e:
                 last_error = e
                 logger.warning(
                     f"Provider call failed (attempt {attempt + 1}/"
                     f"{MAX_API_RETRIES}): {e}"
                 )
-
-                # Prompt-too-long: try reactive compact once
-                if _is_prompt_too_long(e) and not has_attempted_reactive_compact:
-                    logger.info(
-                        "Prompt-too-long detected — attempting reactive compact"
-                    )
-                    compacted = await self._autocompactor.force_compact(
-                        self._messages
-                    )
-                    if compacted is not None:
-                        self._messages = compacted
-                        logger.info(
-                            "Reactive compact succeeded — retrying"
-                        )
-                        return None  # Signal caller to retry the round
-
-                    # Compact failed — also try emergency truncation
-                    logger.warning(
-                        "Reactive compact failed — attempting "
-                        "aggressive truncation"
-                    )
-                    self._truncate_if_needed()
-                    # Fall through to retry
-
-                # Transient errors: backoff and retry
-                elif _is_transient(e) and attempt < MAX_API_RETRIES - 1:
-                    delay = API_RETRY_BACKOFF_BASE * (2 ** attempt)
-                    logger.info(
-                        f"Transient error — retrying in {delay:.1f}s"
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-
-                # Non-transient, non-prompt-too-long: don't retry
-                elif not _is_prompt_too_long(e) and not _is_transient(e):
+                action = await self._handle_provider_error(
+                    e, attempt, has_attempted_reactive_compact,
+                )
+                if action == "compact_applied":
+                    return None  # Signal caller to retry the round
+                if action == "break":
                     break
 
-        # All retries exhausted
-        error_msg = f"Provider error after {MAX_API_RETRIES} attempts: {last_error}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg) from last_error
+        self._raise_exhausted(last_error)
 
     async def process(self, user_message: str) -> AsyncGenerator[LoopEvent, None]:
         """Process a user message through the agentic loop.
@@ -398,6 +411,7 @@ class AgenticLoop:
                         text="(interrupted)",
                     )
                 )
+                raise
             except Exception as e:
                 logger.opt(exception=True).error(f"AgenticLoop error: {e}")
                 await queue.put(
@@ -429,6 +443,43 @@ class AgenticLoop:
         if task.done() and task.exception():
             raise task.exception()
 
+    async def _collect_stream(
+        self,
+        tool_defs: list[dict] | None,
+        queue: asyncio.Queue[LoopEvent | None],
+        max_tokens_override: int | None = None,
+    ) -> ProviderResponse:
+        """Consume the provider stream, emitting TEXT_DELTA events.
+
+        Returns the assembled ProviderResponse.
+        """
+        full_text_parts: list[str] = []
+        final_response: ProviderResponse | None = None
+
+        async for partial in self._provider.chat_completion_stream(
+            self._messages,
+            tool_defs if tool_defs else None,
+            max_tokens_override=max_tokens_override,
+        ):
+            if partial.text:
+                full_text_parts.append(partial.text)
+                await queue.put(
+                    LoopEvent(type=EventType.TEXT_DELTA, text=partial.text)
+                )
+            if partial.stop_reason or partial.tool_calls:
+                final_response = partial
+
+        if final_response is None:
+            final_response = ProviderResponse(
+                text="".join(full_text_parts),
+                stop_reason="stop",
+            )
+
+        if full_text_parts and not final_response.text:
+            final_response.text = "".join(full_text_parts)
+
+        return final_response
+
     async def _stream_provider_call(
         self,
         tool_defs: list[dict] | None,
@@ -438,81 +489,227 @@ class AgenticLoop:
     ) -> ProviderResponse | None:
         """Call the provider with streaming, error recovery, and text delta events.
 
-        Integrates _call_with_recovery's error handling into the streaming path.
-        Returns ProviderResponse on success, None if reactive compact was applied.
-        Raises RuntimeError if all recovery attempts are exhausted.
+        Integrates _handle_provider_error's error handling into the streaming
+        path.  Returns ProviderResponse on success, None if reactive compact
+        was applied.  Raises RuntimeError if all recovery attempts are
+        exhausted.
         """
         last_error: Exception | None = None
 
         for attempt in range(MAX_API_RETRIES):
             try:
-                full_text_parts: list[str] = []
-                final_response: ProviderResponse | None = None
-
-                async for partial in self._provider.chat_completion_stream(
-                    self._messages,
-                    tool_defs if tool_defs else None,
-                    max_tokens_override=max_tokens_override,
-                ):
-                    if partial.text:
-                        full_text_parts.append(partial.text)
-                        await queue.put(
-                            LoopEvent(type=EventType.TEXT_DELTA, text=partial.text)
-                        )
-                    if partial.stop_reason or partial.tool_calls:
-                        final_response = partial
-
-                if final_response is None:
-                    final_response = ProviderResponse(
-                        text="".join(full_text_parts),
-                        stop_reason="stop",
-                    )
-
-                if full_text_parts and not final_response.text:
-                    final_response.text = "".join(full_text_parts)
-
-                return final_response
-
+                return await self._collect_stream(
+                    tool_defs, queue, max_tokens_override,
+                )
             except Exception as e:
                 last_error = e
                 logger.warning(
                     f"Provider call failed (attempt {attempt + 1}/"
                     f"{MAX_API_RETRIES}): {e}"
                 )
-
-                # Prompt-too-long: try reactive compact once
-                if _is_prompt_too_long(e) and not has_attempted_reactive_compact:
-                    logger.info(
-                        "Prompt-too-long detected — attempting reactive compact"
-                    )
-                    compacted = await self._autocompactor.force_compact(
-                        self._messages
-                    )
-                    if compacted is not None:
-                        self._messages = compacted
-                        logger.info("Reactive compact succeeded — retrying")
-                        return None  # Signal caller to retry the round
-
-                    logger.warning(
-                        "Reactive compact failed — attempting aggressive truncation"
-                    )
-                    self._truncate_if_needed()
-
-                # Transient errors: backoff and retry
-                elif _is_transient(e) and attempt < MAX_API_RETRIES - 1:
-                    delay = API_RETRY_BACKOFF_BASE * (2 ** attempt)
-                    logger.info(f"Transient error — retrying in {delay:.1f}s")
-                    await asyncio.sleep(delay)
-                    continue
-
-                # Non-transient, non-prompt-too-long: don't retry
-                elif not _is_prompt_too_long(e) and not _is_transient(e):
+                action = await self._handle_provider_error(
+                    e, attempt, has_attempted_reactive_compact,
+                )
+                if action == "compact_applied":
+                    return None  # Signal caller to retry the round
+                if action == "break":
                     break
 
-        # All retries exhausted
-        error_msg = f"Provider error after {MAX_API_RETRIES} attempts: {last_error}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg) from last_error
+        self._raise_exhausted(last_error)
+
+    def _handle_max_tokens_hit(
+        self,
+        response: ProviderResponse,
+        max_tokens_override: int | None,
+        max_output_tokens_recovery_count: int,
+    ) -> tuple[bool, int | None, int]:
+        """Handle a max_output_tokens stop reason.
+
+        Returns (should_continue, new_max_tokens_override, new_recovery_count).
+        If should_continue is True, the caller should ``continue`` the loop.
+        If should_continue is False, max_tokens recovery is exhausted.
+
+        Side-effects:
+            Appends assistant and/or user messages to ``self._messages``
+            when recovery is attempted (escalation or continue-message).
+        """
+        if response.stop_reason not in ("max_tokens", "length"):
+            return False, max_tokens_override, max_output_tokens_recovery_count
+
+        # First hit: escalate token limit
+        if max_tokens_override is None and max_output_tokens_recovery_count == 0:
+            logger.info(
+                f"Max output tokens hit — escalating to "
+                f"{ESCALATED_MAX_TOKENS} tokens"
+            )
+            if response.text:
+                self._messages.append(
+                    Message(role=Role.ASSISTANT, content=response.text)
+                )
+            return True, ESCALATED_MAX_TOKENS, max_output_tokens_recovery_count
+
+        # Subsequent hits: inject continue message
+        if max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT:
+            max_output_tokens_recovery_count += 1
+            logger.info(
+                f"Max output tokens recovery "
+                f"({max_output_tokens_recovery_count}/"
+                f"{MAX_OUTPUT_TOKENS_RECOVERY_LIMIT})"
+            )
+            if response.text:
+                self._messages.append(
+                    Message(role=Role.ASSISTANT, content=response.text)
+                )
+            self._messages.append(
+                Message(
+                    role=Role.USER,
+                    content=MAX_OUTPUT_TOKENS_CONTINUE_MESSAGE,
+                )
+            )
+            return True, None, max_output_tokens_recovery_count
+
+        return False, max_tokens_override, max_output_tokens_recovery_count
+
+    async def _finalize_text_response(
+        self,
+        response: ProviderResponse,
+        user_message: str,
+        tool_names_used: list[str],
+        queue: asyncio.Queue[LoopEvent | None],
+    ) -> None:
+        """Persist a pure-text response and emit TEXT_DONE."""
+        if not response.text:
+            return
+        self._messages.append(
+            Message(role=Role.ASSISTANT, content=response.text)
+        )
+        await queue.put(
+            LoopEvent(type=EventType.TEXT_DONE, text=response.text)
+        )
+        tool_context = ", ".join(tool_names_used) if tool_names_used else ""
+        await self._memory.append_turn(
+            user_msg=user_message,
+            assistant_msg=response.text,
+            tool_context=tool_context,
+        )
+
+    async def _emit_tool_start_events(
+        self,
+        response: ProviderResponse,
+        tool_names_used: list[str],
+        queue: asyncio.Queue[LoopEvent | None],
+    ) -> None:
+        """Record tool names and emit TOOL_START events."""
+        for tc in response.tool_calls:
+            tool_names_used.append(tc.name)
+            tool = self._registry.get(tc.name)
+            activity = (
+                tool.get_activity_description(tc.arguments)
+                if tool
+                else None
+            )
+            await queue.put(
+                LoopEvent(
+                    type=EventType.TOOL_START,
+                    tool_name=tc.name,
+                    tool_args=tc.arguments,
+                    activity=activity or f"Running {tc.name}",
+                )
+            )
+
+    async def _dispatch_tool_calls(
+        self,
+        response: ProviderResponse,
+        tool_names_used: list[str],
+        queue: asyncio.Queue[LoopEvent | None],
+    ) -> None:
+        """Dispatch tool calls and append results to messages.
+
+        Handles TOOL_START / TOOL_END events, orchestrator dispatch,
+        and tombstone injection for orphaned tool_calls.
+        """
+        self._messages.append(
+            Message(
+                role=Role.ASSISTANT,
+                content=response.text,
+                tool_calls=response.tool_calls,
+            )
+        )
+
+        await self._emit_tool_start_events(response, tool_names_used, queue)
+
+        # Dispatch via orchestrator (parallel/serial batching)
+        results = await self._orchestrator.execute_tool_calls(
+            response.tool_calls
+        )
+
+        # Emit TOOL_END events
+        for result in results:
+            preview = (
+                result.content[:200] + "..."
+                if len(result.content) > 200
+                else result.content
+            )
+            await queue.put(
+                LoopEvent(
+                    type=EventType.TOOL_END,
+                    tool_name=result.name,
+                    tool_result_preview=preview,
+                )
+            )
+
+        # Tombstone handling for orphaned tool_calls
+        self._inject_tombstones(response, results)
+
+        self._messages.append(
+            Message(role=Role.TOOL, tool_results=results)
+        )
+        self._turn_count += 1
+
+    @staticmethod
+    def _inject_tombstones(
+        response: ProviderResponse,
+        results: list,
+    ) -> None:
+        """Inject synthetic error results for any orphaned tool_calls."""
+        from openlist_ani.assistant.core.models import ToolResult
+
+        result_ids = {r.tool_call_id for r in results}
+        for tc in response.tool_calls:
+            if tc.id not in result_ids:
+                results.append(
+                    ToolResult(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        content="Error: Tool execution was interrupted.",
+                        is_error=True,
+                    )
+                )
+                logger.warning(
+                    f"Tombstone: injected synthetic result for "
+                    f"orphaned tool_call {tc.name} ({tc.id})"
+                )
+
+    async def _handle_max_rounds_reached(
+        self,
+        user_message: str,
+        tool_names_used: list[str],
+        queue: asyncio.Queue[LoopEvent | None],
+    ) -> None:
+        """Emit a TEXT_DONE event and persist when max rounds are reached."""
+        max_rounds_msg = "Reached maximum tool call rounds."
+        self._messages.append(
+            Message(role=Role.ASSISTANT, content=max_rounds_msg)
+        )
+        await queue.put(
+            LoopEvent(type=EventType.TEXT_DONE, text=max_rounds_msg)
+        )
+        tool_context = ", ".join(tool_names_used) if tool_names_used else ""
+        await self._memory.append_turn(
+            user_msg=user_message,
+            assistant_msg=max_rounds_msg,
+            tool_context=tool_context,
+        )
 
     async def _process_locked(
         self,
@@ -569,167 +766,33 @@ class AgenticLoop:
 
                 if not response.tool_calls:
                     # Check for max_output_tokens hit
-                    if response.stop_reason in ("max_tokens", "length"):
-                        if (
-                            max_tokens_override is None
-                            and max_output_tokens_recovery_count == 0
-                        ):
-                            max_tokens_override = ESCALATED_MAX_TOKENS
-                            logger.info(
-                                f"Max output tokens hit — escalating to "
-                                f"{ESCALATED_MAX_TOKENS} tokens"
-                            )
-                            if response.text:
-                                self._messages.append(
-                                    Message(
-                                        role=Role.ASSISTANT,
-                                        content=response.text,
-                                    )
-                                )
-                            continue
+                    should_continue, max_tokens_override, max_output_tokens_recovery_count = (
+                        self._handle_max_tokens_hit(
+                            response, max_tokens_override,
+                            max_output_tokens_recovery_count,
+                        )
+                    )
+                    if should_continue:
+                        continue
 
-                        if (
-                            max_output_tokens_recovery_count
-                            < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT
-                        ):
-                            max_output_tokens_recovery_count += 1
-                            max_tokens_override = None
-                            logger.info(
-                                f"Max output tokens recovery "
-                                f"({max_output_tokens_recovery_count}/"
-                                f"{MAX_OUTPUT_TOKENS_RECOVERY_LIMIT})"
-                            )
-                            if response.text:
-                                self._messages.append(
-                                    Message(
-                                        role=Role.ASSISTANT,
-                                        content=response.text,
-                                    )
-                                )
-                            self._messages.append(
-                                Message(
-                                    role=Role.USER,
-                                    content=MAX_OUTPUT_TOKENS_CONTINUE_MESSAGE,
-                                )
-                            )
-                            continue
-
-                    # Pure text response
-                    if response.text:
-                        self._messages.append(
-                            Message(role=Role.ASSISTANT, content=response.text)
-                        )
-                        await queue.put(
-                            LoopEvent(
-                                type=EventType.TEXT_DONE,
-                                text=response.text,
-                            )
-                        )
-                        # Persist the conversation turn to session file
-                        tool_context = (
-                            ", ".join(tool_names_used)
-                            if tool_names_used
-                            else ""
-                        )
-                        await self._memory.append_turn(
-                            user_msg=user_message,
-                            assistant_msg=response.text,
-                            tool_context=tool_context,
-                        )
+                    # Pure text response — finalize and exit loop
+                    await self._finalize_text_response(
+                        response, user_message, tool_names_used, queue,
+                    )
                     break
 
                 # Reset max_tokens_override after successful tool response
                 max_tokens_override = None
 
                 # Has tool_calls -> dispatch and continue loop
-                self._messages.append(
-                    Message(
-                        role=Role.ASSISTANT,
-                        content=response.text,
-                        tool_calls=response.tool_calls,
-                    )
+                await self._dispatch_tool_calls(
+                    response, tool_names_used, queue,
                 )
-
-                # Track tool names and emit TOOL_START events
-                for tc in response.tool_calls:
-                    tool_names_used.append(tc.name)
-                    tool = self._registry.get(tc.name)
-                    activity = (
-                        tool.get_activity_description(tc.arguments)
-                        if tool
-                        else None
-                    )
-                    await queue.put(
-                        LoopEvent(
-                            type=EventType.TOOL_START,
-                            tool_name=tc.name,
-                            tool_args=tc.arguments,
-                            activity=activity or f"Running {tc.name}",
-                        )
-                    )
-
-                # Dispatch via orchestrator (parallel/serial batching)
-                results = await self._orchestrator.execute_tool_calls(
-                    response.tool_calls
-                )
-
-                # Emit TOOL_END events
-                for result in results:
-                    preview = (
-                        result.content[:200] + "..."
-                        if len(result.content) > 200
-                        else result.content
-                    )
-                    await queue.put(
-                        LoopEvent(
-                            type=EventType.TOOL_END,
-                            tool_name=result.name,
-                            tool_result_preview=preview,
-                        )
-                    )
-
-                # Tombstone handling
-                result_ids = {r.tool_call_id for r in results}
-                for tc in response.tool_calls:
-                    if tc.id not in result_ids:
-                        from openlist_ani.assistant.core.models import ToolResult
-                        results.append(
-                            ToolResult(
-                                tool_call_id=tc.id,
-                                name=tc.name,
-                                content="Error: Tool execution was interrupted.",
-                                is_error=True,
-                            )
-                        )
-                        logger.warning(
-                            f"Tombstone: injected synthetic result for "
-                            f"orphaned tool_call {tc.name} ({tc.id})"
-                        )
-
-                self._messages.append(
-                    Message(role=Role.TOOL, tool_results=results)
-                )
-
-                # Increment turn count
-                self._turn_count += 1
 
             else:
                 # Max rounds reached
-                max_rounds_msg = "Reached maximum tool call rounds."
-                self._messages.append(
-                    Message(role=Role.ASSISTANT, content=max_rounds_msg)
-                )
-                await queue.put(
-                    LoopEvent(type=EventType.TEXT_DONE, text=max_rounds_msg)
-                )
-                await self._memory.append_turn(
-                    user_msg=user_message,
-                    assistant_msg=max_rounds_msg,
-                    tool_context=(
-                        ", ".join(tool_names_used)
-                        if tool_names_used
-                        else ""
-                    ),
+                await self._handle_max_rounds_reached(
+                    user_message, tool_names_used, queue,
                 )
 
         except RuntimeError as e:

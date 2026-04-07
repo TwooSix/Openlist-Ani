@@ -157,7 +157,7 @@ class TestTurnTracking:
         loop = AgenticLoop(provider, registry, context, memory)
 
         async for _ in loop.process("Hi"):
-            pass
+            pass  # Consume all events
 
         assert loop.turn_count == 0
 
@@ -174,7 +174,7 @@ class TestTurnTracking:
         loop = AgenticLoop(provider, registry, context, memory)
 
         async for _ in loop.process("Search"):
-            pass
+            pass  # Consume all events
 
         assert loop.turn_count == 1
 
@@ -194,7 +194,7 @@ class TestTurnTracking:
         loop = AgenticLoop(provider, registry, context, memory)
 
         async for _ in loop.process("Complex task"):
-            pass
+            pass  # Consume all events
 
         assert loop.turn_count == 2
 
@@ -220,11 +220,11 @@ class TestTurnTracking:
         loop = AgenticLoop(provider, registry, context, memory)
 
         async for _ in loop.process("First"):
-            pass
+            pass  # Consume all events
         assert loop.turn_count == 1
 
         async for _ in loop.process("Second"):
-            pass
+            pass  # Consume all events
         assert loop.turn_count == 3  # 1 + 2
 
     @pytest.mark.asyncio
@@ -240,7 +240,7 @@ class TestTurnTracking:
         loop = AgenticLoop(provider, registry, context, memory)
 
         async for _ in loop.process("Task"):
-            pass
+            pass  # Consume all events
         assert loop.turn_count == 1
 
         loop.reset()
@@ -266,7 +266,7 @@ class TestTombstoneHandling:
         loop = AgenticLoop(provider, registry, context, memory)
 
         async for _ in loop.process("Search and edit"):
-            pass
+            pass  # Consume all events
 
         # Check that tool results were properly injected
         tool_msgs = [m for m in loop._messages if m.role == Role.TOOL]

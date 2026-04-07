@@ -204,30 +204,30 @@ class TestErrorClassification:
 
     def test_prompt_too_long_detection(self):
         """Should detect prompt-too-long errors from various providers."""
-        assert _is_prompt_too_long(Exception("prompt is too long"))
-        assert _is_prompt_too_long(Exception("maximum context length exceeded"))
-        assert _is_prompt_too_long(Exception("context_length_exceeded"))
-        assert _is_prompt_too_long(Exception("This request too large for model"))
-        assert not _is_prompt_too_long(Exception("random error"))
-        assert not _is_prompt_too_long(Exception(""))
+        assert _is_prompt_too_long(RuntimeError("prompt is too long"))
+        assert _is_prompt_too_long(RuntimeError("maximum context length exceeded"))
+        assert _is_prompt_too_long(RuntimeError("context_length_exceeded"))
+        assert _is_prompt_too_long(RuntimeError("This request too large for model"))
+        assert not _is_prompt_too_long(RuntimeError("random error"))
+        assert not _is_prompt_too_long(RuntimeError(""))
 
     def test_overloaded_detection(self):
         """Should detect rate-limit and overloaded errors."""
-        assert _is_overloaded(Exception("rate_limit_exceeded"))
-        assert _is_overloaded(Exception("Rate limit reached"))
-        assert _is_overloaded(Exception("server overloaded"))
-        assert _is_overloaded(Exception("429 Too Many Requests"))
-        assert not _is_overloaded(Exception("random error"))
+        assert _is_overloaded(RuntimeError("rate_limit_exceeded"))
+        assert _is_overloaded(RuntimeError("Rate limit reached"))
+        assert _is_overloaded(RuntimeError("server overloaded"))
+        assert _is_overloaded(RuntimeError("429 Too Many Requests"))
+        assert not _is_overloaded(RuntimeError("random error"))
 
     def test_transient_detection(self):
         """Should detect transient errors worth retrying."""
-        assert _is_transient(Exception("connection reset"))
-        assert _is_transient(Exception("request timed out"))
-        assert _is_transient(Exception("500 internal server error"))
-        assert _is_transient(Exception("502 bad gateway"))
-        assert _is_transient(Exception("rate_limit"))  # also transient
-        assert not _is_transient(Exception("invalid api key"))
-        assert not _is_transient(Exception("permission denied"))
+        assert _is_transient(RuntimeError("connection reset"))
+        assert _is_transient(RuntimeError("request timed out"))
+        assert _is_transient(RuntimeError("500 internal server error"))
+        assert _is_transient(RuntimeError("502 bad gateway"))
+        assert _is_transient(RuntimeError("rate_limit"))  # also transient
+        assert not _is_transient(RuntimeError("invalid api key"))
+        assert not _is_transient(RuntimeError("permission denied"))
 
 
 class TestErrorRecovery:
@@ -243,7 +243,7 @@ class TestErrorRecovery:
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
-                    raise Exception("429 Too Many Requests")
+                    raise RuntimeError("429 Too Many Requests")
                 return ProviderResponse(text="Recovered!")
 
         provider = TransientErrorProvider()
@@ -272,7 +272,7 @@ class TestErrorRecovery:
                 # Call 2: force_compact's LLM summary call → return summary
                 # Call 3: retry after compact → normal response
                 if call_count == 1:
-                    raise Exception("prompt is too long for this model")
+                    raise RuntimeError("prompt is too long for this model")
                 if call_count == 2:
                     return ProviderResponse(
                         text="<summary>Conversation summary</summary>"
@@ -300,7 +300,7 @@ class TestErrorRecovery:
 
         class AlwaysFailProvider(MockProvider):
             async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
-                raise Exception("Invalid API key")
+                raise RuntimeError("Invalid API key")
 
         provider = AlwaysFailProvider()
         context = ContextBuilder(memory)
@@ -323,7 +323,7 @@ class TestErrorRecovery:
             async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
                 nonlocal call_count
                 call_count += 1
-                raise Exception("connection reset by peer")
+                raise RuntimeError("connection reset by peer")
 
         provider = PersistentErrorProvider()
         context = ContextBuilder(memory)
@@ -335,8 +335,8 @@ class TestErrorRecovery:
 
         text = _collect_text(results)
         assert "error" in text.lower()
-        # Should have retried MAX_API_RETRIES times
-        assert call_count == 3  # MAX_API_RETRIES = 3
+        # Should have retried the maximum number of times
+        assert call_count == 3
 
     @pytest.mark.asyncio
     async def test_error_preserves_conversation_state(self, memory, registry):
@@ -348,7 +348,7 @@ class TestErrorRecovery:
                 nonlocal call_count
                 call_count += 1
                 if call_count <= 3:  # First turn: all 3 retries fail
-                    raise Exception("server error 500")
+                    raise RuntimeError("server error 500")
                 return ProviderResponse(text="Working now!")
 
         provider = RecoverableProvider()

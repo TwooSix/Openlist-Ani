@@ -128,6 +128,68 @@ class OpenAIProvider(Provider):
             },
         )
 
+    @staticmethod
+    def _accumulate_tool_call_deltas(
+        collected: dict[int, dict[str, str]], tool_call_deltas: list[Any]
+    ) -> None:
+        """Accumulate tool call deltas from a single chunk into the collector."""
+        for tc_delta in tool_call_deltas:
+            idx = tc_delta.index
+            func = tc_delta.function
+            func_name = getattr(func, "name", None) if func else None
+            func_args = getattr(func, "arguments", None) if func else None
+
+            entry = collected.setdefault(
+                idx, {"id": "", "name": "", "args": ""},
+            )
+            if tc_delta.id:
+                entry["id"] = tc_delta.id
+            if func_name:
+                entry["name"] = func_name
+            if func_args:
+                entry["args"] += func_args
+
+    @staticmethod
+    def _build_tool_calls_from_collected(
+        collected: dict[int, dict[str, str]],
+    ) -> list[ToolCall]:
+        """Parse collected tool call data into a list of ToolCall objects."""
+        tool_calls: list[ToolCall] = []
+        for tc_data in collected.values():
+            try:
+                arguments = json.loads(tc_data["args"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                arguments = {}
+            tool_calls.append(
+                ToolCall(
+                    id=tc_data["id"],
+                    name=tc_data["name"],
+                    arguments=arguments,
+                )
+            )
+        return tool_calls
+
+    def _build_stream_kwargs(
+        self,
+        api_messages: list[dict],
+        max_tokens: int,
+        temperature: float | None,
+        tools: list[dict] | None,
+    ) -> dict[str, Any]:
+        """Build kwargs dict for the OpenAI streaming API call."""
+        temp = temperature if temperature is not None else DEFAULT_TEMPERATURE
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": api_messages,
+            "max_tokens": max_tokens,
+            "temperature": temp,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            kwargs["tools"] = tools
+        return kwargs
+
     async def chat_completion_stream(
         self,
         messages: list[Message],
@@ -143,18 +205,9 @@ class OpenAIProvider(Provider):
         """
         api_messages = self._convert_messages(messages)
         max_tokens = max_tokens_override or self._default_max_tokens
-        temp = temperature if temperature is not None else DEFAULT_TEMPERATURE
-
-        kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": api_messages,
-            "max_tokens": max_tokens,
-            "temperature": temp,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        if tools:
-            kwargs["tools"] = tools
+        kwargs = self._build_stream_kwargs(
+            api_messages, max_tokens, temperature, tools,
+        )
 
         stream = await self._client.chat.completions.create(**kwargs)
 
@@ -162,7 +215,6 @@ class OpenAIProvider(Provider):
         usage_data: dict[str, int] = {}
 
         async for chunk in stream:
-            # Usage-only chunk (stream_options.include_usage)
             if chunk.usage:
                 usage_data = {
                     "prompt_tokens": chunk.usage.prompt_tokens,
@@ -175,51 +227,20 @@ class OpenAIProvider(Provider):
             choice = chunk.choices[0]
             delta = choice.delta
 
-            # Text delta
             if delta and delta.content:
                 yield ProviderResponse(text=delta.content)
 
-            # Tool call deltas (accumulated across chunks)
             if delta and delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in collected_tool_calls:
-                        collected_tool_calls[idx] = {
-                            "id": tc_delta.id or "",
-                            "name": (
-                                tc_delta.function.name
-                                if tc_delta.function and tc_delta.function.name
-                                else ""
-                            ),
-                            "args": "",
-                        }
-                    else:
-                        # Update id/name if provided in a later chunk
-                        if tc_delta.id:
-                            collected_tool_calls[idx]["id"] = tc_delta.id
-                        if tc_delta.function and tc_delta.function.name:
-                            collected_tool_calls[idx]["name"] = tc_delta.function.name
-                    if tc_delta.function and tc_delta.function.arguments:
-                        collected_tool_calls[idx]["args"] += tc_delta.function.arguments
+                self._accumulate_tool_call_deltas(
+                    collected_tool_calls, delta.tool_calls
+                )
 
-            # Final chunk with finish_reason
             if choice.finish_reason:
-                final_tool_calls: list[ToolCall] = []
-                for tc_data in collected_tool_calls.values():
-                    try:
-                        arguments = json.loads(tc_data["args"] or "{}")
-                    except (json.JSONDecodeError, TypeError):
-                        arguments = {}
-                    final_tool_calls.append(
-                        ToolCall(
-                            id=tc_data["id"],
-                            name=tc_data["name"],
-                            arguments=arguments,
-                        )
-                    )
                 yield ProviderResponse(
                     text="",
-                    tool_calls=final_tool_calls,
+                    tool_calls=self._build_tool_calls_from_collected(
+                        collected_tool_calls
+                    ),
                     stop_reason=choice.finish_reason,
                     usage=usage_data,
                 )

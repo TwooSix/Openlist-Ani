@@ -104,7 +104,7 @@ class TestPerMessageBudget:
                 content="z" * 100,
             ),
         ]
-        # Aggregate = 8100, budget = 5000
+        # Total aggregate is 8100 chars, budget is 5000
         truncated = _apply_per_message_budget(
             results, per_result_max=10_000, aggregate_max=5000
         )
@@ -181,7 +181,7 @@ class TestAutocompactThreshold:
     def test_small_context_window(self):
         """Should work with small context windows."""
         threshold = get_autocompact_threshold(200_000)
-        # 200_000 - 80_000 - 52_000 = 68_000
+        # Expect: 200K context minus 80K reserved output minus 52K buffer equals 68K
         assert threshold == 68_000
 
 

@@ -7,12 +7,12 @@ to the user during processing.
 
 from __future__ import annotations
 
-from typing import Callable, Awaitable
+from typing import Callable
 
 from openlist_ani.assistant.tool.base import BaseTool
 
-# Callback type: async function that receives a message string
-MessageCallback = Callable[[str], Awaitable[None]]
+# Callback type: function that receives a message string
+MessageCallback = Callable[[str], None]
 
 
 class SendMessageTool(BaseTool):
@@ -53,5 +53,5 @@ class SendMessageTool(BaseTool):
         if not message:
             return "Error: message is required."
 
-        await self._callback(message)
+        self._callback(message)
         return "Message sent."

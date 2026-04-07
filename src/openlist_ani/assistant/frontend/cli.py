@@ -15,8 +15,9 @@ Key visual patterns:
 from __future__ import annotations
 
 from loguru import logger
-import random
+import secrets
 import time
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from prompt_toolkit import PromptSession
@@ -54,13 +55,15 @@ _SPINNER_VERBS = [
 ]
 
 # Built-in slash commands with descriptions
+_CMD_EXIT = "/exit"
+_CMD_QUIT = "/quit"
 _BUILTIN_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show available commands"),
     ("/clear", "Clear session history"),
     ("/reset", "Reset all memory"),
     ("/compact", "Compact conversation context"),
-    ("/quit", "Exit the assistant"),
-    ("/exit", "Exit the assistant"),
+    (_CMD_QUIT, "Exit the assistant"),
+    (_CMD_EXIT, "Exit the assistant"),
 ]
 
 # prompt_toolkit style — minimal completion menu
@@ -114,6 +117,14 @@ class SlashCommandCompleter(Completer):
                 )
 
 
+@dataclass
+class _StreamState:
+    """Mutable state passed between event handlers during streaming."""
+
+    live: Live | None = None
+    spinner: Live | None = None
+
+
 class CLIFrontend(Frontend):
     """Interactive CLI frontend with rich terminal UI."""
 
@@ -136,6 +147,14 @@ class CLIFrontend(Frontend):
             complete_while_typing=True,
             style=_PT_STYLE,
         )
+        self._event_handlers = {
+            EventType.THINKING: self._on_thinking,
+            EventType.TOOL_START: self._on_tool_start,
+            EventType.TOOL_END: self._on_tool_end,
+            EventType.TEXT_DELTA: self._on_text_delta,
+            EventType.TEXT_DONE: self._on_text_done,
+            EventType.ERROR: self._on_error,
+        }
 
     async def run(self) -> None:
         """Start the interactive CLI session."""
@@ -186,111 +205,134 @@ class CLIFrontend(Frontend):
         # so re-printing would cause duplication.
 
         full_text: list[str] = []
-        live: Live | None = None
-        spinner: Live | None = None
-        streamed = False
+
+        # Typed mutable state shared with event handlers
+        state = _StreamState()
 
         try:
             async for event in self._loop.process(user_input):
-                if event.type == EventType.THINKING:
-                    # ✻ + random verb + "..."
-                    if spinner is None:
-                        verb = random.choice(_SPINNER_VERBS)
-                        spinner = Live(
-                            RichSpinner(
-                                "dots",
-                                text=Text.assemble(
-                                    (f" {verb}...", "dim italic"),
-                                ),
-                                style="cyan",
-                            ),
-                            console=self._console,
-                            refresh_per_second=10,
-                            transient=True,
-                        )
-                        spinner.start()
-
-                elif event.type == EventType.TOOL_START:
-                    if spinner is not None:
-                        spinner.stop()
-                        spinner = None
+                if event.type == EventType.TOOL_START:
                     tool_call_count += 1
-                    args_str = self._format_tool_args(event.tool_args)
-                    # ToolUseLoader: dim ● when in-progress
-                    line = Text()
-                    line.append(f"{_BLACK_CIRCLE} ", style="dim")
-                    line.append(event.tool_name, style="bold")
-                    if args_str:
-                        line.append(f"({args_str})", style="dim")
-                    self._console.print(line)
 
-                elif event.type == EventType.TOOL_END:
-                    # Tool result: ⎿ prefix (MessageResponse)
-                    preview = (
-                        event.tool_result_preview.replace("\n", " ")[:80]
-                    )
-                    if preview:
-                        self._console.print(
-                            Text.assemble(
-                                (f"  {_RESPONSE_PREFIX}  ", "dim"),
-                                (preview, "dim"),
-                            )
-                        )
-
-                elif event.type == EventType.TEXT_DELTA:
-                    if spinner is not None:
-                        spinner.stop()
-                        spinner = None
-                    streamed = True
-                    full_text.append(event.text)
-                    if live is None:
-                        # transient=True: vanishes when stopped, replaced
-                        # by final markdown render from TEXT_DONE.
-                        live = Live(
-                            self._render_streaming("".join(full_text)),
-                            console=self._console,
-                            refresh_per_second=15,
-                            vertical_overflow="visible",
-                            transient=True,
-                        )
-                        live.start()
-                    else:
-                        live.update(
-                            self._render_streaming("".join(full_text))
-                        )
-
-                elif event.type == EventType.TEXT_DONE:
-                    if spinner is not None:
-                        spinner.stop()
-                        spinner = None
-                    if live is not None:
-                        live.stop()
-                        live = None
-                    # Render final markdown (replaces transient stream)
-                    if event.text:
-                        self._render_final_text(event.text)
-                    streamed = False
-                    full_text.clear()
-
-                elif event.type == EventType.ERROR:
-                    if spinner is not None:
-                        spinner.stop()
-                        spinner = None
-                    self._console.print(
-                        Text.assemble(
-                            (f"{_BLACK_CIRCLE} ", "red"),
-                            (event.text, "red"),
-                        )
-                    )
+                self._dispatch_event(event, state, full_text)
 
         finally:
-            if live is not None:
-                live.stop()
-            if spinner is not None:
-                spinner.stop()
+            if state.live is not None:
+                state.live.stop()
+            if state.spinner is not None:
+                state.spinner.stop()
 
         elapsed = time.monotonic() - start_time
         self._show_footer(elapsed, tool_call_count, "".join(full_text))
+
+    # ── Event dispatch helpers (extracted to reduce cognitive complexity) ──
+
+    def _dispatch_event(
+        self,
+        event: LoopEvent,
+        state: _StreamState,
+        full_text: list[str],
+    ) -> None:
+        """Route a single loop event to its handler."""
+        handler = self._event_handlers.get(event.type)
+        if handler is not None:
+            handler(event, state, full_text)
+
+    def _stop_spinner(self, state: _StreamState) -> None:
+        """Stop the spinner if active."""
+        if state.spinner is not None:
+            state.spinner.stop()
+            state.spinner = None
+
+    def _on_thinking(
+        self, event: LoopEvent, state: _StreamState, full_text: list[str]
+    ) -> None:
+        """Handle THINKING event — show ✻ + random verb spinner."""
+        if state.spinner is not None:
+            return
+        verb = secrets.choice(_SPINNER_VERBS)
+        spinner = Live(
+            RichSpinner(
+                "dots",
+                text=Text.assemble(
+                    (f" {verb}...", "dim italic"),
+                ),
+                style="cyan",
+            ),
+            console=self._console,
+            refresh_per_second=10,
+            transient=True,
+        )
+        spinner.start()
+        state.spinner = spinner
+
+    def _on_tool_start(
+        self, event: LoopEvent, state: _StreamState, full_text: list[str]
+    ) -> None:
+        """Handle TOOL_START event — dim ● with tool name and args."""
+        self._stop_spinner(state)
+        args_str = self._format_tool_args(event.tool_args)
+        line = Text()
+        line.append(f"{_BLACK_CIRCLE} ", style="dim")
+        line.append(event.tool_name, style="bold")
+        if args_str:
+            line.append(f"({args_str})", style="dim")
+        self._console.print(line)
+
+    def _on_tool_end(
+        self, event: LoopEvent, state: _StreamState, full_text: list[str]
+    ) -> None:
+        """Handle TOOL_END event — ⎿ prefix with preview."""
+        preview = event.tool_result_preview.replace("\n", " ")[:80]
+        if preview:
+            self._console.print(
+                Text.assemble(
+                    (f"  {_RESPONSE_PREFIX}  ", "dim"),
+                    (preview, "dim"),
+                )
+            )
+
+    def _on_text_delta(
+        self, event: LoopEvent, state: _StreamState, full_text: list[str]
+    ) -> None:
+        """Handle TEXT_DELTA event — streaming text display."""
+        self._stop_spinner(state)
+        full_text.append(event.text)
+        if state.live is None:
+            state.live = Live(
+                self._render_streaming("".join(full_text)),
+                console=self._console,
+                refresh_per_second=15,
+                vertical_overflow="visible",
+                transient=True,
+            )
+            state.live.start()
+        else:
+            state.live.update(self._render_streaming("".join(full_text)))
+
+    def _on_text_done(
+        self, event: LoopEvent, state: _StreamState, full_text: list[str]
+    ) -> None:
+        """Handle TEXT_DONE event — render final markdown."""
+        self._stop_spinner(state)
+        if state.live is not None:
+            state.live.stop()
+            state.live = None
+        if event.text:
+            self._render_final_text(event.text)
+        full_text.clear()
+
+    def _on_error(
+        self, event: LoopEvent, state: _StreamState, full_text: list[str]
+    ) -> None:
+        """Handle ERROR event — red ● with error text."""
+        self._stop_spinner(state)
+        self._console.print(
+            Text.assemble(
+                (f"{_BLACK_CIRCLE} ", "red"),
+                (event.text, "red"),
+            )
+        )
 
     def _render_streaming(self, text: str) -> Text:
         """Render streaming text: ● + text."""
@@ -354,7 +396,7 @@ class CLIFrontend(Frontend):
                 skills_str = ", ".join(skill_names)
                 self._console.print(f"    [dim]skills: {skills_str}[/dim]")
         self._console.print(
-            f"    [dim]/help for commands · Ctrl+D to exit[/dim]"
+            "    [dim]/help for commands · Ctrl+D to exit[/dim]"
         )
         self._console.print()
 
@@ -418,7 +460,7 @@ class CLIFrontend(Frontend):
         """Handle slash commands. Returns True to continue, False to exit."""
         cmd = command.strip().lower()
 
-        if cmd in ("/quit", "/exit"):
+        if cmd in (_CMD_QUIT, _CMD_EXIT):
             self._show_goodbye()
             return False
 
@@ -483,7 +525,7 @@ class CLIFrontend(Frontend):
                 )
             )
             self._console.print(
-                f"  [dim]     Type /help to see available commands.[/dim]"
+                "  [dim]     Type /help to see available commands.[/dim]"
             )
 
         return True
@@ -492,7 +534,7 @@ class CLIFrontend(Frontend):
         """Display help as clean inline text — no Table, no borders."""
         self._console.print()
         for cmd, desc in _BUILTIN_COMMANDS:
-            if cmd == "/exit":
+            if cmd == _CMD_EXIT:
                 continue
             self._console.print(
                 f"  [cyan]{cmd:<12}[/cyan] [dim]{desc}[/dim]"
@@ -511,5 +553,5 @@ class CLIFrontend(Frontend):
                     )
 
         self._console.print()
-        self._console.print(f"  [dim]Ctrl+C  Cancel · Ctrl+D  Exit[/dim]")
+        self._console.print("  [dim]Ctrl+C  Cancel · Ctrl+D  Exit[/dim]")
         self._console.print()

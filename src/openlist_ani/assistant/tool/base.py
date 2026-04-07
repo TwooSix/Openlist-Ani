@@ -16,10 +16,6 @@ Defines the tool interface:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 
 class BaseTool(ABC):
@@ -145,7 +141,7 @@ class BaseTool(ABC):
         """
         return None
 
-    async def prompt(
+    def prompt(
         self,
         tools: list[BaseTool] | None = None,
     ) -> str:

@@ -97,6 +97,36 @@ def _resolve_include_path(raw_path: str, base_dir: Path) -> Path | None:
     return resolved.resolve()
 
 
+def _clean_line_for_includes(stripped: str) -> str:
+    """Strip inline code spans from a line for @include matching."""
+    if "`" in stripped:
+        return re.sub(r"`[^`]+`", "", stripped)
+    return stripped
+
+
+# Regex for @path — matches at start of line or after whitespace
+_INCLUDE_RE = re.compile(r"(?:^|\s)@((?:[^\s\\]|\\ )+)", re.MULTILINE)
+_PATH_START_RE = re.compile(r"^[a-zA-Z0-9._~/-]")
+
+
+def _resolve_matches_from_line(
+    cleaned: str, base_dir: Path,
+) -> list[Path]:
+    """Extract and resolve all @include paths from a single cleaned line."""
+    paths: list[Path] = []
+    for match in _INCLUDE_RE.finditer(cleaned):
+        raw = match.group(1)
+        if not raw:
+            continue
+        raw = raw.replace("\\ ", " ")
+        if not _PATH_START_RE.match(raw):
+            continue
+        resolved = _resolve_include_path(raw, base_dir)
+        if resolved:
+            paths.append(resolved)
+    return paths
+
+
 def _extract_include_paths(text: str, base_dir: Path) -> list[Path]:
     """Extract @include paths from text content.
 
@@ -110,12 +140,7 @@ def _extract_include_paths(text: str, base_dir: Path) -> list[Path]:
     Returns:
         List of resolved absolute paths.
     """
-    # Simple regex for @path — matches at start of line or after whitespace
-    # Skips @path references inside backtick code spans
-    include_re = re.compile(r"(?:^|\s)@((?:[^\s\\]|\\ )+)", re.MULTILINE)
-
     paths: list[Path] = []
-    # Track code blocks to skip includes inside them
     in_code_block = False
 
     for line in text.split("\n"):
@@ -125,25 +150,8 @@ def _extract_include_paths(text: str, base_dir: Path) -> list[Path]:
             continue
         if in_code_block:
             continue
-        # Skip inline code spans (simple heuristic)
-        if "`" in stripped:
-            # Remove inline code spans before matching
-            cleaned = re.sub(r"`[^`]+`", "", stripped)
-        else:
-            cleaned = stripped
-
-        for match in include_re.finditer(cleaned):
-            raw = match.group(1)
-            if not raw:
-                continue
-            # Unescape spaces
-            raw = raw.replace("\\ ", " ")
-            # Validate: must look like a path
-            if not re.match(r"^[a-zA-Z0-9._~/-]", raw):
-                continue
-            resolved = _resolve_include_path(raw, base_dir)
-            if resolved:
-                paths.append(resolved)
+        cleaned = _clean_line_for_includes(stripped)
+        paths.extend(_resolve_matches_from_line(cleaned, base_dir))
 
     return paths
 
@@ -421,24 +429,24 @@ class SkillCatalog:
         if skill.actions:
             lines.append("Actions:")
             for action in skill.actions:
-                desc_part = f" — {action.description}" if action.description else ""
-                lines.append(f"  - **{action.name}**{desc_part}")
-                if action.params:
-                    for p in action.params:
-                        req = (
-                            " (required)"
-                            if p.default == "_REQUIRED_"
-                            else f" (default: {p.default})"
-                        )
-                        lines.append(
-                            f"    - `{p.name}`: "
-                            f"{p.description or p.type_hint}{req}"
-                        )
+                self._format_action_lines(action, lines)
         else:
             lines.append("Actions: default")
         lines.append("")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_action_lines(action: SkillAction, lines: list[str]) -> None:
+        """Append formatted lines for a single action and its parameters."""
+        desc_part = f" — {action.description}" if action.description else ""
+        lines.append(f"  - **{action.name}**{desc_part}")
+        for p in action.params:
+            req = " (required)" if p.default == "_REQUIRED_" else f" (default: {p.default})"
+            lines.append(
+                f"    - `{p.name}`: "
+                f"{p.description or p.type_hint}{req}"
+            )
 
     async def run_action(
         self,
@@ -583,58 +591,18 @@ class SkillCatalog:
         action = SkillAction(name=action_name, script_path=script_path)
 
         try:
-            spec = importlib.util.spec_from_file_location(
-                f"_skill_introspect_{action_name}",
-                script_path,
-            )
-            if spec is None or spec.loader is None:
-                return action
-
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-
-            run_fn = getattr(module, "run", None)
+            run_fn = _load_run_function(script_path, action_name)
             if run_fn is None:
                 return action
 
             # Extract first line of docstring as action description
             doc = inspect.getdoc(run_fn) or ""
             if doc:
-                first_line = doc.split("\n")[0].strip()
-                action.description = first_line
+                action.description = doc.split("\n")[0].strip()
 
-            # Parse Args section from docstring for descriptions
+            # Extract parameters from signature + docstring
             param_docs = _parse_docstring_args(doc)
-
-            # Extract parameters from function signature
-            sig = inspect.signature(run_fn)
-            for param_name, param in sig.parameters.items():
-                if param_name == "kwargs" or param_name.startswith("_"):
-                    continue
-
-                # Determine type hint
-                type_hint = "str"
-                if param.annotation != inspect.Parameter.empty:
-                    ann = param.annotation
-                    type_hint = ann.__name__ if hasattr(ann, "__name__") else str(ann)
-
-                # Determine default
-                if param.default == inspect.Parameter.empty:
-                    default_str = "_REQUIRED_"
-                else:
-                    default_str = repr(param.default)
-
-                # Get description from docstring
-                desc = param_docs.get(param_name, "")
-
-                action.params.append(
-                    ActionParam(
-                        name=param_name,
-                        type_hint=type_hint,
-                        default=default_str,
-                        description=desc,
-                    )
-                )
+            action.params = _extract_action_params(run_fn, param_docs)
 
         except Exception as e:
             logger.debug(f"Could not introspect {script_path}: {e}")
@@ -642,32 +610,75 @@ class SkillCatalog:
         return action
 
 
+def _load_run_function(script_path: Path, action_name: str):
+    """Load a module from script_path and return its ``run`` function, or None."""
+    spec = importlib.util.spec_from_file_location(
+        f"_skill_introspect_{action_name}",
+        script_path,
+    )
+    if spec is None or spec.loader is None:
+        return None
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, "run", None)
+
+
+def _extract_action_params(
+    run_fn, param_docs: dict[str, str],
+) -> list[ActionParam]:
+    """Extract ActionParam entries from a run() function's signature."""
+    params: list[ActionParam] = []
+    sig = inspect.signature(run_fn)
+    empty = inspect.Parameter.empty
+    for param_name, param in sig.parameters.items():
+        if param_name == "kwargs" or param_name.startswith("_"):
+            continue
+        ann = param.annotation
+        type_hint = "str" if ann == empty else getattr(ann, "__name__", str(ann))
+        default = "_REQUIRED_" if param.default == empty else repr(param.default)
+        params.append(
+            ActionParam(
+                name=param_name,
+                type_hint=type_hint,
+                default=default,
+                description=param_docs.get(param_name, ""),
+            )
+        )
+    return params
+
+
+def _is_docstring_section_end(stripped: str) -> bool:
+    """Check if a stripped line marks the end of the current docstring section."""
+    if not stripped:
+        return False
+    if stripped.startswith("-") and stripped.endswith(":"):
+        return True
+    return ":" not in stripped and stripped.endswith(":")
+
+
 def _parse_docstring_args(docstring: str) -> dict[str, str]:
     """Parse the Args section of a Google-style docstring.
 
     Returns a dict of {param_name: description}.
     """
-    result: dict[str, str] = {}
     if not docstring:
-        return result
+        return {}
 
+    result: dict[str, str] = {}
     in_args = False
     for line in docstring.split("\n"):
         stripped = line.strip()
         if stripped.lower().startswith("args:"):
             in_args = True
             continue
-        if in_args:
-            if stripped and not stripped.startswith("-") and ":" not in stripped:
-                # New section header (e.g., "Returns:", "Raises:")
-                if stripped.endswith(":"):
-                    break
-            if ":" in stripped:
-                # e.g. "keyword: Search keyword (required)."
-                parts = stripped.lstrip("- ").split(":", 1)
-                if len(parts) == 2:
-                    param_name = parts[0].strip()
-                    desc = parts[1].strip().rstrip(".")
-                    result[param_name] = desc
+        if not in_args:
+            continue
+        if _is_docstring_section_end(stripped):
+            break
+        # Parse "name: description" line
+        parts = stripped.lstrip("- ").split(":", 1)
+        if len(parts) == 2:
+            result[parts[0].strip()] = parts[1].strip().rstrip(".")
 
     return result

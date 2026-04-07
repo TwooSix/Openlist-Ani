@@ -149,7 +149,7 @@ class ContextBuilder:
         tool_prompts: list[str] = []
         for tool in self._tools:
             if tool.is_enabled():
-                prompt_text = await tool.prompt(tools=self._tools)
+                prompt_text = tool.prompt(tools=self._tools)
                 if prompt_text.strip():
                     tool_prompts.append(prompt_text.strip())
         if tool_prompts:

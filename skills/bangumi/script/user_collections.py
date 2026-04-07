@@ -12,6 +12,46 @@ _COLLECTION_TYPES = {
 }
 
 
+def _display_name(name_cn: str | None, name: str | None) -> str:
+    """Build a display name, preferring 'cn (en)' when both exist."""
+    if name_cn and name:
+        return f"{name_cn} ({name})"
+    return name_cn or name or ""
+
+
+def _format_entry(entry) -> str:
+    """Format a single collection entry as a display line."""
+    subject = entry.subject
+    name = _display_name(subject.name_cn, subject.name)
+    detail = f"[ID:{subject.id}] {name}"
+    if entry.rate:
+        detail += f"  rated:{entry.rate}/10"
+    if entry.ep_status:
+        detail += f"  ep:{entry.ep_status}"
+    return f"  - {detail}"
+
+
+def _group_entries(entries) -> dict[int, list]:
+    """Group collection entries by their collection type."""
+    grouped: dict[int, list] = {}
+    for entry in entries:
+        grouped.setdefault(entry.collection_type, []).append(entry)
+    return grouped
+
+
+def _format_groups(entries) -> str:
+    """Format grouped collection entries into display text."""
+    grouped = _group_entries(entries)
+    lines = [f"Total: {len(entries)} entries\n"]
+    for ct_val in sorted(grouped):
+        group = grouped[ct_val]
+        ct_name = _COLLECTION_TYPES.get(ct_val, f"type_{ct_val}")
+        lines.append(f"## {ct_name} ({len(group)})")
+        lines.extend(_format_entry(entry) for entry in group)
+        lines.append("")
+    return "\n".join(lines)
+
+
 async def run(
     collection_type: str = "",
     subject_type: str = "2",
@@ -45,29 +85,4 @@ async def run(
         filter_name = _COLLECTION_TYPES.get(ct, "all") if ct else "all"
         return f"No collection entries found (filter: {filter_name})."
 
-    # Group by collection type
-    grouped: dict[int, list] = {}
-    for entry in entries:
-        ct_val = entry.collection_type
-        grouped.setdefault(ct_val, []).append(entry)
-
-    lines = [f"Total: {len(entries)} entries\n"]
-    for ct_val in sorted(grouped.keys()):
-        group = grouped[ct_val]
-        ct_name = _COLLECTION_TYPES.get(ct_val, f"type_{ct_val}")
-        lines.append(f"## {ct_name} ({len(group)})")
-        for entry in group:
-            subject = entry.subject
-            name = subject.name_cn or subject.name
-            if subject.name_cn and subject.name:
-                name = f"{subject.name_cn} ({subject.name})"
-
-            detail = f"[ID:{subject.id}] {name}"
-            if entry.rate:
-                detail += f"  rated:{entry.rate}/10"
-            if entry.ep_status:
-                detail += f"  ep:{entry.ep_status}"
-            lines.append(f"  - {detail}")
-        lines.append("")
-
-    return "\n".join(lines)
+    return _format_groups(entries)

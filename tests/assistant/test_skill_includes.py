@@ -23,13 +23,13 @@ class TestResolveIncludePath:
         result = _resolve_include_path("./lib/helper.py", tmp_path)
         assert result == (tmp_path / "lib" / "helper.py").resolve()
 
-    def test_absolute_path(self):
-        result = _resolve_include_path("/etc/config.txt", Path("/tmp"))
+    def test_absolute_path(self, tmp_path: Path):
+        result = _resolve_include_path("/etc/config.txt", tmp_path)
         assert result == Path("/etc/config.txt").resolve()
 
-    def test_home_path(self):
+    def test_home_path(self, tmp_path: Path):
         import os
-        result = _resolve_include_path("~/test.md", Path("/tmp"))
+        result = _resolve_include_path("~/test.md", tmp_path)
         assert result is not None
         assert str(result).startswith(os.path.expanduser("~"))
 

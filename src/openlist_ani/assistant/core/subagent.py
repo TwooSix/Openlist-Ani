@@ -57,6 +57,39 @@ BUILTIN_AGENT_CONFIGS: dict[str, SubAgentConfig] = {
 }
 
 
+def _build_filtered_registry(
+    config: SubAgentConfig,
+    registry: ToolRegistry,
+) -> ToolRegistry:
+    """Build a (possibly filtered) tool registry for the sub-agent."""
+    if config.allowed_tool_names is None:
+        return registry
+
+    sub_registry = ToolRegistry()
+    for tool in registry.all_tools():
+        if tool.name in config.allowed_tool_names:
+            sub_registry.register(tool)
+    return sub_registry
+
+
+def _build_subagent_messages(
+    config: SubAgentConfig,
+    prompt: str,
+    parent_context: list[Message] | None,
+) -> list[Message]:
+    """Build the initial message list for a sub-agent."""
+    messages: list[Message] = [
+        Message(role=Role.SYSTEM, content=config.system_prompt),
+    ]
+
+    if parent_context:
+        # Inherit parent context (excluding system messages to avoid duplication)
+        messages.extend(msg for msg in parent_context if msg.role != Role.SYSTEM)
+
+    messages.append(Message(role=Role.USER, content=prompt))
+    return messages
+
+
 async def run_subagent(
     config: SubAgentConfig,
     prompt: str,
@@ -83,26 +116,8 @@ async def run_subagent(
     Returns:
         Final text output from the sub-agent.
     """
-    # Build sub-agent's tool registry (possibly filtered)
-    if config.allowed_tool_names is not None:
-        sub_registry = ToolRegistry()
-        for tool in registry.all_tools():
-            if tool.name in config.allowed_tool_names:
-                sub_registry.register(tool)
-    else:
-        sub_registry = registry
-
-    # Build sub-agent message list
-    messages: list[Message] = []
-    messages.append(Message(role=Role.SYSTEM, content=config.system_prompt))
-
-    if parent_context:
-        # Inherit parent context (excluding system messages to avoid duplication)
-        for msg in parent_context:
-            if msg.role != Role.SYSTEM:
-                messages.append(msg)
-
-    messages.append(Message(role=Role.USER, content=prompt))
+    sub_registry = _build_filtered_registry(config, registry)
+    messages = _build_subagent_messages(config, prompt, parent_context)
 
     # Sub-agent's own orchestrator
     orchestrator = ToolOrchestrator(sub_registry)

@@ -64,7 +64,7 @@ class SkillTool(BaseTool):
         _READ_ONLY_ACTIONS = {"search", "calendar", "query", "subgroups", "episodes", "default"}
         return action in _READ_ONLY_ACTIONS
 
-    async def prompt(
+    def prompt(
         self,
         tools: list[BaseTool] | None = None,
     ) -> str:

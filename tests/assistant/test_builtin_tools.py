@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 from openlist_ani.assistant.core.models import ProviderResponse
 from openlist_ani.assistant.tool.builtin.send_message_tool import SendMessageTool
@@ -18,7 +18,7 @@ class TestSendMessageTool:
     async def test_sends_message(self):
         received = []
 
-        async def callback(msg: str) -> None:
+        def callback(msg: str) -> None:
             received.append(msg)
 
         tool = SendMessageTool(callback)
@@ -29,16 +29,16 @@ class TestSendMessageTool:
 
     @pytest.mark.asyncio
     async def test_empty_message_error(self):
-        tool = SendMessageTool(AsyncMock())
+        tool = SendMessageTool(MagicMock())
         result = await tool.execute(message="")
         assert "Error" in result
 
     def test_is_concurrency_safe(self):
-        tool = SendMessageTool(AsyncMock())
+        tool = SendMessageTool(MagicMock())
         assert tool.is_concurrency_safe() is True
 
     def test_properties(self):
-        tool = SendMessageTool(AsyncMock())
+        tool = SendMessageTool(MagicMock())
         assert tool.name == "send_message"
         assert "message" in tool.parameters["properties"]
 

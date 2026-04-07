@@ -10,7 +10,7 @@ Tool orchestrator — parallel/serial dispatch engine.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from openlist_ani.assistant._constants import (
@@ -26,8 +26,7 @@ from loguru import logger
 
 # Type alias for progress callbacks.
 # Called with (tool_name, activity_description_or_None) before each tool execution.
-# Async to allow the callback to put events into a queue.
-ProgressCallback = Callable[[str, str | None], Awaitable[None]]
+ProgressCallback = Callable[[str, str | None], None]
 
 
 @dataclass
@@ -158,7 +157,7 @@ class ToolOrchestrator:
         """
         self._on_progress = callback
 
-    async def _report_progress(self, tc: ToolCall) -> None:
+    def _report_progress(self, tc: ToolCall) -> None:
         """Report tool execution progress via callback.
 
         Looks up the tool and calls get_activity_description(input).
@@ -170,7 +169,7 @@ class ToolOrchestrator:
         if tool:
             activity = tool.get_activity_description(tc.arguments)
         try:
-            await self._on_progress(tc.name, activity)
+            self._on_progress(tc.name, activity)
         except Exception as e:
             logger.debug(f"Progress callback error: {e}")
 
@@ -210,7 +209,7 @@ class ToolOrchestrator:
 
         async def _run_with_limit(tc: ToolCall) -> ToolResult:
             async with semaphore:
-                await self._report_progress(tc)
+                self._report_progress(tc)
                 return await self._registry.dispatch(tc)
 
         results = await asyncio.gather(
@@ -224,6 +223,6 @@ class ToolOrchestrator:
         """Run write tools serially."""
         results: list[ToolResult] = []
         for tc in tool_calls:
-            await self._report_progress(tc)
+            self._report_progress(tc)
             results.append(await self._registry.dispatch(tc))
         return results

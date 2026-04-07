@@ -1,7 +1,5 @@
 """Tests for context collapse (stub framework)."""
 
-import pytest
-
 from openlist_ani.assistant.core.context_collapse import (
     ContextCollapse,
     ContextCollapseStats,
@@ -46,15 +44,14 @@ class TestContextCollapse:
         cc.reset()
         assert cc.stats.collapsed_spans == 0
 
-    @pytest.mark.asyncio
-    async def test_apply_collapses_returns_none_when_disabled(self):
+    def test_apply_collapses_returns_none_when_disabled(self):
         """apply_collapses_if_needed should return None when disabled."""
         cc = ContextCollapse()
         messages = [
             Message(role=Role.SYSTEM, content="System"),
             Message(role=Role.USER, content="Hello"),
         ]
-        result = await cc.apply_collapses_if_needed(messages)
+        result = cc.apply_collapses_if_needed(messages)
         assert result is None
 
     def test_is_withheld_prompt_too_long_returns_false(self):
@@ -75,7 +72,7 @@ class TestContextCollapse:
         cc = ContextCollapse()
 
         def callback() -> None:
-            pass
+            """No-op callback for testing subscribe/unsubscribe."""
 
         unsub = cc.subscribe(callback)
         assert callable(unsub)

@@ -88,7 +88,7 @@ async def run() -> None:
 
         intermediate_messages: list[str] = []
 
-        async def send_message_callback(message: str) -> None:
+        def send_message_callback(message: str) -> None:
             intermediate_messages.append(message)
 
         registry.register(SendMessageTool(send_message_callback))

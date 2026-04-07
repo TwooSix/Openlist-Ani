@@ -128,6 +128,53 @@ class AnthropicProvider(Provider):
             },
         )
 
+    @staticmethod
+    def _handle_block_start(
+        event: Any,
+        current_block_idx: int,
+        current_tool_blocks: dict[int, dict[str, str]],
+    ) -> int:
+        """Handle a content_block_start event. Returns updated block index."""
+        current_block_idx += 1
+        block = event.content_block
+        if block.type == "tool_use":
+            current_tool_blocks[current_block_idx] = {
+                "id": block.id,
+                "name": block.name,
+                "input_json": "",
+            }
+        return current_block_idx
+
+    @staticmethod
+    def _handle_block_delta(
+        event: Any,
+        current_block_idx: int,
+        current_tool_blocks: dict[int, dict[str, str]],
+    ) -> ProviderResponse | None:
+        """Handle a content_block_delta event. Returns a text response or None."""
+        delta = event.delta
+        if delta.type == "text_delta":
+            return ProviderResponse(text=delta.text)
+        if delta.type == "input_json_delta" and current_block_idx in current_tool_blocks:
+            current_tool_blocks[current_block_idx]["input_json"] += delta.partial_json
+        return None
+
+    @staticmethod
+    def _extract_tool_calls_from_message(final: Any) -> list[ToolCall]:
+        """Extract ToolCall list from a final Anthropic message."""
+        tool_calls: list[ToolCall] = []
+        for block in final.content:
+            if block.type != "tool_use":
+                continue
+            tool_calls.append(
+                ToolCall(
+                    id=block.id,
+                    name=block.name,
+                    arguments=block.input if isinstance(block.input, dict) else {},
+                )
+            )
+        return tool_calls
+
     async def chat_completion_stream(
         self,
         messages: list[Message],
@@ -157,51 +204,26 @@ class AnthropicProvider(Provider):
             kwargs["tools"] = tools
 
         async with self._client.messages.stream(**kwargs) as stream:
-            # Track tool_use blocks being built across events
             current_tool_blocks: dict[int, dict[str, str]] = {}
             current_block_idx = -1
 
             async for event in stream:
                 if event.type == "content_block_start":
-                    current_block_idx += 1
-                    block = event.content_block
-                    if block.type == "tool_use":
-                        current_tool_blocks[current_block_idx] = {
-                            "id": block.id,
-                            "name": block.name,
-                            "input_json": "",
-                        }
-
-                elif event.type == "content_block_delta":
-                    if event.delta.type == "text_delta":
-                        yield ProviderResponse(text=event.delta.text)
-                    elif event.delta.type == "input_json_delta":
-                        if current_block_idx in current_tool_blocks:
-                            current_tool_blocks[current_block_idx][
-                                "input_json"
-                            ] += event.delta.partial_json
-
-            # Get final message for usage + stop_reason + complete tool calls
-            final = await stream.get_final_message()
-
-            final_tool_calls: list[ToolCall] = []
-            for block in final.content:
-                if block.type == "tool_use":
-                    final_tool_calls.append(
-                        ToolCall(
-                            id=block.id,
-                            name=block.name,
-                            arguments=(
-                                block.input
-                                if isinstance(block.input, dict)
-                                else {}
-                            ),
-                        )
+                    current_block_idx = self._handle_block_start(
+                        event, current_block_idx, current_tool_blocks
                     )
+                elif event.type == "content_block_delta":
+                    response = self._handle_block_delta(
+                        event, current_block_idx, current_tool_blocks
+                    )
+                    if response is not None:
+                        yield response
+
+            final = await stream.get_final_message()
 
             yield ProviderResponse(
                 text="",
-                tool_calls=final_tool_calls,
+                tool_calls=self._extract_tool_calls_from_message(final),
                 stop_reason=final.stop_reason or "",
                 usage={
                     "prompt_tokens": final.usage.input_tokens,
@@ -219,6 +241,41 @@ class AnthropicProvider(Provider):
             for tool in tools
         ]
 
+    @staticmethod
+    def _convert_assistant_message(msg: Message) -> dict | None:
+        """Convert an assistant Message to an Anthropic API message dict."""
+        content_blocks: list[dict[str, Any]] = []
+        if msg.content:
+            content_blocks.append({"type": "text", "text": msg.content})
+        for tc in msg.tool_calls:
+            content_blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": tc.id,
+                    "name": tc.name,
+                    "input": tc.arguments,
+                }
+            )
+        if content_blocks:
+            return {"role": "assistant", "content": content_blocks}
+        return None
+
+    @staticmethod
+    def _convert_tool_message(msg: Message) -> dict | None:
+        """Convert a tool Message to an Anthropic API message dict."""
+        result_blocks: list[dict[str, Any]] = [
+            {
+                "type": "tool_result",
+                "tool_use_id": result.tool_call_id,
+                "content": result.content,
+                "is_error": result.is_error,
+            }
+            for result in msg.tool_results
+        ]
+        if result_blocks:
+            return {"role": "user", "content": result_blocks}
+        return None
+
     def _convert_messages(
         self, messages: list[Message]
     ) -> tuple[str, list[dict]]:
@@ -233,41 +290,15 @@ class AnthropicProvider(Provider):
         for msg in messages:
             if msg.role == Role.SYSTEM:
                 system_parts.append(msg.content)
-
             elif msg.role == Role.USER:
                 api_messages.append({"role": "user", "content": msg.content})
-
             elif msg.role == Role.ASSISTANT:
-                content_blocks: list[dict[str, Any]] = []
-                if msg.content:
-                    content_blocks.append({"type": "text", "text": msg.content})
-                for tc in msg.tool_calls:
-                    content_blocks.append(
-                        {
-                            "type": "tool_use",
-                            "id": tc.id,
-                            "name": tc.name,
-                            "input": tc.arguments,
-                        }
-                    )
-                if content_blocks:
-                    api_messages.append(
-                        {"role": "assistant", "content": content_blocks}
-                    )
-
+                entry = self._convert_assistant_message(msg)
+                if entry is not None:
+                    api_messages.append(entry)
             elif msg.role == Role.TOOL:
-                # Anthropic expects tool_result blocks inside a user message
-                result_blocks: list[dict[str, Any]] = []
-                for result in msg.tool_results:
-                    result_blocks.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": result.tool_call_id,
-                            "content": result.content,
-                            "is_error": result.is_error,
-                        }
-                    )
-                if result_blocks:
-                    api_messages.append({"role": "user", "content": result_blocks})
+                entry = self._convert_tool_message(msg)
+                if entry is not None:
+                    api_messages.append(entry)
 
         return "\n\n".join(system_parts), api_messages

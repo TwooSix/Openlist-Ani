@@ -13,6 +13,8 @@ from typing import Any
 import aiohttp
 from bs4 import BeautifulSoup
 
+_DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
+
 from ...logger import logger
 
 _MIKAN_BASE_URL = "https://mikanani.me"
@@ -318,6 +320,49 @@ class MikanClient:
         return self._parse_subgroups(html)
 
     @staticmethod
+    def _parse_episode_row(row: Any) -> dict[str, str] | None:
+        """Parse a single episode table row into a dict.
+
+        Returns:
+            Dict with ``title``, ``date``, and optionally ``url``/``magnet``,
+            or None if the row has no valid title.
+        """
+        title_tag = row.select_one("a.magnet-link-wrap")
+        if not title_tag:
+            return None
+
+        ep_title = title_tag.get_text(strip=True)
+        if not ep_title:
+            return None
+
+        # Episode detail page URL
+        ep_url = title_tag.get("href", "")
+        if ep_url and not ep_url.startswith("http"):
+            ep_url = f"{_MIKAN_BASE_URL}{ep_url}"
+
+        # Magnet link from the magnet button
+        magnet = ""
+        magnet_tag = row.select_one("a.js-magnet")
+        if magnet_tag:
+            magnet = magnet_tag.get("data-clipboard-text", "")
+
+        ep_date = next(
+            (
+                td.get_text(strip=True)
+                for td in row.select("td")
+                if _DATE_RE.match(td.get_text(strip=True))
+            ),
+            "",
+        )
+
+        episode: dict[str, str] = {"title": ep_title, "date": ep_date}
+        if ep_url:
+            episode["url"] = ep_url
+        if magnet:
+            episode["magnet"] = magnet
+        return episode
+
+    @staticmethod
     def _extract_group_episodes(
         soup: BeautifulSoup,
         group_id: int,
@@ -334,8 +379,6 @@ class MikanClient:
             List of dicts with ``title``, ``date``, and optionally
             ``url`` (episode page) and ``magnet`` (magnet link) keys.
         """
-        _DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
-
         header_div = soup.find("div", id=str(group_id))
         if not header_div:
             return []
@@ -346,36 +389,8 @@ class MikanClient:
 
         episodes: list[dict[str, str]] = []
         for row in ep_table.select("tr")[:max_episodes]:
-            title_tag = row.select_one("a.magnet-link-wrap")
-            if not title_tag:
-                continue
-            ep_title = title_tag.get_text(strip=True)
-
-            # Episode detail page URL
-            ep_url = title_tag.get("href", "")
-            if ep_url and not ep_url.startswith("http"):
-                ep_url = f"{_MIKAN_BASE_URL}{ep_url}"
-
-            # Magnet link from the magnet button
-            magnet = ""
-            magnet_tag = row.select_one("a.js-magnet")
-            if magnet_tag:
-                magnet = magnet_tag.get("data-clipboard-text", "")
-
-            ep_date = next(
-                (
-                    td.get_text(strip=True)
-                    for td in row.select("td")
-                    if _DATE_RE.match(td.get_text(strip=True))
-                ),
-                "",
-            )
-            if ep_title:
-                episode: dict[str, str] = {"title": ep_title, "date": ep_date}
-                if ep_url:
-                    episode["url"] = ep_url
-                if magnet:
-                    episode["magnet"] = magnet
+            episode = MikanClient._parse_episode_row(row)
+            if episode is not None:
                 episodes.append(episode)
 
         return episodes

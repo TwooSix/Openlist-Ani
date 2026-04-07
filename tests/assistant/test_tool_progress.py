@@ -74,7 +74,7 @@ class TestToolProgressReporting:
 
         progress_calls: list[tuple[str, str | None]] = []
 
-        async def on_progress(tool_name: str, activity: str | None) -> None:
+        def on_progress(tool_name: str, activity: str | None) -> None:
             progress_calls.append((tool_name, activity))
 
         orchestrator = ToolOrchestrator(registry, on_progress=on_progress)
@@ -93,7 +93,7 @@ class TestToolProgressReporting:
 
         progress_calls: list[tuple[str, str | None]] = []
 
-        async def on_progress(tool_name: str, activity: str | None) -> None:
+        def on_progress(tool_name: str, activity: str | None) -> None:
             progress_calls.append((tool_name, activity))
 
         orchestrator = ToolOrchestrator(registry, on_progress=on_progress)
@@ -113,7 +113,7 @@ class TestToolProgressReporting:
 
         progress_calls: list[tuple[str, str | None]] = []
 
-        async def on_progress(tool_name: str, activity: str | None) -> None:
+        def on_progress(tool_name: str, activity: str | None) -> None:
             progress_calls.append((tool_name, activity))
 
         orchestrator = ToolOrchestrator(registry, on_progress=on_progress)
@@ -137,7 +137,7 @@ class TestToolProgressReporting:
 
         progress_calls: list[tuple[str, str | None]] = []
 
-        async def on_progress(tool_name: str, activity: str | None) -> None:
+        def on_progress(tool_name: str, activity: str | None) -> None:
             progress_calls.append((tool_name, activity))
 
         orchestrator = ToolOrchestrator(registry, on_progress=on_progress)
@@ -177,10 +177,10 @@ class TestToolProgressReporting:
         calls1: list[str] = []
         calls2: list[str] = []
 
-        async def cb1(name: str, _: str | None) -> None:
+        def cb1(name: str, _: str | None) -> None:
             calls1.append(name)
 
-        async def cb2(name: str, _: str | None) -> None:
+        def cb2(name: str, _: str | None) -> None:
             calls2.append(name)
 
         orchestrator = ToolOrchestrator(registry, on_progress=cb1)
@@ -201,7 +201,7 @@ class TestToolProgressReporting:
         registry = ToolRegistry()
         registry.register(ProgressTrackingTool("grep"))
 
-        async def bad_callback(name: str, activity: str | None) -> None:
+        def bad_callback(name: str, activity: str | None) -> None:
             raise RuntimeError("callback error")
 
         orchestrator = ToolOrchestrator(registry, on_progress=bad_callback)

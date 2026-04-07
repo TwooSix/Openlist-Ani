@@ -13,6 +13,7 @@ when the context grows large, before resorting to full autocompact.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -80,7 +81,7 @@ class ContextCollapse:
         self._stats.reset()
         logger.debug("Context collapse reset (stub)")
 
-    async def apply_collapses_if_needed(
+    def apply_collapses_if_needed(
         self,
         messages: list[Message],
     ) -> list[Message] | None:
@@ -123,13 +124,14 @@ class ContextCollapse:
             Modified message list if recovery succeeded,
             None if recovery is not possible.
         """
+        _ = messages  # Will be used when collapse is implemented
         if not self._enabled:
             return None
 
         # Future: implement aggressive collapse for overflow recovery
         return None
 
-    def subscribe(self, callback: object) -> object:
+    def subscribe(self, callback: object) -> Callable[[], None]:
         """Subscribe to collapse events.
 
         Returns an unsubscribe function.

@@ -3,7 +3,7 @@
 from openlist_ani.config import config
 
 
-async def run(**kwargs) -> str:
+def run(**kwargs) -> str:
     """List current RSS feed URLs and download priority configuration."""
     rss = config.rss
 

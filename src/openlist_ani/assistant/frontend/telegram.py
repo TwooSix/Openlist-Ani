@@ -272,7 +272,7 @@ class TelegramFrontend(Frontend):
         Flow:
         1. Send a temporary "⏳ Thinking..." message.
         2. As events stream in, edit the message to show tool activity.
-        3. Delete the temporary message, send the final result.
+        3. Delete the temporary status message, send the final result.
         """
         if not update.message or not update.message.text:
             return
@@ -291,85 +291,107 @@ class TelegramFrontend(Frontend):
         # Send the temporary status message
         status_msg = await update.message.reply_text("⏳ Thinking...")
 
-        # State for debounced editing
+        try:
+            final_parts = await self._stream_events(loop, user_text, status_msg)
+            await self._send_final_result(update, status_msg, final_parts)
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            await self._cleanup_status_message(status_msg)
+            await update.message.reply_text(f"Error: {e}")
+
+    async def _stream_events(
+        self,
+        loop: AgenticLoop,
+        user_text: str,
+        status_msg: TGMessage,
+    ) -> list[str]:
+        """Process all streaming events from the agentic loop.
+
+        Returns:
+            List of final text parts collected from TEXT_DONE events.
+        """
         lines: list[str] = ["⏳ Thinking..."]
         edit_state: dict = {
             "last_edit_time": 0.0,
             "pending": False,
             "pending_text": "",
         }
-
         final_parts: list[str] = []
 
+        async for event in loop.process(user_text):
+            await self._handle_stream_event(
+                event, status_msg, lines, edit_state, final_parts,
+            )
+
+        # Flush any pending edit before returning
+        await self._flush_pending_edit(status_msg, edit_state)
+        return final_parts
+
+    async def _handle_stream_event(
+        self,
+        event: object,
+        status_msg: TGMessage,
+        lines: list[str],
+        edit_state: dict,
+        final_parts: list[str],
+    ) -> None:
+        """Handle a single streaming event from the agentic loop."""
+        if event.type == EventType.THINKING:
+            return  # Thinking events are intentionally not displayed
+
+        elif event.type == EventType.TOOL_START:
+            lines[0] = "⚙️ Working..."
+            args_str = _format_tool_args(event.tool_args)
+            tool_line = f"🔧 {event.tool_name}"
+            if args_str:
+                tool_line += f"({args_str})"
+            lines.append(tool_line)
+            await self._debounced_edit(status_msg, lines, edit_state)
+
+        elif event.type == EventType.TOOL_END:
+            preview = event.tool_result_preview.replace("\n", " ")[:60]
+            if preview:
+                lines.append(f"  ↳ {preview}")
+                await self._debounced_edit(status_msg, lines, edit_state)
+
+        elif event.type == EventType.TEXT_DELTA:
+            if lines[0] != "✍️ Generating...":
+                lines[0] = "✍️ Generating..."
+                await self._debounced_edit(status_msg, lines, edit_state)
+
+        elif event.type == EventType.TEXT_DONE:
+            if event.text:
+                final_parts.append(event.text)
+
+        elif event.type == EventType.ERROR:
+            lines.append(f"❌ {event.text}")
+            await self._debounced_edit(status_msg, lines, edit_state)
+
+    async def _send_final_result(
+        self,
+        update: Update,
+        status_msg: TGMessage,
+        final_parts: list[str],
+    ) -> None:
+        """Delete the status message and send the final result."""
+        await self._cleanup_status_message(status_msg)
+
+        full_response = "\n".join(final_parts)
+        if full_response:
+            escaped = _escape_mdv2(full_response)
+            await self._send_chunked(
+                update, escaped, parse_mode=ParseMode.MARKDOWN_V2
+            )
+        else:
+            await update.message.reply_text("No response.")
+
+    @staticmethod
+    async def _cleanup_status_message(status_msg: TGMessage) -> None:
+        """Delete the temporary status message, ignoring errors."""
         try:
-            async for event in loop.process(user_text):
-                if event.type == EventType.THINKING:
-                    # Already showing "Thinking..." — nothing to do
-                    pass
-
-                elif event.type == EventType.TOOL_START:
-                    lines[0] = "⚙️ Working..."
-                    args_str = _format_tool_args(event.tool_args)
-                    tool_line = f"🔧 {event.tool_name}"
-                    if args_str:
-                        tool_line += f"({args_str})"
-                    lines.append(tool_line)
-                    await self._debounced_edit(status_msg, lines, edit_state)
-
-                elif event.type == EventType.TOOL_END:
-                    preview = (
-                        event.tool_result_preview.replace("\n", " ")[:60]
-                    )
-                    if preview:
-                        lines.append(f"  ↳ {preview}")
-                        await self._debounced_edit(
-                            status_msg, lines, edit_state
-                        )
-
-                elif event.type == EventType.TEXT_DELTA:
-                    # Show that generation is in progress
-                    if lines[0] != "✍️ Generating...":
-                        lines[0] = "✍️ Generating..."
-                        await self._debounced_edit(
-                            status_msg, lines, edit_state
-                        )
-
-                elif event.type == EventType.TEXT_DONE:
-                    if event.text:
-                        final_parts.append(event.text)
-
-                elif event.type == EventType.ERROR:
-                    lines.append(f"❌ {event.text}")
-                    await self._debounced_edit(status_msg, lines, edit_state)
-
-            # Flush any pending edit before deleting
-            await self._flush_pending_edit(status_msg, edit_state)
-
-            # Delete the temporary status message
-            try:
-                await status_msg.delete()
-            except Exception as e:
-                logger.debug(f"Failed to delete status message: {e}")
-
-            # Send the final result
-            full_response = "\n".join(final_parts)
-            if full_response:
-                # Try MarkdownV2 first, fall back to plain text
-                escaped = _escape_mdv2(full_response)
-                await self._send_chunked(
-                    update, escaped, parse_mode=ParseMode.MARKDOWN_V2
-                )
-            else:
-                await update.message.reply_text("No response.")
-
+            await status_msg.delete()
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
-            # Try to clean up the status message
-            try:
-                await status_msg.delete()
-            except Exception:
-                pass
-            await update.message.reply_text(f"Error: {e}")
+            logger.debug(f"Failed to delete status message: {e}")
 
     # ── Command handlers ──────────────────────────────────────────
 

@@ -431,53 +431,7 @@ class AutoCompactor:
         pre_chars = _estimate_chars(messages)
 
         # Build the summary request: feed conversation + compact prompt
-        summary_messages: list[Message] = [
-            Message(
-                role=Role.SYSTEM,
-                content=(
-                    "You are a helpful AI assistant tasked with "
-                    "summarizing conversations."
-                ),
-            ),
-        ]
-
-        # Include the conversation content (skip system msg for the summary
-        # request — it goes into the compact prompt context)
-        for msg in messages:
-            if msg.role == Role.SYSTEM:
-                # Include system prompt as context in user message
-                summary_messages.append(
-                    Message(
-                        role=Role.USER,
-                        content=f"[System context]\n{msg.content}",
-                    )
-                )
-            elif msg.role == Role.ASSISTANT:
-                content = msg.content
-                if msg.tool_calls:
-                    tool_summary = ", ".join(
-                        f"{tc.name}({tc.arguments})" for tc in msg.tool_calls
-                    )
-                    content = f"{content}\n[Tool calls: {tool_summary}]"
-                if content.strip():
-                    summary_messages.append(
-                        Message(role=Role.ASSISTANT, content=content)
-                    )
-            elif msg.role == Role.USER:
-                summary_messages.append(
-                    Message(role=Role.USER, content=msg.content)
-                )
-            elif msg.role == Role.TOOL:
-                # Summarize tool results compactly
-                results_summary = "\n".join(
-                    f"[{tr.name}]: {tr.content[:500]}..."
-                    if len(tr.content) > 500
-                    else f"[{tr.name}]: {tr.content}"
-                    for tr in msg.tool_results
-                )
-                summary_messages.append(
-                    Message(role=Role.USER, content=f"[Tool results]\n{results_summary}")
-                )
+        summary_messages = self._build_summary_messages(messages)
 
         # Add the compact prompt
         summary_messages.append(
@@ -492,12 +446,94 @@ class AutoCompactor:
             raise RuntimeError("Compaction produced empty summary")
 
         # Build post-compact messages
-        # Keep the original system message
-        system_msg = None
+        new_messages = self._build_post_compact_messages(
+            messages, summary_text,
+        )
+
+        post_chars = _estimate_chars(new_messages)
+        logger.info(
+            f"Autocompact complete: {pre_chars} → {post_chars} chars "
+            f"({len(messages)} → {len(new_messages)} messages)"
+        )
+
+        return new_messages
+
+    @staticmethod
+    def _convert_message_for_summary(msg: Message) -> Message | None:
+        """Convert a single conversation message for the summary request.
+
+        Returns:
+            A converted Message, or None if the message should be skipped.
+        """
+        if msg.role == Role.SYSTEM:
+            return Message(
+                role=Role.USER,
+                content=f"[System context]\n{msg.content}",
+            )
+
+        if msg.role == Role.ASSISTANT:
+            content = msg.content
+            if msg.tool_calls:
+                tool_summary = ", ".join(
+                    f"{tc.name}({tc.arguments})" for tc in msg.tool_calls
+                )
+                content = f"{content}\n[Tool calls: {tool_summary}]"
+            if content.strip():
+                return Message(role=Role.ASSISTANT, content=content)
+            return None
+
+        if msg.role == Role.USER:
+            return Message(role=Role.USER, content=msg.content)
+
+        if msg.role == Role.TOOL:
+            results_summary = "\n".join(
+                f"[{tr.name}]: {tr.content[:500]}..."
+                if len(tr.content) > 500
+                else f"[{tr.name}]: {tr.content}"
+                for tr in msg.tool_results
+            )
+            return Message(
+                role=Role.USER,
+                content=f"[Tool results]\n{results_summary}",
+            )
+
+        return None
+
+    def _build_summary_messages(
+        self,
+        messages: list[Message],
+    ) -> list[Message]:
+        """Build the message list sent to the LLM for summarization."""
+        summary_messages: list[Message] = [
+            Message(
+                role=Role.SYSTEM,
+                content=(
+                    "You are a helpful AI assistant tasked with "
+                    "summarizing conversations."
+                ),
+            ),
+        ]
+
         for msg in messages:
-            if msg.role == Role.SYSTEM:
-                system_msg = msg
-                break
+            converted = self._convert_message_for_summary(msg)
+            if converted is not None:
+                summary_messages.append(converted)
+
+        return summary_messages
+
+    def _build_post_compact_messages(
+        self,
+        messages: list[Message],
+        summary_text: str,
+    ) -> list[Message]:
+        """Build the new message list after compaction.
+
+        Includes: original system message, summary, and restored files.
+        """
+        # Keep the original system message
+        system_msg = next(
+            (msg for msg in messages if msg.role == Role.SYSTEM), None,
+        )
 
         new_messages: list[Message] = []
         if system_msg:
@@ -509,32 +545,32 @@ class AutoCompactor:
             Message(role=Role.USER, content=summary_user_content)
         )
 
-        # Post-compact file restoration:
-        # Re-inject recently-read files so the model doesn't lose
-        # context about files it was working with.
-        if self._file_tracker:
-            recent_files = self._file_tracker.get_recent_files()
-            if recent_files:
-                file_parts: list[str] = [
-                    "The following files were recently accessed and are "
-                    "restored for context continuity:"
-                ]
-                for path, content in recent_files:
-                    file_parts.append(f"\n--- {path} ---\n{content}")
-                new_messages.append(
-                    Message(role=Role.USER, content="\n".join(file_parts))
-                )
-                logger.info(
-                    f"Post-compact: restored {len(recent_files)} file(s)"
-                )
-
-        post_chars = _estimate_chars(new_messages)
-        logger.info(
-            f"Autocompact complete: {pre_chars} → {post_chars} chars "
-            f"({len(messages)} → {len(new_messages)} messages)"
-        )
+        # Post-compact file restoration
+        self._restore_recent_files(new_messages)
 
         return new_messages
+
+    def _restore_recent_files(self, messages: list[Message]) -> None:
+        """Re-inject recently-read files for context continuity."""
+        if not self._file_tracker:
+            return
+
+        recent_files = self._file_tracker.get_recent_files()
+        if not recent_files:
+            return
+
+        file_parts: list[str] = [
+            "The following files were recently accessed and are "
+            "restored for context continuity:"
+        ]
+        for path, content in recent_files:
+            file_parts.append(f"\n--- {path} ---\n{content}")
+        messages.append(
+            Message(role=Role.USER, content="\n".join(file_parts))
+        )
+        logger.info(
+            f"Post-compact: restored {len(recent_files)} file(s)"
+        )
 
 
 class SessionCompactor:
