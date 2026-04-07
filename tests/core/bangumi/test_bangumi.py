@@ -788,6 +788,73 @@ class TestBangumiClient:
         assert "filter" in body
         assert body["filter"]["nsfw"] is False
 
+    async def test_fetch_user_collections_pagination_two_pages(self, client):
+        """Should fetch two pages when total > 50 and merge results."""
+        page1_items = [
+            {
+                "subject_id": i, "subject_type": 2, "rate": 8, "type": 2,
+                "comment": "", "tags": [], "ep_status": 0, "vol_status": 0,
+                "updated_at": "2026-01-01T00:00:00+08:00", "private": False,
+                "subject": {
+                    "id": i, "type": 2, "name": f"Anime {i}", "name_cn": "",
+                    "short_summary": "", "date": "2026-01-01", "score": 7.0,
+                    "rank": 100, "collection_total": 100, "images": {},
+                    "tags": [], "eps": 12, "volumes": 0,
+                },
+            }
+            for i in range(50)
+        ]
+        page2_items = [
+            {
+                "subject_id": i, "subject_type": 2, "rate": 7, "type": 3,
+                "comment": "", "tags": [], "ep_status": 0, "vol_status": 0,
+                "updated_at": "2026-01-01T00:00:00+08:00", "private": False,
+                "subject": {
+                    "id": i, "type": 2, "name": f"Anime {i}", "name_cn": "",
+                    "short_summary": "", "date": "2026-01-01", "score": 7.0,
+                    "rank": 100, "collection_total": 100, "images": {},
+                    "tags": [], "eps": 12, "volumes": 0,
+                },
+            }
+            for i in range(50, 75)
+        ]
+
+        call_count = 0
+        responses = [
+            USER_RESPONSE,
+            {"total": 75, "limit": 50, "offset": 0, "data": page1_items},
+            {"total": 75, "limit": 50, "offset": 50, "data": page2_items},
+        ]
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            result = responses[min(call_count, len(responses) - 1)]
+            call_count += 1
+            return result
+
+        client._request = AsyncMock(side_effect=side_effect)
+        entries = await client.fetch_user_collections()
+
+        assert len(entries) == 75
+        assert call_count == 3  # /v0/me + page1 + page2
+
+    async def test_fetch_user_collections_single_page(self, client):
+        """Should make only one collections request when total <= 50."""
+        call_count = 0
+        responses = [USER_RESPONSE, COLLECTION_RESPONSE]
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            result = responses[min(call_count, len(responses) - 1)]
+            call_count += 1
+            return result
+
+        client._request = AsyncMock(side_effect=side_effect)
+        entries = await client.fetch_user_collections()
+
+        assert len(entries) == 2
+        assert call_count == 2  # /v0/me + one page only
+
 
 class TestClientErrorHandling:
     """Tests for HTTP error code handling in BangumiClient._request."""
