@@ -729,6 +729,65 @@ class TestBangumiClient:
             await client._throttle()
             mock_sleep.assert_not_called()
 
+    async def test_search_subjects_basic(self, client):
+        """search_subjects should POST to /v0/search/subjects with keyword."""
+        mock_response = {
+            "total": 1,
+            "limit": 25,
+            "offset": 0,
+            "data": [{"id": 100, "name": "Test"}],
+        }
+        client._request = AsyncMock(return_value=mock_response)
+
+        result = await client.search_subjects("test keyword")
+
+        assert result == mock_response
+        client._request.assert_called_once()
+        call_args = client._request.call_args
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1] == "/v0/search/subjects"
+        body = call_args[1]["json_body"]
+        assert body["keyword"] == "test keyword"
+        assert body["sort"] == "match"
+
+    async def test_search_subjects_with_filters(self, client):
+        """search_subjects should include filter fields in the request body."""
+        mock_response = {"total": 0, "limit": 25, "offset": 0, "data": []}
+        client._request = AsyncMock(return_value=mock_response)
+
+        await client.search_subjects(
+            "anime",
+            subject_type=[2],
+            tag=["搞笑", "校园"],
+            air_date=[">=2025-01-01"],
+            nsfw=None,
+            limit=10,
+            offset=5,
+        )
+
+        call_args = client._request.call_args
+        body = call_args[1]["json_body"]
+        assert body["keyword"] == "anime"
+        assert "filter" in body
+        f = body["filter"]
+        assert f["type"] == [2]
+        assert f["tag"] == ["搞笑", "校园"]
+        assert f["air_date"] == [">=2025-01-01"]
+        # nsfw=None means not included in filter
+        assert "nsfw" not in f
+
+    async def test_search_subjects_default_nsfw_filter(self, client):
+        """search_subjects with defaults should include nsfw=False in filter."""
+        mock_response = {"total": 0, "limit": 25, "offset": 0, "data": []}
+        client._request = AsyncMock(return_value=mock_response)
+
+        await client.search_subjects("test")
+
+        call_args = client._request.call_args
+        body = call_args[1]["json_body"]
+        assert "filter" in body
+        assert body["filter"]["nsfw"] is False
+
 
 class TestClientErrorHandling:
     """Tests for HTTP error code handling in BangumiClient._request."""
