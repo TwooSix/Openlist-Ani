@@ -273,16 +273,6 @@ class TestConfigValidation:
         mgr.save()
         assert mgr.validate() is True
 
-    def test_validate_pass(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
-        mgr._config.openlist.token = "tok"
-        mgr._config.llm.openai_api_key = "key"
-        mgr.save()
-        assert mgr.validate() is True
-
     # -- Notification dependency checks --
 
     def test_validate_notification_enabled_no_bots(self, tmp_path, monkeypatch):
