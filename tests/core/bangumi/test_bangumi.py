@@ -697,6 +697,38 @@ class TestBangumiClient:
         # Cache should be cleared
         assert len(client._cache_fetch_user_collections) == 0
 
+    async def test_throttle_sleeps_when_interval_not_elapsed(self, client):
+        """_throttle should sleep when called faster than _REQUEST_INTERVAL."""
+        import asyncio
+        from unittest.mock import patch as sync_patch
+
+        loop = asyncio.get_event_loop()
+        client._last_request_time = loop.time()
+
+        with sync_patch(
+            "openlist_ani.core.bangumi.client.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await client._throttle()
+            mock_sleep.assert_called_once()
+            sleep_duration = mock_sleep.call_args[0][0]
+            assert 0.0 < sleep_duration <= 0.5
+
+    async def test_throttle_no_sleep_when_interval_elapsed(self, client):
+        """_throttle should not sleep when enough time has passed."""
+        import asyncio
+        from unittest.mock import patch as sync_patch
+
+        loop = asyncio.get_event_loop()
+        client._last_request_time = loop.time() - 10.0
+
+        with sync_patch(
+            "openlist_ani.core.bangumi.client.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await client._throttle()
+            mock_sleep.assert_not_called()
+
 
 class TestClientErrorHandling:
     """Tests for HTTP error code handling in BangumiClient._request."""
