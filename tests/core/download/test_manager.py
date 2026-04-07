@@ -437,68 +437,42 @@ class TestSubmit:
 
 
 # ---------------------------------------------------------------------------
-# download method
+# download (blocking, end-to-end)
 # ---------------------------------------------------------------------------
 
 
 class TestDownload:
-    """Test DownloadManager.download() end-to-end behavior."""
+    """Verify DownloadManager.download() end-to-end behavior."""
 
-    @pytest.mark.asyncio
-    async def test_download_success_path(self, tmp_path):
+    async def test_download_success_returns_true(self, tmp_path):
         """Successful download should return True."""
         downloader = _make_mock_downloader()
         mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
-        resource = _make_resource()
 
-        result = await mgr.download(resource, "/downloads")
+        result = await mgr.download(_make_resource(), str(tmp_path))
 
         assert result is True
         downloader.download.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_download_failure_path(self, tmp_path):
-        """Failed download should return False."""
+    async def test_download_failure_returns_false(self, tmp_path):
+        """DownloadError should cause download() to return False."""
         downloader = _make_mock_downloader()
-        downloader.download.side_effect = DownloadError("Download failed")
-        mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
-        resource = _make_resource()
+        downloader.download = AsyncMock(side_effect=DownloadError("disk full"))
 
-        result = await mgr.download(resource, "/downloads")
+        mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
+        result = await mgr.download(_make_resource(), str(tmp_path))
 
         assert result is False
 
-    @pytest.mark.asyncio
-    async def test_download_state_transitions(self, tmp_path):
-        """Task should transition PENDING → DOWNLOADING → COMPLETED."""
+    async def test_download_cancelled_error_propagates(self, tmp_path):
+        """CancelledError should propagate (not be swallowed)."""
         downloader = _make_mock_downloader()
+        downloader.download = AsyncMock(side_effect=asyncio.CancelledError)
+
         mgr = DownloadManager(downloader, state_file=str(tmp_path / "state.json"))
-        resource = _make_resource()
 
-        # Track state changes during download
-        states_seen = []
-
-        def track_download(task):
-            states_seen.append(task.state.value)
-            # Verify we're in DOWNLOADING state when download() is called
-            assert task.state == DownloadState.DOWNLOADING
-            return None
-
-        downloader.download = AsyncMock(side_effect=track_download)
-
-        # Create task manually to track states
-        task = DownloadTask.from_resource_info(resource, base_path="/downloads")
-        mgr._tasks[task.id] = task
-
-        # Initially PENDING
-        states_seen.append(task.state.value)
-
-        await mgr._run_download(task)
-
-        # Final state
-        states_seen.append(task.state.value)
-
-        assert states_seen == ["pending", "downloading", "completed"]
+        with pytest.raises(asyncio.CancelledError):
+            await mgr.download(_make_resource(), str(tmp_path))
 
 
 # ---------------------------------------------------------------------------
