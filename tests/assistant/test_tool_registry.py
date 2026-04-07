@@ -267,3 +267,106 @@ class TestDispatchValidation:
         assert result.is_error is True
         assert "InputValidationError" in result.content
         assert "expected string" in result.content
+
+
+class AliasedTool(BaseTool):
+    """A mock tool with configurable aliases for testing."""
+
+    def __init__(
+        self, name: str, alias_list: list[str] | None = None, result: str = "ok"
+    ) -> None:
+        self._name = name
+        self._aliases = alias_list or []
+        self._result = result
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def aliases(self) -> list[str]:
+        return self._aliases
+
+    @property
+    def description(self) -> str:
+        return f"Aliased tool ({self._name})"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
+
+    async def execute(self, **kwargs: object) -> str:
+        return self._result
+
+
+class TestToolRegistryAliases:
+    """Tests for alias registration, lookup, and deduplication."""
+
+    def test_alias_lookup(self):
+        """Registering a tool with aliases allows lookup by alias."""
+        registry = ToolRegistry()
+        tool = AliasedTool("search", alias_list=["find", "query"])
+        registry.register(tool)
+
+        assert registry.get("search") is tool
+        assert registry.get("find") is tool
+        assert registry.get("query") is tool
+
+    def test_all_tools_deduplicates_aliases(self):
+        """all_tools() should return each tool once even if it has aliases."""
+        registry = ToolRegistry()
+        tool = AliasedTool("search", alias_list=["find", "query"])
+        registry.register(tool)
+
+        all_tools = registry.all_tools()
+        assert len(all_tools) == 1
+        assert all_tools[0] is tool
+
+    def test_alias_does_not_overwrite_existing_tool(self):
+        """If an alias collides with an already-registered tool, it is skipped."""
+        registry = ToolRegistry()
+        existing_tool = AliasedTool("find")
+        registry.register(existing_tool)
+
+        new_tool = AliasedTool("search", alias_list=["find"])
+        registry.register(new_tool)
+
+        # "find" still resolves to existing_tool
+        assert registry.get("find") is existing_tool
+        assert registry.get("search") is new_tool
+
+    def test_alias_does_not_overwrite_earlier_alias(self):
+        """If two tools share the same alias, the first-registered one wins."""
+        registry = ToolRegistry()
+        tool_a = AliasedTool("tool_a", alias_list=["shortcut"])
+        tool_b = AliasedTool("tool_b", alias_list=["shortcut"])
+        registry.register(tool_a)
+        registry.register(tool_b)
+
+        assert registry.get("shortcut") is tool_a
+
+    def test_all_tools_with_multiple_aliased_tools(self):
+        """all_tools() deduplication with multiple aliased tools."""
+        registry = ToolRegistry()
+        tool_a = AliasedTool("alpha", alias_list=["a"])
+        tool_b = AliasedTool("beta", alias_list=["b"])
+        registry.register(tool_a)
+        registry.register(tool_b)
+
+        all_tools = registry.all_tools()
+        assert len(all_tools) == 2
+        names = {t.name for t in all_tools}
+        assert names == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_dispatch_via_alias(self):
+        """Dispatching a ToolCall using an alias name should work."""
+        registry = ToolRegistry()
+        tool = AliasedTool("search", alias_list=["find"], result="found it")
+        registry.register(tool)
+
+        tc = ToolCall(id="tc_1", name="find", arguments={})
+        result = await registry.dispatch(tc)
+
+        assert result.is_error is False
+        assert result.content == "found it"
