@@ -698,6 +698,76 @@ class TestBangumiClient:
         assert len(client._cache_fetch_user_collections) == 0
 
 
+class TestClientErrorHandling:
+    """Tests for HTTP error code handling in BangumiClient._request."""
+
+    @pytest.fixture
+    def client(self):
+        return BangumiClient(access_token="test-token")
+
+    def _mock_http_response(self, status, body=b""):
+        """Create a mock aiohttp response with the given status."""
+        mock_resp = MagicMock()
+        mock_resp.status = status
+        mock_resp.request_info = MagicMock()
+        mock_resp.history = ()
+        mock_resp.raise_for_status = MagicMock()
+        if status >= 400:
+            mock_resp.raise_for_status.side_effect = aiohttp.ClientResponseError(
+                mock_resp.request_info,
+                mock_resp.history,
+                status=status,
+                message=f"HTTP {status}",
+            )
+        mock_resp.read = AsyncMock(return_value=body)
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+        return mock_resp
+
+    def _setup_client_with_mock_response(self, client, mock_resp):
+        """Wire mock response into client."""
+        mock_session = MagicMock(spec=aiohttp.ClientSession)
+        mock_session.closed = False
+        mock_session.request = MagicMock(return_value=mock_resp)
+        client._ensure_session = MagicMock(return_value=mock_session)
+        client._throttle = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_401_unauthorized_raises(self, client):
+        """401 should raise ClientResponseError with status=401."""
+        mock_resp = self._mock_http_response(401)
+        self._setup_client_with_mock_response(client, mock_resp)
+        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+            await client._request("GET", "/calendar")
+        assert exc_info.value.status == 401
+
+    @pytest.mark.asyncio
+    async def test_404_not_found_raises(self, client):
+        """404 should raise ClientResponseError with status=404."""
+        mock_resp = self._mock_http_response(404)
+        self._setup_client_with_mock_response(client, mock_resp)
+        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+            await client._request("GET", "/v0/subjects/999999")
+        assert exc_info.value.status == 404
+
+    @pytest.mark.asyncio
+    async def test_429_rate_limited_raises(self, client):
+        """429 should raise ClientResponseError with status=429."""
+        mock_resp = self._mock_http_response(429)
+        self._setup_client_with_mock_response(client, mock_resp)
+        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+            await client._request("GET", "/calendar")
+        assert exc_info.value.status == 429
+
+    @pytest.mark.asyncio
+    async def test_204_returns_none(self, client):
+        """204 No Content should return None."""
+        mock_resp = self._mock_http_response(204)
+        self._setup_client_with_mock_response(client, mock_resp)
+        result = await client._request("DELETE", "/v0/something")
+        assert result is None
+
+
 # ================================================================
 # Tool tests
 # ================================================================
@@ -754,14 +824,6 @@ class TestBangumiTools:
         assert "测试" in result
         assert "8.5" in result
 
-    def test_subject_detail_run_exists(self):
-        mod = self._load_skill("subject_detail")
-        assert callable(mod.run)
-
-    def test_user_collections_run_exists(self):
-        mod = self._load_skill("user_collections")
-        assert callable(mod.run)
-
     @pytest.mark.asyncio
     async def test_user_collections_tool_format(self):
         mod = self._load_skill("user_collections")
@@ -788,18 +850,6 @@ class TestBangumiTools:
         assert "测试" in result
         assert "rated:9" in result
         assert "done" in result
-
-    def test_search_run_exists(self):
-        mod = self._load_skill("search")
-        assert callable(mod.run)
-
-    def test_related_subjects_run_exists(self):
-        mod = self._load_skill("related_subjects")
-        assert callable(mod.run)
-
-    def test_update_collection_run_exists(self):
-        mod = self._load_skill("update_collection")
-        assert callable(mod.run)
 
     @pytest.mark.asyncio
     async def test_update_collection_requires_subject_id(self):
