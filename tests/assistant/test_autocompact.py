@@ -21,7 +21,7 @@ from openlist_ani.assistant.memory.compactor import (
 )
 from openlist_ani.assistant.tool.orchestrator import (
     ToolOrchestrator,
-    _apply_per_message_budget,
+    apply_per_message_budget,
     _truncate_result,
 )
 from openlist_ani.assistant.tool.registry import ToolRegistry
@@ -67,7 +67,7 @@ class TestPerMessageBudget:
             ToolResult(tool_call_id=str(i), name=f"t{i}", content="small")
             for i in range(5)
         ]
-        truncated = _apply_per_message_budget(results)
+        truncated = apply_per_message_budget(results)
         assert all(r.content == "small" for r in truncated)
 
     def test_per_result_truncation(self):
@@ -82,7 +82,7 @@ class TestPerMessageBudget:
                 content="ok",
             ),
         ]
-        truncated = _apply_per_message_budget(
+        truncated = apply_per_message_budget(
             results, per_result_max=100, aggregate_max=10_000
         )
         assert "truncated" in truncated[0].content.lower()
@@ -105,7 +105,7 @@ class TestPerMessageBudget:
             ),
         ]
         # Total aggregate is 8100 chars, budget is 5000
-        truncated = _apply_per_message_budget(
+        truncated = apply_per_message_budget(
             results, per_result_max=10_000, aggregate_max=5000
         )
         total = sum(len(r.content) for r in truncated)
@@ -113,13 +113,13 @@ class TestPerMessageBudget:
 
     def test_empty_results(self):
         """Empty results list returns empty."""
-        assert _apply_per_message_budget([]) == []
+        assert apply_per_message_budget([]) == []
 
 
 class TestOrchestratorTruncation:
     @pytest.mark.asyncio
-    async def test_large_result_truncated_by_orchestrator(self):
-        """Orchestrator should truncate tool results that exceed the budget."""
+    async def test_large_result_truncated_by_budget(self):
+        """Large tool results should be truncated by apply_per_message_budget."""
         # Create a tool that returns a large result
         large_tool = ReadOnlyTool("big_tool", "x" * (MAX_TOOL_RESULT_CHARS + 10_000))
         registry = ToolRegistry()
@@ -127,12 +127,18 @@ class TestOrchestratorTruncation:
 
         orchestrator = ToolOrchestrator(registry)
         calls = [ToolCall(id="1", name="big_tool", arguments={})]
-        results = await orchestrator.execute_tool_calls(calls)
+        results = []
+        async for result in orchestrator.execute_tool_calls(calls):
+            results.append(result)
 
+        # Raw results are not truncated by orchestrator
         assert len(results) == 1
-        # Should be truncated
-        assert len(results[0].content) < MAX_TOOL_RESULT_CHARS + 200
-        assert "truncated" in results[0].content.lower()
+
+        # Apply per-message budget (as AgenticLoop does)
+        truncated = apply_per_message_budget(results)
+        assert len(truncated) == 1
+        assert len(truncated[0].content) < MAX_TOOL_RESULT_CHARS + 200
+        assert "truncated" in truncated[0].content.lower()
 
 
 class TestFormatCompactSummary:

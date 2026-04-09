@@ -8,6 +8,14 @@ from openlist_ani.assistant.tool.registry import ToolRegistry
 from openlist_ani.assistant.tool.base import BaseTool
 
 
+async def _collect_results(orchestrator, calls):
+    """Helper to collect all results from the AsyncGenerator."""
+    results = []
+    async for result in orchestrator.execute_tool_calls(calls):
+        results.append(result)
+    return results
+
+
 class ProgressTrackingTool(BaseTool):
     """A tool that reports activity descriptions."""
 
@@ -80,7 +88,7 @@ class TestToolProgressReporting:
         orchestrator = ToolOrchestrator(registry, on_progress=on_progress)
 
         tc = ToolCall(id="tc_1", name="grep", arguments={"pattern": "error"})
-        await orchestrator.execute_tool_calls([tc])
+        await _collect_results(orchestrator, [tc])
 
         assert len(progress_calls) == 1
         assert progress_calls[0] == ("grep", "Searching for error")
@@ -99,7 +107,7 @@ class TestToolProgressReporting:
         orchestrator = ToolOrchestrator(registry, on_progress=on_progress)
 
         tc = ToolCall(id="tc_1", name="silent_tool", arguments={})
-        await orchestrator.execute_tool_calls([tc])
+        await _collect_results(orchestrator, [tc])
 
         assert len(progress_calls) == 1
         assert progress_calls[0] == ("silent_tool", None)
@@ -122,7 +130,7 @@ class TestToolProgressReporting:
             ToolCall(id="tc_1", name="grep1", arguments={"pattern": "foo"}),
             ToolCall(id="tc_2", name="grep2", arguments={"pattern": "bar"}),
         ]
-        await orchestrator.execute_tool_calls(tool_calls)
+        await _collect_results(orchestrator, tool_calls)
 
         assert len(progress_calls) == 2
         names = {name for name, _ in progress_calls}
@@ -146,7 +154,7 @@ class TestToolProgressReporting:
             ToolCall(id="tc_1", name="edit", arguments={}),
             ToolCall(id="tc_2", name="edit", arguments={"pattern": "test"}),
         ]
-        await orchestrator.execute_tool_calls(tool_calls)
+        await _collect_results(orchestrator, tool_calls)
 
         assert len(progress_calls) == 2
         # First call has no pattern → generic description
@@ -163,7 +171,7 @@ class TestToolProgressReporting:
         orchestrator = ToolOrchestrator(registry)  # No callback
 
         tc = ToolCall(id="tc_1", name="grep", arguments={})
-        results = await orchestrator.execute_tool_calls([tc])
+        results = await _collect_results(orchestrator, [tc])
 
         assert len(results) == 1
         assert results[0].content == "found results"
@@ -186,12 +194,12 @@ class TestToolProgressReporting:
         orchestrator = ToolOrchestrator(registry, on_progress=cb1)
 
         tc = ToolCall(id="tc_1", name="grep", arguments={})
-        await orchestrator.execute_tool_calls([tc])
+        await _collect_results(orchestrator, [tc])
         assert len(calls1) == 1
 
         # Change callback
         orchestrator.set_progress_callback(cb2)
-        await orchestrator.execute_tool_calls([tc])
+        await _collect_results(orchestrator, [tc])
         assert len(calls1) == 1  # Not called again
         assert len(calls2) == 1
 
@@ -208,7 +216,7 @@ class TestToolProgressReporting:
 
         tc = ToolCall(id="tc_1", name="grep", arguments={})
         # Should not raise despite callback error
-        results = await orchestrator.execute_tool_calls([tc])
+        results = await _collect_results(orchestrator, [tc])
         assert len(results) == 1
 
 

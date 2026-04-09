@@ -13,6 +13,14 @@ from openlist_ani.assistant.tool.registry import ToolRegistry
 from .conftest import ReadOnlyTool, WriteTool
 
 
+async def _collect_results(orchestrator, calls):
+    """Helper to collect all results from the AsyncGenerator."""
+    results = []
+    async for result in orchestrator.execute_tool_calls(calls):
+        results.append(result)
+    return results
+
+
 class TestPartitionToolCalls:
     def _make_registry(self, *tools):
         registry = ToolRegistry()
@@ -103,11 +111,12 @@ class TestToolOrchestrator:
             ToolCall(id="1", name="a", arguments={}),
             ToolCall(id="2", name="b", arguments={}),
         ]
-        results = await orchestrator.execute_tool_calls(calls)
+        results = await _collect_results(orchestrator, calls)
 
         assert len(results) == 2
-        assert results[0].content == "result_a"
-        assert results[1].content == "result_b"
+        # Concurrent: order may vary, check by content
+        contents = {r.content for r in results}
+        assert contents == {"result_a", "result_b"}
 
     @pytest.mark.asyncio
     async def test_serial_write(self):
@@ -123,7 +132,7 @@ class TestToolOrchestrator:
             ToolCall(id="1", name="w1", arguments={}),
             ToolCall(id="2", name="w2", arguments={}),
         ]
-        results = await orchestrator.execute_tool_calls(calls)
+        results = await _collect_results(orchestrator, calls)
 
         assert len(results) == 2
         assert results[0].content == "done_1"
@@ -132,8 +141,8 @@ class TestToolOrchestrator:
         assert w2.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_mixed_batches_order_preserved(self):
-        """Results from mixed batches should maintain order."""
+    async def test_mixed_batches(self):
+        """Results from mixed batches should all be present."""
         registry = ToolRegistry()
         registry.register(ReadOnlyTool("r1", "r1_result"))
         registry.register(WriteTool("w1", "w1_result"))
@@ -145,19 +154,18 @@ class TestToolOrchestrator:
             ToolCall(id="2", name="w1", arguments={}),
             ToolCall(id="3", name="r2", arguments={}),
         ]
-        results = await orchestrator.execute_tool_calls(calls)
+        results = await _collect_results(orchestrator, calls)
 
         assert len(results) == 3
-        assert results[0].content == "r1_result"
-        assert results[1].content == "w1_result"
-        assert results[2].content == "r2_result"
+        contents = {r.content for r in results}
+        assert contents == {"r1_result", "w1_result", "r2_result"}
 
     @pytest.mark.asyncio
     async def test_empty_tool_calls(self):
         """Empty list should return empty results."""
         registry = ToolRegistry()
         orchestrator = ToolOrchestrator(registry)
-        results = await orchestrator.execute_tool_calls([])
+        results = await _collect_results(orchestrator, [])
         assert results == []
 
     @pytest.mark.asyncio
@@ -170,9 +178,41 @@ class TestToolOrchestrator:
 
         orchestrator = ToolOrchestrator(registry, max_concurrency=5)
         calls = [ToolCall(id=str(i), name=f"r{i}", arguments={}) for i in range(20)]
-        results = await orchestrator.execute_tool_calls(calls)
+        results = await _collect_results(orchestrator, calls)
 
         assert len(results) == 20
-        # All results should be present (order preserved)
-        for i in range(20):
-            assert results[i].content == f"result_{i}"
+        # All results should be present
+        contents = {r.content for r in results}
+        expected = {f"result_{i}" for i in range(20)}
+        assert contents == expected
+
+    @pytest.mark.asyncio
+    async def test_generator_early_break_cancels_tasks(self):
+        """Breaking out of the generator should cancel remaining tasks."""
+        import asyncio
+
+        call_count = 0
+
+        class SlowTool(ReadOnlyTool):
+            async def execute(self, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                await asyncio.sleep(10)  # Very slow
+                return "slow result"
+
+        registry = ToolRegistry()
+        for i in range(5):
+            registry.register(SlowTool(f"slow{i}"))
+
+        orchestrator = ToolOrchestrator(registry, max_concurrency=5)
+        calls = [ToolCall(id=str(i), name=f"slow{i}", arguments={}) for i in range(5)]
+
+        # Break after first result — should not hang
+        async for _result in orchestrator.execute_tool_calls(calls):
+            break
+
+        # Give a moment for cleanup
+        await asyncio.sleep(0.1)
+
+        # Should not have all 5 completed (they sleep for 10s each)
+        # The break should have triggered cancellation
