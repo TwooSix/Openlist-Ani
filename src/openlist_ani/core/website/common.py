@@ -1,8 +1,25 @@
+from urllib.parse import urlparse
+
 import aiohttp
 
 from ...logger import logger
 from .base import WebsiteBase
 from .model import AnimeResourceInfo
+
+
+def _is_torrent_url(url: str) -> bool:
+    """Check if URL points to a .torrent file (ignoring query params).
+
+    Args:
+        url: URL string to check
+
+    Returns:
+        True if the URL path ends with '.torrent'
+    """
+    try:
+        return urlparse(url).path.endswith(".torrent")
+    except Exception:
+        return url.endswith(".torrent")
 
 
 class CommonRSSWebsite(WebsiteBase):
@@ -15,15 +32,14 @@ class CommonRSSWebsite(WebsiteBase):
         for enclosure in entry.get("enclosures", []):
             href = enclosure.get("href", "")
             # Support both magnet links and .torrent files
-            if href.startswith("magnet:") or href.endswith(".torrent"):
+            if href.startswith("magnet:") or _is_torrent_url(href):
                 return href
             # Some sites use type to indicate torrent
             if enclosure.get("type") == "application/x-bittorrent":
                 return href
 
-        # Fallback to link attribute
         link = getattr(entry, "link", "")
-        if link and (link.startswith("magnet:") or link.endswith(".torrent")):
+        if link and (link.startswith("magnet:") or _is_torrent_url(link)):
             return link
 
         return None

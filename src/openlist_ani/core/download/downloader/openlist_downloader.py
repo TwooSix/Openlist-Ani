@@ -324,6 +324,17 @@ class OpenListDownloader(BaseDownloader):
         if not temp_path:
             raise DownloadError("No temp_path available")
 
+        # downloaded_filename may contain subdirectory prefixes
+        # (e.g. "batch/ep01.mkv") from recursive file detection.
+        # Split into the parent subdir within temp and the bare filename
+        # so that rename/move operate on the correct directory.
+        if "/" in downloaded_filename:
+            sub_dir, bare_filename = downloaded_filename.rsplit("/", 1)
+            file_parent_path = f"{temp_path.rstrip('/')}/{sub_dir}"
+        else:
+            bare_filename = downloaded_filename
+            file_parent_path = temp_path
+
         anime_name = sanitize_filename(task.resource_info.anime_name or "Unknown")
         season = task.resource_info.season or 1
         episode = task.resource_info.episode or 1
@@ -333,15 +344,19 @@ class OpenListDownloader(BaseDownloader):
         if not await self.client.mkdir(final_dir_path):
             raise DownloadError(f"Failed to create directory: {final_dir_path}")
 
-        file_to_move = await self._rename_temp_file_if_needed(task, final_filename)
+        file_to_move = await self._rename_temp_file_if_needed(
+            file_parent_path, bare_filename, final_filename
+        )
         file_to_move = await self._resolve_filename_conflict(
-            temp_path, final_dir_path, file_to_move
+            file_parent_path, final_dir_path, file_to_move
         )
 
         logger.debug(
             f"Moving file to final destination: {final_dir_path}/{file_to_move}"
         )
-        if not await self.client.move_file(temp_path, final_dir_path, [file_to_move]):
+        if not await self.client.move_file(
+            file_parent_path, final_dir_path, [file_to_move]
+        ):
             raise DownloadError(f"Failed to move file to: {final_dir_path}")
 
         task.output_path = f"{final_dir_path}/{file_to_move}"
@@ -500,23 +515,33 @@ class OpenListDownloader(BaseDownloader):
         return new_filename
 
     async def _rename_temp_file_if_needed(
-        self, task: DownloadTask, final_filename: str
+        self,
+        file_parent_path: str,
+        current_filename: str,
+        final_filename: str,
     ) -> str:
-        """Rename file in temp directory when target name differs."""
-        downloaded_filename = task.downloader_data.get("downloaded_filename", "")
-        if final_filename == downloaded_filename:
-            return downloaded_filename
+        """Rename file in its parent directory when target name differs.
 
-        temp_path = task.downloader_data.get("temp_path", "")
+        Args:
+            file_parent_path: The directory that directly contains the file.
+            current_filename: The bare filename (no subdirectory prefix).
+            final_filename: The desired new filename.
+
+        Returns:
+            The resulting filename (renamed or original on failure).
+        """
+        if final_filename == current_filename:
+            return current_filename
+
         logger.debug(f"Renaming file to: {final_filename}")
-        temp_file_path = f"{temp_path}/{downloaded_filename}"
+        temp_file_path = f"{file_parent_path}/{current_filename}"
         if await self.client.rename_file(temp_file_path, final_filename):
             logger.debug("Waiting for remote server cache to refresh...")
             await asyncio.sleep(5)
-            logger.debug(f"Renamed {downloaded_filename} to {final_filename}")
+            logger.debug(f"Renamed {current_filename} to {final_filename}")
             return final_filename
 
         logger.warning(
-            f"Rename failed, will move with original name: {downloaded_filename}"
+            f"Rename failed, will move with original name: {current_filename}"
         )
-        return downloaded_filename
+        return current_filename

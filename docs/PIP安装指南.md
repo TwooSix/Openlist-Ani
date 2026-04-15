@@ -24,7 +24,7 @@ pip install openlist-ani
 | 命令 | 用途 |
 |------|------|
 | `openlist-ani` | 主程序（RSS 监控 + 自动下载 + 重命名） |
-| `openlist-ani-assistant` | AI 智能助理（Telegram Bot） |
+| `openlist-ani-assistant` | AI 智能助理（Telegram Bot 或本地 CLI） |
 | `migrate-db` | 数据库迁移工具 |
 
 ## 第二步：创建配置文件
@@ -48,6 +48,14 @@ urls = [
     # "https://mikanani.me/RSS/MyBangumi?token=xxx"
 ]
 interval_time = 300   # 抓取间隔，单位秒（默认 5 分钟）
+
+# ---------- 下载优先级（可选） ----------
+# 同一番剧同集存在多个资源时，按优先级自动过滤
+# [rss.priority]
+# field_order = ["fansub", "quality", "languages"]  # 比较顺序
+# fansub = []                # 字幕组优先级（靠前优先）
+# quality = ["2160p", "1080p", "720p", "480p"]  # 清晰度优先级
+# languages = []             # 语言优先级，可选: "简", "繁", "日", "英"
 
 # ---------- 代理（可选） ----------
 [proxy]
@@ -96,7 +104,7 @@ enabled = false   # 设为 true 启用助理
 
 [assistant.telegram]
 bot_token = ""        # Telegram Bot Token，从 @BotFather 获取
-allowed_users = []    # 允许的用户 ID 列表，留空则不限制
+allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
 
 # ---------- Bangumi（可选） ----------
 [bangumi]
@@ -221,6 +229,15 @@ openlist-ani-assistant
 ```
 
 > 主程序和助理需要**同时运行**。可以使用 `tmux`、`screen` 或 systemd 来管理。
+
+> 助理支持两种运行模式：
+> - **Telegram 模式**（默认）：通过 Telegram Bot 交互
+> - **CLI 模式**：本地终端交互界面，添加 `--cli` 参数启动
+>
+> ```bash
+> openlist-ani-assistant --cli          # 本地 TUI 模式
+> openlist-ani-assistant --cli --resume # 恢复上次会话
+> ```
 
 ## 第七步（可选）：配置 Bangumi 和 Mikan，用于 Assistant 支持更多功能
 

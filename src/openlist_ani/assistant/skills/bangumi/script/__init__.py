@@ -1,3 +1,0 @@
-"""
-Bangumi skill script package.
-"""

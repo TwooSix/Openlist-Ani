@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from openlist_ani.core.website.common import CommonRSSWebsite
+from openlist_ani.core.website.common import CommonRSSWebsite, _is_torrent_url
 
 
 def _make_entry(
@@ -92,3 +92,88 @@ class TestCommonRSSWebsite:
         session = MagicMock()
         result = await common_parser.parse_entry(entry, session)
         assert result is not None
+
+    async def test_get_download_url_type_bittorrent_non_magnet_non_torrent(
+        self, common_parser
+    ):
+        """Enclosure with type='application/x-bittorrent' but href is
+        neither a magnet link nor a .torrent URL should still be accepted
+        because the type field alone triggers the match."""
+        entry = _make_entry(
+            title="Anime - 04",
+            download_url="",
+            enclosures=[
+                {
+                    "href": "https://tracker.example.com/download/12345",
+                    "type": "application/x-bittorrent",
+                }
+            ],
+        )
+        session = MagicMock()
+        result = await common_parser.parse_entry(entry, session)
+        assert result is not None
+        assert (
+            result.download_url
+            == "https://tracker.example.com/download/12345"
+        )
+
+    async def test_torrent_url_with_query_params_enclosure(self, common_parser):
+        """Torrent URL with query parameters (e.g. passkey) must be accepted.
+
+        Regression test: endswith('.torrent') fails for URLs like
+        'https://example.com/file.torrent?passkey=abc123'.
+        """
+        torrent_url = "https://tracker.example.com/file.torrent?passkey=abc123"
+        entry = _make_entry(
+            title="Anime - 05",
+            download_url="",
+            enclosures=[{"href": torrent_url, "type": ""}],
+        )
+        session = MagicMock()
+        result = await common_parser.parse_entry(entry, session)
+        assert result is not None
+        assert result.download_url == torrent_url
+
+    async def test_torrent_url_with_query_params_link_fallback(
+        self, common_parser
+    ):
+        """Link fallback with .torrent?query must also be accepted."""
+        torrent_url = "https://tracker.example.com/dl.torrent?id=99&passkey=x"
+        entry = SimpleNamespace(title="Anime - 06", link=torrent_url)
+        entry.get = (
+            lambda key, default=None: [] if key == "enclosures" else default
+        )
+        session = MagicMock()
+        result = await common_parser.parse_entry(entry, session)
+        assert result is not None
+        assert result.download_url == torrent_url
+
+
+class TestIsTorrentUrl:
+    """Unit tests for the _is_torrent_url helper."""
+
+    def test_plain_torrent_url(self):
+        assert _is_torrent_url("https://example.com/file.torrent") is True
+
+    def test_torrent_url_with_query_params(self):
+        assert (
+            _is_torrent_url(
+                "https://example.com/file.torrent?passkey=abc123"
+            )
+            is True
+        )
+
+    def test_torrent_url_with_fragment(self):
+        assert (
+            _is_torrent_url("https://example.com/file.torrent#section")
+            is True
+        )
+
+    def test_non_torrent_url(self):
+        assert _is_torrent_url("https://example.com/page.html") is False
+
+    def test_empty_string(self):
+        assert _is_torrent_url("") is False
+
+    def test_magnet_link(self):
+        assert _is_torrent_url("magnet:?xt=urn:btih:abc") is False

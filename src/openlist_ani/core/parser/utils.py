@@ -12,12 +12,10 @@ def parse_json_from_markdown(text: str) -> str | None:
     Returns:
         Extracted JSON string or None if not found
     """
-    # Try to find JSON in markdown code block
     match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
     if match:
         return match.group(1).strip()
 
-    # Try to find JSON by curly braces
     try:
         start = text.index("{")
         end = text.rindex("}") + 1

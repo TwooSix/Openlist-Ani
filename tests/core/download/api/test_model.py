@@ -140,18 +140,6 @@ class TestFileEntryFromDict:
         f = FileEntry.from_dict({"name": "folder", "is_dir": True})
         assert f.is_directory is True
 
-    def test_size_from_bytes_key(self):
-        f = FileEntry.from_dict({"name": "f", "bytes": 1024})
-        assert f.size == 1024
-
-    def test_size_from_total_bytes_key(self):
-        f = FileEntry.from_dict({"name": "f", "total_bytes": 2048})
-        assert f.size == 2048
-
-    def test_path_from_full_path(self):
-        f = FileEntry.from_dict({"name": "f", "full_path": "/a/b/c"})
-        assert f.path == "/a/b/c"
-
     def test_hash_info_from_json_string(self):
         """hashinfo as JSON string should be parsed."""
         f = FileEntry.from_dict(

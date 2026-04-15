@@ -77,6 +77,7 @@ class OpenListConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
+    provider_type: str = "openai"  # "openai" | "anthropic"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o"
@@ -107,11 +108,24 @@ class TelegramAssistantConfig(BaseModel):
     allowed_users: list[int] = Field(default_factory=list)
 
 
+class AutoDreamConfig(BaseModel):
+    """Configuration for auto-dream memory consolidation."""
+
+    enabled: bool = True
+    min_hours: float = 24.0  # Minimum hours since last consolidation
+    min_sessions: int = 5  # Minimum sessions since last consolidation
+
+
 class AssistantConfig(BaseModel):
     """Configuration for assistant module."""
 
     enabled: bool = False
+    max_context_tokens: int = 128_000
+    session_compact_threshold: int = 100_000
+    skills_dir: str = "skills"  # Skill search directory
+    data_dir: str = "data/assistant"  # Memory file directory
     telegram: TelegramAssistantConfig = TelegramAssistantConfig()
+    auto_dream: AutoDreamConfig = AutoDreamConfig()
 
 
 class LogConfig(BaseModel):
@@ -239,7 +253,7 @@ class ConfigManager:
         - Notification (if enabled): requires at least one properly configured bot
           - telegram bot: requires bot_token and user_id
           - pushplus bot: requires user_token
-        - Assistant (if enabled): requires telegram.bot_token, allowed_users,
+        - Assistant (if enabled): requires telegram.bot_token,
           and depends on llm.openai_api_key
 
         Returns:
@@ -258,7 +272,7 @@ class ConfigManager:
         self._validate_core_config(errors)
         self._validate_llm_config(errors)
         self._validate_notification_config(errors, warnings)
-        self._validate_assistant_config(errors)
+        self._validate_assistant_config(errors, warnings)
         self._log_validation_results(errors, warnings)
 
         return len(errors) == 0
@@ -323,24 +337,38 @@ class ConfigManager:
 
         warnings.append(f"{bot_label}: Unknown bot type '{bot_cfg.type}'.")
 
-    def _validate_assistant_config(self, errors: list[str]) -> None:
+    def _validate_assistant_config(
+        self, errors: list[str], warnings: list[str]
+    ) -> None:
         if not self.assistant.enabled:
             return
 
-        if not self.assistant.telegram.bot_token:
-            errors.append(
-                "Assistant is enabled but Telegram bot token is missing. "
-                "Please set [assistant.telegram] bot_token."
-            )
-        if not self.assistant.telegram.allowed_users:
-            errors.append(
-                "Assistant is enabled but no allowed users are configured. "
-                "Please set [assistant.telegram] allowed_users."
-            )
+        # API key is required for any provider
         if not self.llm.openai_api_key:
             errors.append(
-                "Assistant is enabled but OpenAI API key is missing. "
+                "Assistant is enabled but API key is missing. "
                 "Assistant requires LLM. Please set [llm] openai_api_key."
+            )
+
+        # Validate provider_type
+        if self.llm.provider_type not in ("openai", "anthropic"):
+            errors.append(
+                f"Unknown LLM provider_type: '{self.llm.provider_type}'. "
+                "Supported values: 'openai', 'anthropic'."
+            )
+
+        # Telegram bot_token is required
+        if not self.assistant.telegram.bot_token:
+            errors.append(
+                "Assistant is enabled but Telegram bot_token is missing. "
+                "Please set [assistant.telegram] bot_token."
+            )
+
+        # allowed_users empty = allow all (warn for security awareness)
+        if not self.assistant.telegram.allowed_users:
+            warnings.append(
+                "Assistant allowed_users is empty — all Telegram users can interact. "
+                "Consider adding specific user IDs in [assistant.telegram] allowed_users."
             )
 
     def _log_validation_results(self, errors: list[str], warnings: list[str]) -> None:

@@ -85,7 +85,6 @@ class OpenlistTask:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "OpenlistTask":
-        # Map state integer to OpenlistTaskState enum when possible
         state_val = d.get("state")
         state_enum = None
         if state_val is not None:
@@ -124,7 +123,12 @@ class FileEntry:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "FileEntry":
-        # prefer structured hash_info; fall back to parsing JSON in `hashinfo` if present
+        """Build from an OpenList ``/api/fs/list`` response item.
+
+        OpenList returns both ``hashinfo`` (JSON string) and ``hash_info``
+        (structured dict).  We prefer the dict and fall back to parsing
+        the string.
+        """
         hash_info = d.get("hash_info")
         if not hash_info and d.get("hashinfo"):
             try:
@@ -136,8 +140,8 @@ class FileEntry:
 
         return cls(
             name=d.get("name", ""),
-            path=d.get("path") or d.get("full_path"),
-            size=d.get("size") or d.get("bytes") or d.get("total_bytes"),
+            path=d.get("path"),
+            size=d.get("size"),
             is_dir=d.get("is_dir") if "is_dir" in d else None,
             modified=_parse_iso(d.get("modified")),
             created=_parse_iso(d.get("created")),

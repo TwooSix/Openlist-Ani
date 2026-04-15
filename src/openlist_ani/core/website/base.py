@@ -40,6 +40,9 @@ class WebsiteBase(ABC):
                     entries: list[AnimeResourceInfo] = []
                     for res in results:
                         if isinstance(res, Exception):
+                            logger.warning(
+                                f"Failed to parse RSS entry: {res}"
+                            )
                             continue
                         if res:
                             entries.append(res)

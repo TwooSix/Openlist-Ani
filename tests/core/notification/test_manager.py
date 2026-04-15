@@ -311,3 +311,63 @@ class TestStartStop:
         # Don't start the background worker, just test stop flushes
         await mgr.stop()
         assert len(bot.sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_stop_does_not_raise_cancelled_error(self):
+        """stop() must not propagate CancelledError to the caller.
+
+        Regression: the original try/finally used to let CancelledError escape
+        after flushing pending notifications, crashing callers of stop().
+        """
+        bot = _FakeBot()
+        mgr = NotificationManager(bots=[bot], batch_interval=300.0)
+        mgr.start()
+        await mgr.send_download_complete_notification("Anime", "EP 01")
+
+        # stop() should return cleanly — no CancelledError.
+        await mgr.stop()
+
+        # Pending notification should still have been flushed.
+        assert len(bot.sent) == 1
+        assert "Anime" in bot.sent[0]
+
+
+# ---------------------------------------------------------------------------
+# send_notification with duplicate bot types
+# ---------------------------------------------------------------------------
+
+
+class TestSendNotificationDuplicateBotTypes:
+    @pytest.mark.asyncio
+    async def test_multiple_same_type_bots_all_reported(self):
+        """Two bots of the same type must both appear in the results dict.
+
+        Regression: results dict used type(bot).__name__ as key, so the second
+        bot's result silently overwrote the first.
+        """
+        bot1 = _FakeBot("ok1")
+        bot2 = _FakeBot("ok2")
+        mgr = NotificationManager(bots=[bot1, bot2])
+        results = await mgr.send_notification("msg")
+
+        # Both bots should have their results in the dict.
+        assert len(results) == 2
+        assert all(v is True for v in results.values())
+        # Both bots should have received the message.
+        assert bot1.sent == ["msg"]
+        assert bot2.sent == ["msg"]
+
+    @pytest.mark.asyncio
+    async def test_multiple_same_type_first_fails_still_reported(self):
+        """When the first of two same-type bots fails, both results are preserved."""
+        bot_fail = _FakeBot("fail", should_fail=True)
+        bot_ok = _FakeBot("ok")
+        mgr = NotificationManager(
+            bots=[bot_fail, bot_ok], max_retries=1, retry_backoff=0.01
+        )
+        results = await mgr.send_notification("msg")
+
+        assert len(results) == 2
+        # One failed, one succeeded
+        assert False in results.values()
+        assert True in results.values()

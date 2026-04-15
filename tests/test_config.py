@@ -56,6 +56,7 @@ class TestOpenListConfig:
 class TestLLMConfig:
     def test_defaults(self):
         cfg = LLMConfig()
+        assert cfg.provider_type == "openai"
         assert cfg.openai_api_key == ""
         assert "openai" in cfg.openai_base_url
         assert cfg.openai_model == "gpt-4o"
@@ -425,7 +426,7 @@ class TestConfigValidation:
         assert mgr.validate() is False
 
     def test_validate_assistant_enabled_no_allowed_users(self, tmp_path, monkeypatch):
-        """Assistant enabled without allowed_users → error."""
+        """Assistant enabled without allowed_users → warning (not error)."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         mgr._config.rss.urls = ["http://feed"]
@@ -436,7 +437,8 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = []
         mgr.save()
-        assert mgr.validate() is False
+        # Empty allowed_users is allowed (= allow all) but produces a warning
+        assert mgr.validate() is True
 
     def test_validate_assistant_enabled_no_llm_key(self, tmp_path, monkeypatch):
         """Assistant enabled without LLM key → error (assistant depends on LLM)."""

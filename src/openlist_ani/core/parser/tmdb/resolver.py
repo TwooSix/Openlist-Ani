@@ -127,7 +127,6 @@ class TMDBResolver:
         if cached is not _CACHE_MISS:
             return cached  # type: ignore[return-value]
 
-        # auto align season/episode to TMDB.
         mapping = await self._verify_episode(
             tmdb_id=parse_result.tmdb_id,
             season=parse_result.season,

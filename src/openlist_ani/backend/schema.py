@@ -68,9 +68,3 @@ class RestartResponse(BaseModel):
 
     success: bool
     message: str
-
-
-class ErrorResponse(BaseModel):
-    """Generic error response."""
-
-    detail: str

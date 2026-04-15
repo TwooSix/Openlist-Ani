@@ -213,7 +213,8 @@ class OpenListClient:
 
         data = await self._post(url, payload)
         if data and data.get("code") == 200:
-            raw = data["data"].get("content") or []
+            inner = data.get("data") or {}
+            raw = inner.get("content") or [] if isinstance(inner, dict) else []
             return [FileEntry.from_dict(r) for r in raw]
         else:
             return None

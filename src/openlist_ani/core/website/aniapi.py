@@ -18,12 +18,10 @@ class AniapiWebsite(WebsiteBase):
 
         ANi API uses direct links to .mp4 files in the <link> element.
         """
-        # Try link attribute first (ANi API specific)
         link = getattr(entry, "link", "")
         if link:
             return link
 
-        # Fallback to standard enclosure handling
         for enclosure in entry.get("enclosures", []):
             href = enclosure.get("href", "")
             if href:

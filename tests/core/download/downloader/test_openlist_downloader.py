@@ -1,5 +1,6 @@
-"""Tests for OpenListDownloader helper functions and init validation."""
+"""Tests for OpenListDownloader helper functions, init validation, and end-to-end download."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -14,7 +15,7 @@ from openlist_ani.core.download.downloader.openlist_downloader import (
     format_anime_episode,
     sanitize_filename,
 )
-from openlist_ani.core.download.model.task import DownloadState, DownloadTask
+from openlist_ani.core.download.task import DownloadState, DownloadTask
 from openlist_ani.core.website.model import (
     AnimeResourceInfo,
     LanguageType,
@@ -215,12 +216,10 @@ def _assert_no_enum_repr(result: str):
 class TestDetectDownloadedFile:
     """Verify recursive video detection and largest-file selection."""
 
-    @pytest.mark.asyncio
     async def test_recursively_picks_largest_video(self):
         d = _make_downloader()
         task = _make_task()
         task.downloader_data["initial_files"] = []
-        from types import SimpleNamespace
 
         d._client.list_files.side_effect = [
             [
@@ -237,12 +236,10 @@ class TestDetectDownloadedFile:
         result = await d._detect_downloaded_file(task)
         assert result == "batch/ep01.mkv"
 
-    @pytest.mark.asyncio
     async def test_returns_none_when_only_non_videos(self, mock_async_sleep):
         d = _make_downloader()
         task = _make_task()
         task.downloader_data["initial_files"] = []
-        from types import SimpleNamespace
 
         d._client.list_files.return_value = [
             SimpleNamespace(name="notes.txt", is_dir=False, size=10),
@@ -258,12 +255,10 @@ class TestDetectDownloadedFile:
             result = await d._detect_downloaded_file(task)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_ignores_initial_files_and_chooses_next_largest(self):
         d = _make_downloader()
         task = _make_task()
         task.downloader_data["initial_files"] = ["batch/ep01.mkv"]
-        from types import SimpleNamespace
 
         d._client.list_files.side_effect = [
             [
@@ -283,7 +278,6 @@ class TestDetectDownloadedFile:
 class TestTransferToFinal:
     """Test that version suffix is appended correctly during rename."""
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("version", "rename_format", "fansub", "expected_filename"),
         [
@@ -364,7 +358,6 @@ class TestLogProgressBucketed:
 class TestWaitDownloadComplete:
     """Test _wait_download_complete polling behavior."""
 
-    @pytest.mark.asyncio
     async def test_returns_when_download_succeeds(self, mock_async_sleep):
         d = _make_downloader()
         task = _make_task()
@@ -396,7 +389,6 @@ class TestWaitDownloadComplete:
         await d._wait_download_complete(task)
         assert mock_async_sleep.await_count == 1
 
-    @pytest.mark.asyncio
     async def test_raises_when_task_not_found(self):
         d = _make_downloader()
         task = _make_task()
@@ -412,7 +404,6 @@ class TestWaitDownloadComplete:
 class TestWaitTransferComplete:
     """Test _wait_transfer_complete polling and skip behavior."""
 
-    @pytest.mark.asyncio
     async def test_waits_when_transfer_task_is_running(self, mock_async_sleep):
         d = _make_downloader()
         task = _make_task()
@@ -443,7 +434,6 @@ class TestWaitTransferComplete:
         await d._wait_transfer_complete(task)
         assert mock_async_sleep.await_count == 1
 
-    @pytest.mark.asyncio
     async def test_skips_after_max_retries_when_no_transfer_found(
         self, mock_async_sleep
     ):
@@ -562,3 +552,425 @@ class TestBuildFinalFilenameEnumFields:
         )
         result = d._build_final_filename(task, "MyAnime", 1, 5)
         assert result == "MyAnime S01E05.mkv"
+
+
+# ---------------------------------------------------------------------------
+# _transfer_to_final – subdirectory file path handling
+# ---------------------------------------------------------------------------
+
+
+class TestTransferToFinalSubdirectoryPath:
+    """Regression tests: files found in subdirectories of temp_path must be
+    renamed and moved using the correct parent directory, not temp_path itself.
+
+    Before the fix, a downloaded file at ``temp_path/batch/ep01.mkv`` would
+    cause ``move_file(temp_path, …, ["MyAnime S01E03.mkv"])`` — the API
+    would look for the file directly inside ``temp_path`` and fail because
+    the file actually lived in ``temp_path/batch/``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_subdirectory_file_uses_correct_parent_for_rename(
+        self, mock_async_sleep
+    ):
+        """rename_file should be called with the subdirectory path, not temp_path."""
+        d = _make_downloader()
+        task = _make_task()
+        # Simulate a file detected inside a "batch" subdirectory
+        task.downloader_data["downloaded_filename"] = "batch/ep03.mkv"
+        task.downloader_data["temp_path"] = f"/downloads/{task.id}"
+
+        # No conflict in destination
+        d._client.list_files = AsyncMock(return_value=[])
+
+        await d._transfer_to_final(task)
+
+        # rename_file should be called with the full path inside the subdirectory
+        rename_call_path = d._client.rename_file.call_args[0][0]
+        assert rename_call_path == f"/downloads/{task.id}/batch/ep03.mkv"
+
+    @pytest.mark.asyncio
+    async def test_subdirectory_file_uses_correct_parent_for_move(
+        self, mock_async_sleep
+    ):
+        """move_file src_dir should be the subdirectory, not temp_path."""
+        d = _make_downloader()
+        task = _make_task()
+        task.downloader_data["downloaded_filename"] = "batch/ep03.mkv"
+        task.downloader_data["temp_path"] = f"/downloads/{task.id}"
+
+        # No conflict in destination
+        d._client.list_files = AsyncMock(return_value=[])
+
+        await d._transfer_to_final(task)
+
+        # move_file should use the subdirectory as src_dir
+        move_call_args = d._client.move_file.call_args[0]
+        src_dir = move_call_args[0]
+        assert src_dir == f"/downloads/{task.id}/batch"
+
+    @pytest.mark.asyncio
+    async def test_non_subdirectory_file_uses_temp_path_directly(
+        self, mock_async_sleep
+    ):
+        """A flat file (no subdirectory) should still use temp_path as src_dir."""
+        d = _make_downloader()
+        task = _make_task()
+        task.downloader_data["downloaded_filename"] = "ep03.mkv"
+        task.downloader_data["temp_path"] = f"/downloads/{task.id}"
+
+        # No conflict in destination
+        d._client.list_files = AsyncMock(return_value=[])
+
+        await d._transfer_to_final(task)
+
+        move_call_args = d._client.move_file.call_args[0]
+        src_dir = move_call_args[0]
+        assert src_dir == f"/downloads/{task.id}"
+
+    @pytest.mark.asyncio
+    async def test_deeply_nested_subdirectory(self, mock_async_sleep):
+        """Files in deeply nested subdirectories should resolve correctly."""
+        d = _make_downloader()
+        task = _make_task()
+        task.downloader_data["downloaded_filename"] = "a/b/c/ep03.mkv"
+        task.downloader_data["temp_path"] = f"/downloads/{task.id}"
+
+        d._client.list_files = AsyncMock(return_value=[])
+
+        await d._transfer_to_final(task)
+
+        rename_call_path = d._client.rename_file.call_args[0][0]
+        assert rename_call_path == f"/downloads/{task.id}/a/b/c/ep03.mkv"
+
+        move_call_args = d._client.move_file.call_args[0]
+        src_dir = move_call_args[0]
+        assert src_dir == f"/downloads/{task.id}/a/b/c"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end download() test
+# ---------------------------------------------------------------------------
+
+
+class TestOpenListDownloaderEndToEnd:
+    """Exercise the full pipeline: submit → poll → transfer → detect → rename → complete."""
+
+    async def test_full_download_lifecycle(self, mock_async_sleep):
+        """Verify the complete download flow with mocked client calls."""
+        d = _make_downloader(
+            rename_format="{anime_name} S{season:02d}E{episode:02d}"
+        )
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[SubGroup] MyAnime - 03 [1080p]",
+            download_url="magnet:?xt=test",
+            anime_name="MyAnime",
+            season=1,
+            episode=3,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+
+        # -- Step 1: _submit_download --
+        # mkdir for temp dir
+        mock_client.mkdir = AsyncMock(return_value=True)
+        # list_files for initial files in temp dir (empty)
+        mock_client.list_files = AsyncMock(return_value=[])
+        # add_offline_download
+        mock_client.add_offline_download = AsyncMock(
+            return_value=[
+                OpenlistTask(id="dl-task-1", name="offline dl")
+            ]
+        )
+
+        # -- Step 2: _wait_download_complete --
+        # First poll: task running, second poll: not in undone, found in done
+        mock_client.get_offline_download_undone = AsyncMock(
+            side_effect=[
+                [OpenlistTask(id="dl-task-1", name="dl", progress=50)],
+                [],
+            ]
+        )
+        mock_client.get_offline_download_done = AsyncMock(
+            return_value=[
+                OpenlistTask(
+                    id="dl-task-1",
+                    name="dl",
+                    state=OpenlistTaskState.SUCCEEDED,
+                )
+            ]
+        )
+
+        # -- Step 3: _wait_transfer_complete --
+        # No transfer task found after max retries — skip
+        mock_client.get_offline_download_transfer_undone = AsyncMock(
+            return_value=[]
+        )
+        mock_client.get_offline_download_transfer_done = AsyncMock(
+            return_value=[]
+        )
+
+        # -- Step 4: _detect_downloaded_file --
+        # After transfer polling, list_files returns the downloaded file
+        # We need to set list_files to return different things at different times:
+        #   - First call: initial files listing (empty) during _submit_download
+        #   - Subsequent calls: for _detect_downloaded_file
+        #   - Then: for conflict resolution in _transfer_to_final
+        list_files_calls = [
+            # _submit_download initial listing
+            [],
+            # _detect_downloaded_file → _collect_video_files (temp dir)
+            [SimpleNamespace(name="ep03.mkv", is_dir=False, size=500_000_000)],
+            # _resolve_filename_conflict listing of final dir (empty = no conflict)
+            [],
+        ]
+        mock_client.list_files = AsyncMock(side_effect=list_files_calls)
+
+        # -- Step 5: _transfer_to_final --
+        mock_client.rename_file = AsyncMock(return_value=True)
+        mock_client.move_file = AsyncMock(return_value=True)
+
+        # -- Cleanup --
+        mock_client.remove_path = AsyncMock(return_value=True)
+
+        # Execute the full lifecycle
+        await d.download(task)
+
+        # Verify task state
+        assert task.output_path is not None
+        assert "MyAnime" in task.output_path
+        assert "Season 1" in task.output_path
+
+        # Verify mkdir was called (temp dir + final dir)
+        assert mock_client.mkdir.await_count >= 2
+
+        # Verify add_offline_download was called with correct URL
+        mock_client.add_offline_download.assert_awaited_once()
+        call_kwargs = mock_client.add_offline_download.call_args
+        assert call_kwargs.kwargs["urls"] == ["magnet:?xt=test"]
+
+        # Verify move_file was called to move to final location
+        mock_client.move_file.assert_awaited_once()
+
+        # Verify cleanup was attempted
+        mock_client.remove_path.assert_awaited_once()
+
+    async def test_download_raises_on_mkdir_failure(self, mock_async_sleep):
+        """Should raise DownloadError if initial mkdir fails."""
+        d = _make_downloader()
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 01",
+            download_url="magnet:?xt=hash",
+            anime_name="Anime",
+            season=1,
+            episode=1,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+
+        mock_client.mkdir = AsyncMock(return_value=False)
+
+        with pytest.raises(DownloadError, match="temporary directory"):
+            await d.download(task)
+
+    async def test_download_raises_on_offline_download_failure(
+        self, mock_async_sleep
+    ):
+        """Should raise DownloadError when add_offline_download returns None."""
+        d = _make_downloader()
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 01",
+            download_url="magnet:?xt=hash",
+            anime_name="Anime",
+            season=1,
+            episode=1,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+
+        mock_client.mkdir = AsyncMock(return_value=True)
+        mock_client.list_files = AsyncMock(return_value=[])
+        mock_client.add_offline_download = AsyncMock(return_value=None)
+        mock_client.remove_path = AsyncMock(return_value=True)
+
+        with pytest.raises(DownloadError, match="Failed to create offline download"):
+            await d.download(task)
+
+    async def test_download_raises_on_file_detect_failure(
+        self, mock_async_sleep
+    ):
+        """Should raise DownloadError when no video file is detected."""
+        d = _make_downloader()
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 01",
+            download_url="magnet:?xt=hash",
+            anime_name="Anime",
+            season=1,
+            episode=1,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+
+        # Submit succeeds
+        mock_client.mkdir = AsyncMock(return_value=True)
+        mock_client.list_files = AsyncMock(return_value=[])
+        mock_client.add_offline_download = AsyncMock(
+            return_value=[OpenlistTask(id="dl-1", name="dl")]
+        )
+        # Download completes immediately
+        mock_client.get_offline_download_undone = AsyncMock(return_value=[])
+        mock_client.get_offline_download_done = AsyncMock(
+            return_value=[
+                OpenlistTask(
+                    id="dl-1", name="dl", state=OpenlistTaskState.SUCCEEDED
+                )
+            ]
+        )
+        # No transfer task
+        mock_client.get_offline_download_transfer_undone = AsyncMock(
+            return_value=[]
+        )
+        mock_client.get_offline_download_transfer_done = AsyncMock(
+            return_value=[]
+        )
+        # Cleanup
+        mock_client.remove_path = AsyncMock(return_value=True)
+
+        # _detect_downloaded_file returns None (no video files, time out)
+        start = 0.0
+        with patch(
+            "openlist_ani.core.download.downloader.openlist_downloader.time.monotonic",
+            side_effect=[start, start + 31],
+        ):
+            with pytest.raises(DownloadError, match="Could not detect"):
+                await d.download(task)
+
+    async def test_download_idempotent_with_existing_task_id(
+        self, mock_async_sleep
+    ):
+        """If task already has a task_id, _submit_download should be a no-op."""
+        d = _make_downloader()
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 05",
+            download_url="magnet:?xt=hash",
+            anime_name="Anime",
+            season=1,
+            episode=5,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+        task.downloader_data["task_id"] = "existing-task-id"
+        task.downloader_data["temp_path"] = f"/downloads/{task.id}"
+        task.downloader_data["initial_files"] = []
+
+        # Download already complete
+        mock_client.get_offline_download_undone = AsyncMock(return_value=[])
+        mock_client.get_offline_download_done = AsyncMock(
+            return_value=[
+                OpenlistTask(
+                    id="existing-task-id",
+                    name="dl",
+                    state=OpenlistTaskState.SUCCEEDED,
+                )
+            ]
+        )
+        # No transfer
+        mock_client.get_offline_download_transfer_undone = AsyncMock(
+            return_value=[]
+        )
+        mock_client.get_offline_download_transfer_done = AsyncMock(
+            return_value=[]
+        )
+        # File detect
+        mock_client.list_files = AsyncMock(
+            side_effect=[
+                # _detect_downloaded_file
+                [SimpleNamespace(name="ep05.mkv", is_dir=False, size=1000)],
+                # _resolve_filename_conflict
+                [],
+            ]
+        )
+        mock_client.rename_file = AsyncMock(return_value=True)
+        mock_client.move_file = AsyncMock(return_value=True)
+        mock_client.remove_path = AsyncMock(return_value=True)
+
+        await d.download(task)
+
+        # mkdir should NOT have been called for temp dir (idempotent skip)
+        # It should only be called once for the final directory
+        assert mock_client.mkdir.await_count == 1
+        # add_offline_download should NOT have been called
+        mock_client.add_offline_download.assert_not_awaited()
+
+    async def test_cleanup_always_runs(self, mock_async_sleep):
+        """Cleanup should run even when download fails."""
+        d = _make_downloader()
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 01",
+            download_url="magnet:?xt=hash",
+            anime_name="Anime",
+            season=1,
+            episode=1,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+
+        # mkdir succeeds for temp, but add_offline_download fails
+        mock_client.mkdir = AsyncMock(return_value=True)
+        mock_client.list_files = AsyncMock(return_value=[])
+        mock_client.add_offline_download = AsyncMock(return_value=None)
+        mock_client.remove_path = AsyncMock(return_value=True)
+
+        with pytest.raises(DownloadError):
+            await d.download(task)
+
+        # Cleanup should still be called because temp_path was set
+        mock_client.remove_path.assert_awaited_once()
+
+    async def test_download_failed_state_raises_download_error(
+        self, mock_async_sleep
+    ):
+        """Should raise DownloadError when the download task state is FAILED."""
+        d = _make_downloader()
+        mock_client = d._client
+
+        info = AnimeResourceInfo(
+            title="[Sub] Anime - 01",
+            download_url="magnet:?xt=hash",
+            anime_name="Anime",
+            season=1,
+            episode=1,
+        )
+        task = DownloadTask(resource_info=info, base_path="/downloads")
+        task.state = DownloadState.DOWNLOADING
+
+        mock_client.mkdir = AsyncMock(return_value=True)
+        mock_client.list_files = AsyncMock(return_value=[])
+        mock_client.add_offline_download = AsyncMock(
+            return_value=[OpenlistTask(id="dl-1", name="dl")]
+        )
+        # Download finishes but with FAILED state
+        mock_client.get_offline_download_undone = AsyncMock(return_value=[])
+        mock_client.get_offline_download_done = AsyncMock(
+            return_value=[
+                OpenlistTask(
+                    id="dl-1", name="dl", state=OpenlistTaskState.FAILED
+                )
+            ]
+        )
+        mock_client.remove_path = AsyncMock(return_value=True)
+
+        with pytest.raises(DownloadError, match="failed with state"):
+            await d.download(task)
