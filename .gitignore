@@ -22,8 +22,10 @@ data/
 *.ipynb
 .env
 
+# local agent
 .github/agents/
 .github/instructions/
 .github/skills/
 
 .agents/
+.claude/

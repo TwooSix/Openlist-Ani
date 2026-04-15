@@ -5,12 +5,13 @@ Uses mock HTTP responses to verify parsing, caching, and error handling
 without requiring a real API connection.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
 
-from openlist_ani.core.bangumi.client import BangumiClient
+from openlist_ani.core.bangumi.client import BangumiClient, _REQUEST_INTERVAL
 from openlist_ani.core.bangumi.model import (
     COLLECTION_TYPE_LABELS,
     BangumiBlog,
@@ -401,13 +402,6 @@ class TestBangumiClient:
     def client(self):
         return BangumiClient(access_token="test-token-123")
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock aiohttp session."""
-        session = AsyncMock(spec=aiohttp.ClientSession)
-        session.closed = False
-        return session
-
     def _mock_request(self, client, response_data, status=200):
         """Set up client with a mocked _request method."""
         client._request = AsyncMock(return_value=response_data)
@@ -699,255 +693,404 @@ class TestBangumiClient:
 
 
 # ================================================================
+# _request error handling tests
+# ================================================================
+
+
+def _make_mock_response(
+    status: int,
+    body: bytes = b"",
+    request_info: object | None = None,
+) -> MagicMock:
+    """Create an async-context-manager mock for aiohttp session.request."""
+    resp = MagicMock()
+    resp.status = status
+    resp.request_info = request_info or MagicMock()
+    resp.history = ()
+    resp.raise_for_status = MagicMock()
+    resp.read = AsyncMock(return_value=body)
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=None)
+    return resp
+
+
+class TestBangumiClientRequestErrors:
+    """Tests for _request error handling for specific HTTP status codes."""
+
+    @pytest.fixture
+    def client(self):
+        c = BangumiClient(access_token="test-token")
+        # Bypass throttle so tests run fast
+        c._throttle = AsyncMock()
+        return c
+
+    def _setup_mock_session(self, client, mock_resp):
+        """Inject a mock session that returns the given response."""
+        mock_session = MagicMock(spec=aiohttp.ClientSession)
+        mock_session.closed = False
+        mock_session.request = MagicMock(return_value=mock_resp)
+        client._ensure_session = MagicMock(return_value=mock_session)
+        return mock_session
+
+    async def test_request_401_unauthorized(self, client):
+        """401 should raise ClientResponseError with status=401."""
+        mock_resp = _make_mock_response(status=401)
+        self._setup_mock_session(client, mock_resp)
+
+        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+            await client._request("GET", "/v0/me")
+
+        assert exc_info.value.status == 401
+        assert "Unauthorized" in exc_info.value.message
+
+    async def test_request_404_not_found(self, client):
+        """404 should raise ClientResponseError with status=404."""
+        mock_resp = _make_mock_response(status=404)
+        self._setup_mock_session(client, mock_resp)
+
+        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+            await client._request("GET", "/v0/subjects/999999")
+
+        assert exc_info.value.status == 404
+        assert "Not found" in exc_info.value.message
+
+    async def test_request_429_rate_limited(self, client):
+        """429 should raise ClientResponseError with status=429."""
+        mock_resp = _make_mock_response(status=429)
+        self._setup_mock_session(client, mock_resp)
+
+        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+            await client._request("GET", "/v0/subjects/1")
+
+        assert exc_info.value.status == 429
+        assert "Rate limited" in exc_info.value.message
+
+    async def test_request_204_returns_none(self, client):
+        """204 No Content should return None without reading body."""
+        mock_resp = _make_mock_response(status=204)
+        self._setup_mock_session(client, mock_resp)
+
+        result = await client._request("POST", "/v0/users/-/collections/100")
+        assert result is None
+
+
+# ================================================================
+# search_subjects tests
+# ================================================================
+
+
+SEARCH_RESPONSE = {
+    "total": 2,
+    "limit": 25,
+    "offset": 0,
+    "data": [
+        {
+            "id": 100,
+            "type": 2,
+            "name": "Test Anime",
+            "name_cn": "测试动画",
+            "date": "2026-01-05",
+        },
+        {
+            "id": 200,
+            "type": 2,
+            "name": "Another Anime",
+            "name_cn": "另一个动画",
+            "date": "2026-04-01",
+        },
+    ],
+}
+
+
+class TestBangumiClientSearchSubjects:
+    """Tests for BangumiClient.search_subjects() with mocked HTTP."""
+
+    @pytest.fixture
+    def client(self):
+        return BangumiClient(access_token="test-token")
+
+    async def test_search_subjects_basic(self, client):
+        """Search with keyword returns parsed response dict."""
+        client._request = AsyncMock(return_value=SEARCH_RESPONSE)
+
+        result = await client.search_subjects("测试")
+
+        assert result["total"] == 2
+        assert len(result["data"]) == 2
+        assert result["data"][0]["name_cn"] == "测试动画"
+
+        # Verify _request was called with correct method, path, and body
+        client._request.assert_called_once()
+        args, kwargs = client._request.call_args
+        assert args[0] == "POST"
+        assert args[1] == "/v0/search/subjects"
+        assert kwargs["json_body"]["keyword"] == "测试"
+        assert kwargs["json_body"]["sort"] == "match"
+
+    async def test_search_subjects_with_filters(self, client):
+        """Search passes all filter parameters to _request body."""
+        client._request = AsyncMock(return_value=SEARCH_RESPONSE)
+
+        await client.search_subjects(
+            "动画",
+            sort="rank",
+            subject_type=[2],
+            tag=["搞笑"],
+            air_date=[">=2026-01-01"],
+            rating=[">=7"],
+            rank=[">10"],
+            nsfw=False,
+            limit=10,
+            offset=5,
+        )
+
+        _, kwargs = client._request.call_args
+        body = kwargs["json_body"]
+        params = kwargs["params"]
+
+        assert body["keyword"] == "动画"
+        assert body["sort"] == "rank"
+        assert body["filter"]["type"] == [2]
+        assert body["filter"]["tag"] == ["搞笑"]
+        assert body["filter"]["air_date"] == [">=2026-01-01"]
+        assert body["filter"]["rating"] == [">=7"]
+        assert body["filter"]["rank"] == [">10"]
+        assert body["filter"]["nsfw"] is False
+        assert params["limit"] == 10
+        assert params["offset"] == 5
+
+    async def test_search_subjects_no_filters(self, client):
+        """Search without optional filters should not include 'filter' key
+        (except nsfw which defaults to False)."""
+        client._request = AsyncMock(return_value=SEARCH_RESPONSE)
+
+        await client.search_subjects("test", nsfw=None)
+
+        _, kwargs = client._request.call_args
+        body = kwargs["json_body"]
+        # No filter key when all filter params are None/empty and nsfw is None
+        assert "filter" not in body
+
+
+# ================================================================
+# _throttle rate-limiting tests
+# ================================================================
+
+
+class TestBangumiClientThrottle:
+    """Tests for BangumiClient._throttle rate limiting."""
+
+    async def test_throttle_delays_rapid_calls(self):
+        """Rapid successive _throttle calls should enforce minimum interval."""
+        client = BangumiClient(access_token="test")
+
+        loop = asyncio.get_event_loop()
+
+        # First call — no delay expected
+        await client._throttle()
+        first_done = loop.time()
+
+        # Second call — should sleep for approximately _REQUEST_INTERVAL
+        await client._throttle()
+        second_done = loop.time()
+
+        elapsed_between = second_done - first_done
+        # The second call should have waited at least close to _REQUEST_INTERVAL
+        assert elapsed_between >= _REQUEST_INTERVAL * 0.8
+
+    async def test_throttle_no_delay_after_interval(self):
+        """No delay when enough time has passed since the last request."""
+        client = BangumiClient(access_token="test")
+
+        loop = asyncio.get_event_loop()
+
+        # Simulate that the last request was long ago
+        client._last_request_time = loop.time() - _REQUEST_INTERVAL - 1.0
+
+        start = loop.time()
+        await client._throttle()
+        elapsed = loop.time() - start
+
+        # Should return almost immediately (no sleep)
+        assert elapsed < 0.1
+
+
+# ================================================================
 # Tool tests
 # ================================================================
 
 
 class TestBangumiTools:
-    """Tests for Bangumi skill scripts (plain function interface)."""
+    """Tests for Bangumi skill scripts (plain function interface).
 
-    def test_calendar_tool_format(self):
-        from openlist_ani.assistant.skills.bangumi.script.calendar import (
-            _format_calendar,
-        )
+    Skill scripts live under ``skills/bangumi/script/`` and are loaded at
+    runtime by SkillCatalog, **not** via normal Python package imports.
+    We use ``importlib.util`` to load them from their file paths.
+    """
 
-        day = CalendarDay(
-            weekday=Weekday(en="Mon", cn="星期一", ja="月曜日", id=1),
-            items=[
-                CalendarItem(
-                    id=100,
-                    name="Test",
-                    name_cn="测试",
-                    rating=BangumiRating(score=8.5),
-                    rank=50,
-                )
-            ],
+    @staticmethod
+    def _load_skill(script_name: str):
+        """Load a skill script module from ``skills/bangumi/script/``."""
+        import importlib.util
+        from pathlib import Path
+
+        script_dir = Path(__file__).resolve().parents[3] / "skills" / "bangumi" / "script"
+        path = script_dir / f"{script_name}.py"
+        spec = importlib.util.spec_from_file_location(
+            f"skill_bangumi_{script_name}", path
         )
-        result = _format_calendar([day])
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    @pytest.mark.asyncio
+    async def test_calendar_tool_format(self):
+        calendar_mod = self._load_skill("calendar")
+
+        mock_client = AsyncMock()
+        mock_client.fetch_calendar.return_value = [
+            CalendarDay(
+                weekday=Weekday(en="Mon", cn="星期一", ja="月曜日", id=1),
+                items=[
+                    CalendarItem(
+                        id=100,
+                        name="Test",
+                        name_cn="测试",
+                        rating=BangumiRating(score=8.5),
+                        rank=50,
+                    )
+                ],
+            )
+        ]
+        mock_client.close = AsyncMock()
+
+        with patch.object(calendar_mod, "BangumiClient", return_value=mock_client):
+            result = await calendar_mod.run()
+
         assert "星期一" in result
         assert "测试" in result
         assert "8.5" in result
 
-    def test_subject_run_exists(self):
-        from openlist_ani.assistant.skills.bangumi.script.subject import run
+    def test_subject_detail_run_exists(self):
+        mod = self._load_skill("subject_detail")
+        assert callable(mod.run)
 
-        assert callable(run)
+    def test_user_collections_run_exists(self):
+        mod = self._load_skill("user_collections")
+        assert callable(mod.run)
 
-    def test_collection_run_exists(self):
-        from openlist_ani.assistant.skills.bangumi.script.collection import run
+    @pytest.mark.asyncio
+    async def test_user_collections_tool_format(self):
+        mod = self._load_skill("user_collections")
 
-        assert callable(run)
+        # The skill script accesses entry.type, entry.subject,
+        # entry.rate, entry.ep_status — use a simple namespace to match.
+        entry = MagicMock()
+        entry.type = 2
+        entry.rate = 9
+        entry.ep_status = 0
+        entry.subject = MagicMock()
+        entry.subject.id = 100
+        entry.subject.name = "Test"
+        entry.subject.name_cn = "测试"
 
-    def test_collection_tool_format(self):
-        from openlist_ani.assistant.skills.bangumi.script.collection import (
-            _format_collections,
-        )
+        mock_client = AsyncMock()
+        mock_client.fetch_user_collections.return_value = [entry]
+        mock_client.close = AsyncMock()
 
-        entries = [
-            UserCollectionEntry(
-                subject_id=100,
-                rate=9,
-                type=2,
-                comment="Great!",
-                subject=SlimSubject(id=100, name="Test", name_cn="测试"),
-            ),
-        ]
-        result = _format_collections(entries)
+        with patch.object(mod, "BangumiClient", return_value=mock_client), \
+             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+            result = await mod.run()
+
         assert "测试" in result
-        assert "rating:9" in result
-        assert "看过" in result
+        assert "rated:9" in result
+        assert "done" in result
 
-    def test_reviews_tool_format(self):
-        from openlist_ani.assistant.skills.bangumi.script.reviews import (
-            _format_reviews,
-        )
+    def test_search_run_exists(self):
+        mod = self._load_skill("search")
+        assert callable(mod.run)
 
-        topics = [
-            BangumiTopic(id=1, title="Great show!", replies=10, user_nickname="alice"),
-        ]
-        blogs = [
-            BangumiBlog(
-                id=2,
-                title="In-depth review",
-                summary="This anime is phenomenal...",
-                replies=5,
-                user_nickname="bob",
-            ),
-        ]
-        result = _format_reviews(100, topics, blogs)
-        assert "Great show!" in result
-        assert "alice" in result
-        assert "10 replies" in result
-        assert "In-depth review" in result
-        assert "bob" in result
-        assert "phenomenal" in result
+    def test_related_subjects_run_exists(self):
+        mod = self._load_skill("related_subjects")
+        assert callable(mod.run)
 
-    async def test_collect_tool_validates_type(self):
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
+    def test_update_collection_run_exists(self):
+        mod = self._load_skill("update_collection")
+        assert callable(mod.run)
 
-        result = await run(subject_id=100, collection_type=99)
-        assert "Invalid collection type" in result
+    @pytest.mark.asyncio
+    async def test_update_collection_requires_subject_id(self):
+        mod = self._load_skill("update_collection")
+        result = await mod.run()
+        assert "Error" in result
+        assert "subject_id" in result
 
-    async def test_collect_tool_validates_ep_status(self):
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
+    @pytest.mark.asyncio
+    async def test_update_collection_requires_at_least_one_field(self):
+        mod = self._load_skill("update_collection")
+        result = await mod.run(subject_id="100")
+        assert "Error" in result
 
-        result = await run(subject_id=100, collection_type=2, ep_status=-1)
-        assert "Invalid ep_status" in result
-
-    async def test_collect_tool_updates_single_episode(self):
-        from openlist_ani.assistant.skills.bangumi.script import collect as bt
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
+    @pytest.mark.asyncio
+    async def test_update_collection_sets_status(self):
+        mod = self._load_skill("update_collection")
 
         mock_client = AsyncMock()
-        mock_client.fetch_subject_episodes.return_value = [
-            {"id": 1001, "ep": 1, "sort": 1, "type": 0},
-            {"id": 1002, "ep": 2, "sort": 2, "type": 0},
-            {"id": 1028, "ep": 28, "sort": 28, "type": 0},
-        ]
+        mock_client.post_user_collection = AsyncMock()
+        mock_client.close = AsyncMock()
 
-        with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await run(
-                subject_id=517057,
-                collection_type=3,
-                episode_number=28,
-            )
+        with patch.object(mod, "BangumiClient", return_value=mock_client), \
+             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+            result = await mod.run(subject_id="517057", collection_type="3")
 
-        assert "Successfully updated subject 517057" in result
+        assert "Collection updated for subject 517057" in result
+        assert "status=doing" in result
         mock_client.post_user_collection.assert_called_once()
-        post_call = mock_client.post_user_collection.call_args
-        assert post_call[1]["subject_id"] == 517057
-        assert post_call[1]["collection_type"] == 3
-        assert post_call[1]["ep_status"] is None
-        mock_client.patch_subject_episode_collections.assert_called_once_with(
-            subject_id=517057,
-            episode_ids=[1028],
-            collection_type=2,
-        )
+        call_kwargs = mock_client.post_user_collection.call_args[1]
+        assert call_kwargs["subject_id"] == 517057
+        assert call_kwargs["collection_type"] == 3
 
-    async def test_collect_tool_updates_progress_to_n(self):
-        from openlist_ani.assistant.skills.bangumi.script import collect as bt
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
+    @pytest.mark.asyncio
+    async def test_update_collection_sets_rate(self):
+        mod = self._load_skill("update_collection")
 
         mock_client = AsyncMock()
-        mock_client.fetch_subject_episodes.return_value = [
-            {"id": 1001, "ep": 1, "sort": 1, "type": 0},
-            {"id": 1002, "ep": 2, "sort": 2, "type": 0},
-            {"id": 1003, "ep": 3, "sort": 3, "type": 0},
-        ]
+        mock_client.post_user_collection = AsyncMock()
+        mock_client.close = AsyncMock()
 
-        with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await run(
-                subject_id=517057,
-                collection_type=3,
-                ep_status=3,
-            )
+        with patch.object(mod, "BangumiClient", return_value=mock_client), \
+             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+            result = await mod.run(subject_id="517057", rate="8")
 
-        assert "Episode updates: 3 matched" in result
-        mock_client.patch_subject_episode_collections.assert_called_once_with(
-            subject_id=517057,
-            episode_ids=[1001, 1002, 1003],
-            collection_type=2,
-        )
+        assert "Collection updated for subject 517057" in result
+        assert "rate=8/10" in result
 
-    async def test_collect_tool_blocks_update_when_episode_mismatch(self):
-        from openlist_ani.assistant.skills.bangumi.script import collect as bt
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
+    @pytest.mark.asyncio
+    async def test_update_collection_sets_ep_status(self):
+        mod = self._load_skill("update_collection")
 
         mock_client = AsyncMock()
-        mock_client.fetch_subject_episodes.return_value = [
-            {"id": 1001, "ep": 1, "sort": 1, "type": 0},
-            {"id": 1002, "ep": 2, "sort": 2, "type": 0},
-            {"id": 1003, "ep": 3, "sort": 3, "type": 0},
-        ]
+        mock_client.post_user_collection = AsyncMock()
+        mock_client.close = AsyncMock()
 
-        with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await run(
-                subject_id=517057,
-                collection_type=3,
-                ep_status=5,
-            )
+        with patch.object(mod, "BangumiClient", return_value=mock_client), \
+             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+            result = await mod.run(subject_id="517057", ep_status="5")
 
-        assert "MISMATCH" in result
-        assert "DO NOT call this tool again" in result
-        mock_client.post_user_collection.assert_not_called()
-        mock_client.patch_subject_episode_collections.assert_not_called()
+        assert "Collection updated for subject 517057" in result
+        assert "ep_status=5" in result
 
-    async def test_collect_tool_rolls_back_progress_when_target_lower(self):
-        from openlist_ani.assistant.skills.bangumi.script import collect as bt
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
-        from openlist_ani.core.bangumi.model import UserCollectionEntry
+    @pytest.mark.asyncio
+    async def test_update_collection_sets_comment(self):
+        mod = self._load_skill("update_collection")
 
         mock_client = AsyncMock()
-        mock_client.fetch_subject_episodes.return_value = [
-            {"id": 1001, "ep": 1, "sort": 1, "type": 0},
-            {"id": 1002, "ep": 2, "sort": 2, "type": 0},
-            {"id": 1003, "ep": 3, "sort": 3, "type": 0},
-            {"id": 1004, "ep": 4, "sort": 4, "type": 0},
-            {"id": 1005, "ep": 5, "sort": 5, "type": 0},
-            {"id": 1006, "ep": 6, "sort": 6, "type": 0},
-            {"id": 1007, "ep": 7, "sort": 7, "type": 0},
-            {"id": 1008, "ep": 8, "sort": 8, "type": 0},
-            {"id": 1009, "ep": 9, "sort": 9, "type": 0},
-            {"id": 1010, "ep": 10, "sort": 10, "type": 0},
-            {"id": 1011, "ep": 11, "sort": 11, "type": 0},
-        ]
-        mock_client.fetch_user_collections.return_value = [
-            UserCollectionEntry(subject_id=517057, ep_status=11)
-        ]
+        mock_client.post_user_collection = AsyncMock()
+        mock_client.close = AsyncMock()
 
-        with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await run(
-                subject_id=517057,
-                collection_type=3,
-                ep_status=4,
-            )
+        with patch.object(mod, "BangumiClient", return_value=mock_client), \
+             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+            result = await mod.run(subject_id="517057", comment="Great anime!")
 
-        assert "Rollback cleared episodes: 7" in result
-        mock_client.post_user_collection.assert_called_once()
-        assert mock_client.patch_subject_episode_collections.call_count == 2
-        first_call = mock_client.patch_subject_episode_collections.call_args_list[0]
-        second_call = mock_client.patch_subject_episode_collections.call_args_list[1]
-        assert first_call.kwargs == {
-            "subject_id": 517057,
-            "episode_ids": [1001, 1002, 1003, 1004],
-            "collection_type": 2,
-        }
-        assert second_call.kwargs == {
-            "subject_id": 517057,
-            "episode_ids": [1005, 1006, 1007, 1008, 1009, 1010, 1011],
-            "collection_type": 0,
-        }
-
-    async def test_collect_tool_allows_episode_collection_type_zero(self):
-        from openlist_ani.assistant.skills.bangumi.script import collect as bt
-        from openlist_ani.assistant.skills.bangumi.script.collect import run
-
-        mock_client = AsyncMock()
-        mock_client.fetch_subject_episodes.return_value = [
-            {"id": 1028, "ep": 28, "sort": 28, "type": 0},
-        ]
-
-        with patch.object(bt, "_get_client", return_value=mock_client):
-            result = await run(
-                subject_id=517057,
-                collection_type=3,
-                episode_number=28,
-                episode_collection_type=0,
-            )
-
-        assert "Successfully updated subject 517057" in result
-        mock_client.patch_subject_episode_collections.assert_called_once_with(
-            subject_id=517057,
-            episode_ids=[1028],
-            collection_type=0,
-        )
-
-    def test_season_helpers(self):
-        from openlist_ani.assistant.skills.bangumi.script.helper.client import (
-            _season_label,
-        )
-
-        assert _season_label(1) == "冬季/1月番"
-        assert _season_label(4) == "春季/4月番"
-        assert _season_label(7) == "夏季/7月番"
-        assert _season_label(10) == "秋季/10月番"
+        assert "Collection updated for subject 517057" in result
+        assert "comment=" in result

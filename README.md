@@ -74,7 +74,7 @@ enabled = true
 
 [assistant.telegram]
 bot_token = ""        # 从 @BotFather 获取
-allowed_users = []    # 允许的用户 ID 列表，留空则不限制
+allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
 ```
 
 ```bash

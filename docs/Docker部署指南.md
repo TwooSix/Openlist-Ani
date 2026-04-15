@@ -28,6 +28,14 @@ urls = [
 ]
 interval_time = 300
 
+# ---------- 下载优先级（可选） ----------
+# 同一番剧同集存在多个资源时，按优先级自动过滤
+# [rss.priority]
+# field_order = ["fansub", "quality", "languages"]  # 比较顺序
+# fansub = []                # 字幕组优先级（靠前优先）
+# quality = ["2160p", "1080p", "720p", "480p"]  # 清晰度优先级
+# languages = []             # 语言优先级，可选: "简", "繁", "日", "英"
+
 # ---------- 代理（可选） ----------
 [proxy]
 http = ""
@@ -72,7 +80,7 @@ enabled = false
 
 [assistant.telegram]
 bot_token = ""
-allowed_users = []
+allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
 
 # ---------- Bangumi（可选） ----------
 [bangumi]

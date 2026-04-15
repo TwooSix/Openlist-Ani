@@ -84,7 +84,7 @@ class MikanWebsite(WebsiteBase):
         matches = list(self._SEASON_TOKEN_RE.finditer(normalized))
         for match in reversed(matches):
             season = self._parse_cn_number(match.group(1).replace(" ", ""))
-            left = normalized[: match.start()].rstrip()  #  text before season token
+            left = normalized[: match.start()].rstrip()
             base_name = left.strip()
             return (base_name or normalized), season
 

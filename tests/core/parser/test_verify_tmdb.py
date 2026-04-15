@@ -1,18 +1,26 @@
-"""Tests for episode mapping, cour-based mapping, and cour detection."""
+"""Tests for episode mapping, cour-based mapping, cour detection, and TMDBResolver."""
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
 from openlist_ani.core.parser.cour.detector import detect_cours_from_episodes
-from openlist_ani.core.parser.model import SeasonInfo
+from openlist_ani.core.parser.model import (
+    ParseResult,
+    ResourceTitleParseResult,
+    SeasonInfo,
+    TMDBCandidate,
+    TMDBMatch,
+)
 from openlist_ani.core.parser.tmdb.episode_mapper import (
     CourMappingStrategy,
     EpisodeMapper,
     MappingContext,
     _map_absolute_episode,
 )
+from openlist_ani.core.parser.tmdb.resolver import TMDBResolver
 
 
 def _make_season(num: int, eps: int, name: str = "") -> dict:
@@ -725,3 +733,371 @@ class TestIntegrationWithCourDetection:
             mock_tmdb, 203737, season=3, episode=1, anime_name="【我推的孩子】"
         )
         assert result is None
+
+
+# =========================================================================
+# TMDBResolver.resolve_tmdb_id — full flow
+# =========================================================================
+
+
+class TestResolveTmdbId:
+    """Test TMDBResolver.resolve_tmdb_id: title → queries → search → select → ID."""
+
+    @pytest.mark.asyncio
+    async def test_full_resolve_flow(self):
+        """Title → LLM expands queries → TMDB search → LLM selects candidate."""
+        mock_llm = AsyncMock()
+        # First call: query expansion
+        mock_llm.complete_chat.side_effect = [
+            json.dumps(
+                {"queries": ["Frieren", "葬送のフリーレン", "Sousou no Frieren"]}
+            ),
+            # Second call: candidate selection
+            json.dumps(
+                {"tmdb_id": 209867, "anime_name": "Frieren", "confidence": "high"}
+            ),
+        ]
+
+        mock_tmdb = AsyncMock()
+        # Each query returns search results (some overlapping)
+        mock_tmdb.search_tv_show.side_effect = [
+            # "Frieren" results (original name inserted first)
+            [
+                {
+                    "id": 209867,
+                    "name": "Frieren: Beyond Journey's End",
+                    "original_name": "葬送のフリーレン",
+                    "first_air_date": "2023-09-29",
+                    "overview": "An elf and her companions.",
+                    "genre_ids": [16, 10759],
+                    "origin_country": ["JP"],
+                },
+            ],
+            # "Frieren" (first expanded query, same as anime_name)
+            [
+                {
+                    "id": 209867,
+                    "name": "Frieren: Beyond Journey's End",
+                    "original_name": "葬送のフリーレン",
+                    "first_air_date": "2023-09-29",
+                    "overview": "An elf and her companions.",
+                    "genre_ids": [16, 10759],
+                    "origin_country": ["JP"],
+                },
+            ],
+            # "葬送のフリーレン"
+            [
+                {
+                    "id": 209867,
+                    "name": "Frieren: Beyond Journey's End",
+                    "original_name": "葬送のフリーレン",
+                    "first_air_date": "2023-09-29",
+                    "overview": "An elf and her companions.",
+                    "genre_ids": [16, 10759],
+                    "origin_country": ["JP"],
+                },
+            ],
+            # "Sousou no Frieren"
+            [],
+        ]
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+        result = await resolver.resolve_tmdb_id("Frieren")
+
+        assert result is not None
+        assert result.tmdb_id == 209867
+        assert result.confidence == "high"
+        # Dedup: same ID=209867 from multiple queries → only 1 candidate sent to LLM
+        assert mock_llm.complete_chat.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_search_results(self):
+        """When TMDB returns no results for any query, resolve returns None."""
+        mock_llm = AsyncMock()
+        mock_llm.complete_chat.return_value = json.dumps({"queries": ["Nonexistent"]})
+
+        mock_tmdb = AsyncMock()
+        mock_tmdb.search_tv_show.return_value = []
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+        result = await resolver.resolve_tmdb_id("Nonexistent Anime")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_top_candidate_when_llm_selection_fails(self):
+        """When LLM candidate selection returns None, use the first candidate."""
+        mock_llm = AsyncMock()
+        mock_llm.complete_chat.side_effect = [
+            # query expansion
+            json.dumps({"queries": ["Test"]}),
+            # candidate selection → invalid response
+            "I'm not sure which one to pick.",
+        ]
+
+        mock_tmdb = AsyncMock()
+        mock_tmdb.search_tv_show.side_effect = [
+            # "Test" (anime_name inserted first)
+            [
+                {
+                    "id": 100,
+                    "name": "Top Result",
+                    "original_name": "トップ",
+                    "first_air_date": "2024-01-01",
+                    "overview": "First result.",
+                    "genre_ids": [16],
+                    "origin_country": ["JP"],
+                },
+                {
+                    "id": 200,
+                    "name": "Second Result",
+                    "original_name": "セカンド",
+                    "first_air_date": "2024-01-01",
+                    "overview": "Second result.",
+                    "genre_ids": [16],
+                    "origin_country": ["JP"],
+                },
+            ],
+            # "Test" (from expanded queries, same as anime_name)
+            [
+                {
+                    "id": 100,
+                    "name": "Top Result",
+                    "original_name": "トップ",
+                    "first_air_date": "2024-01-01",
+                    "overview": "First result.",
+                    "genre_ids": [16],
+                    "origin_country": ["JP"],
+                },
+            ],
+        ]
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+        result = await resolver.resolve_tmdb_id("Test")
+
+        assert result is not None
+        assert result.tmdb_id == 100
+        assert result.anime_name == "Top Result"
+
+    @pytest.mark.asyncio
+    async def test_anime_name_prepended_to_queries_if_missing(self):
+        """The original anime_name should be inserted at index 0 if not
+        already in the expanded queries."""
+        mock_llm = AsyncMock()
+        mock_llm.complete_chat.side_effect = [
+            json.dumps({"queries": ["Different Query"]}),
+            json.dumps({"tmdb_id": 42, "confidence": "high"}),
+        ]
+
+        mock_tmdb = AsyncMock()
+        mock_tmdb.search_tv_show.return_value = [
+            {
+                "id": 42,
+                "name": "My Anime",
+                "original_name": "マイアニメ",
+                "first_air_date": "2024-01-01",
+                "overview": "Test.",
+                "genre_ids": [],
+                "origin_country": ["JP"],
+            },
+        ]
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+        result = await resolver.resolve_tmdb_id("Original Name")
+
+        assert result is not None
+        # Should have searched with both "Original Name" and "Different Query"
+        assert mock_tmdb.search_tv_show.await_count == 2
+        calls = [c.args[0] for c in mock_tmdb.search_tv_show.call_args_list]
+        assert "Original Name" in calls
+        assert "Different Query" in calls
+
+
+# =========================================================================
+# TMDBResolver._process_single_item — error paths
+# =========================================================================
+
+
+class TestProcessSingleItemErrors:
+    """Tests for _process_single_item error paths: TMDB unresolved, mapping failure."""
+
+    @pytest.mark.asyncio
+    async def test_tmdb_unresolved_marks_item_failed(self):
+        """When resolved_map has no entry for the anime name, the item should
+        be marked as failed with result=None."""
+        mock_llm = AsyncMock()
+        mock_tmdb = AsyncMock()
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+
+        item = ParseResult(
+            success=True,
+            result=ResourceTitleParseResult(
+                anime_name="Unknown Anime",
+                season=1,
+                episode=5,
+                quality="1080p",
+                fansub="Sub",
+                languages=["日"],
+                version=1,
+            ),
+            resource_title="[Sub] Unknown Anime - 05 [1080p]",
+        )
+
+        # Empty resolved_map means no TMDB match found
+        resolved_map: dict[str, TMDBMatch] = {}
+        from openlist_ani.core.parser.tmdb.resolver import _VerifyCache
+
+        verify_cache = _VerifyCache()
+
+        await resolver._process_single_item(item, resolved_map, verify_cache)
+
+        assert not item.success
+        assert item.result is None
+        assert "TMDB match not found" in item.error
+
+    @pytest.mark.asyncio
+    async def test_mapping_failure_marks_item_failed(self):
+        """When TMDB ID is resolved but season/episode mapping fails,
+        the item should be marked as failed."""
+        mock_llm = AsyncMock()
+        mock_tmdb = AsyncMock()
+        # Return details with no matching season for the episode
+        mock_tmdb.get_tv_show_details.return_value = {
+            "seasons": [{"season_number": 1, "episode_count": 12}]
+        }
+        # Need mock for cour detection; season episode request returns empty
+        mock_tmdb.get_season_episodes.return_value = []
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+
+        item = ParseResult(
+            success=True,
+            result=ResourceTitleParseResult(
+                anime_name="Test Anime",
+                season=1,
+                episode=99,  # Way beyond S1's 12 episodes
+                quality="1080p",
+                fansub="Sub",
+                languages=["日"],
+                version=1,
+            ),
+            resource_title="[Sub] Test Anime - 99 [1080p]",
+        )
+
+        resolved_map = {
+            "Test Anime": TMDBMatch(
+                tmdb_id=42, anime_name="Test Anime", confidence="high"
+            ),
+        }
+        from openlist_ani.core.parser.tmdb.resolver import _VerifyCache
+
+        verify_cache = _VerifyCache()
+
+        await resolver._process_single_item(item, resolved_map, verify_cache)
+
+        assert not item.success
+        assert item.result is None
+        assert "mapping failed" in item.error
+
+    @pytest.mark.asyncio
+    async def test_process_single_item_skips_when_no_result(self):
+        """When item.result is None, _process_single_item should return early."""
+        mock_llm = AsyncMock()
+        mock_tmdb = AsyncMock()
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+
+        item = ParseResult(success=True, result=None)
+        resolved_map: dict[str, TMDBMatch] = {}
+        from openlist_ani.core.parser.tmdb.resolver import _VerifyCache
+
+        verify_cache = _VerifyCache()
+
+        await resolver._process_single_item(item, resolved_map, verify_cache)
+
+        # Should not modify item since result is None
+        assert item.success is True
+        mock_tmdb.get_tv_show_details.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_successful_mapping_updates_season_episode(self):
+        """When TMDB resolves and mapping succeeds, season/episode are updated."""
+        mock_llm = AsyncMock()
+        mock_tmdb = AsyncMock()
+        mock_tmdb.get_tv_show_details.return_value = {
+            "seasons": [
+                {"season_number": 1, "episode_count": 12},
+                {"season_number": 2, "episode_count": 12},
+            ]
+        }
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+
+        item = ParseResult(
+            success=True,
+            result=ResourceTitleParseResult(
+                anime_name="Test Anime",
+                season=1,
+                episode=15,  # Absolute → S2E3
+                quality="1080p",
+                fansub="Sub",
+                languages=["日"],
+                version=1,
+            ),
+            resource_title="[Sub] Test Anime - 15 [1080p]",
+        )
+
+        resolved_map = {
+            "Test Anime": TMDBMatch(
+                tmdb_id=42, anime_name="TMDB Test Anime", confidence="high"
+            ),
+        }
+        from openlist_ani.core.parser.tmdb.resolver import _VerifyCache
+
+        verify_cache = _VerifyCache()
+
+        await resolver._process_single_item(item, resolved_map, verify_cache)
+
+        assert item.success
+        assert item.result is not None
+        assert item.result.tmdb_id == 42
+        assert item.result.anime_name == "TMDB Test Anime"
+        assert item.result.season == 2
+        assert item.result.episode == 3
+
+    @pytest.mark.asyncio
+    async def test_tmdb_details_unavailable_marks_mapping_failed(self):
+        """When get_tv_show_details returns empty dict, mapping fails."""
+        mock_llm = AsyncMock()
+        mock_tmdb = AsyncMock()
+        mock_tmdb.get_tv_show_details.return_value = {}
+
+        resolver = TMDBResolver(llm_client=mock_llm, tmdb_client=mock_tmdb)
+
+        item = ParseResult(
+            success=True,
+            result=ResourceTitleParseResult(
+                anime_name="Test Anime",
+                season=1,
+                episode=5,
+                quality="1080p",
+                fansub="Sub",
+                languages=["日"],
+                version=1,
+            ),
+            resource_title="[Sub] Test Anime - 05 [1080p]",
+        )
+
+        resolved_map = {
+            "Test Anime": TMDBMatch(
+                tmdb_id=42, anime_name="Test Anime", confidence="high"
+            ),
+        }
+        from openlist_ani.core.parser.tmdb.resolver import _VerifyCache
+
+        verify_cache = _VerifyCache()
+
+        await resolver._process_single_item(item, resolved_map, verify_cache)
+
+        assert not item.success
+        assert item.result is None
+        assert "mapping failed" in item.error

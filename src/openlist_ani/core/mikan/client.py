@@ -20,6 +20,7 @@ _USER_AGENT = "openlist-ani/1.0 (https://github.com/Openlist-Ani)"
 _LOGIN_PATH = "/Account/Login"
 _SUBSCRIBE_PATH = "/Home/SubscribeBangumi"
 _UNSUBSCRIBE_PATH = "/Home/UnsubscribeBangumi"
+_DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
 _CSRF_TOKEN_RE = re.compile(
     r'name="__RequestVerificationToken"\s+type="hidden"\s+value="([^"]+)"'
     r"|"
@@ -290,14 +291,15 @@ class MikanClient:
         """Fetch available subtitle groups for a bangumi.
 
         Scrapes the bangumi detail page to extract the list of fansub
-        groups that have released episodes for this bangumi.
+        groups that have released resources for this bangumi.
+        Returns up to 20 releases per group (newest first).
 
         Args:
             bangumi_id: Mikan bangumi ID.
 
         Returns:
-            List of dicts with ``id`` (int) and ``name`` (str) for each
-            subtitle group.
+            List of dicts with ``id`` (int), ``name`` (str), and
+            ``releases`` (list[dict]) for each subtitle group.
         """
         session = self._ensure_session()
         url = f"{_MIKAN_BASE_URL}/Home/Bangumi/{bangumi_id}"
@@ -317,21 +319,71 @@ class MikanClient:
         return self._parse_subgroups(html)
 
     @staticmethod
-    def _extract_group_episodes(
-        soup: BeautifulSoup, group_id: int, max_episodes: int = 5
+    def _parse_release_row(row: Any) -> dict[str, str] | None:
+        """Parse a single release table row into a dict.
+
+        A release is one resource entry (a specific language/quality
+        variant). Multiple releases may correspond to the same episode.
+
+        Returns:
+            Dict with ``title``, ``date``, and optionally ``url``/``magnet``,
+            or None if the row has no valid title.
+        """
+        title_tag = row.select_one("a.magnet-link-wrap")
+        if not title_tag:
+            return None
+
+        title = title_tag.get_text(strip=True)
+        if not title:
+            return None
+
+        # Release detail page URL
+        release_url = title_tag.get("href", "")
+        if release_url and not release_url.startswith("http"):
+            release_url = f"{_MIKAN_BASE_URL}{release_url}"
+
+        # Magnet link from the magnet button
+        magnet = ""
+        magnet_tag = row.select_one("a.js-magnet")
+        if magnet_tag:
+            magnet = magnet_tag.get("data-clipboard-text", "")
+
+        release_date = next(
+            (
+                td.get_text(strip=True)
+                for td in row.select("td")
+                if _DATE_RE.match(td.get_text(strip=True))
+            ),
+            "",
+        )
+
+        release: dict[str, str] = {"title": title, "date": release_date}
+        if release_url:
+            release["url"] = release_url
+        if magnet:
+            release["magnet"] = magnet
+        return release
+
+    @staticmethod
+    def _extract_group_releases(
+        soup: BeautifulSoup,
+        group_id: int,
+        max_releases: int = 20,
     ) -> list[dict[str, str]]:
-        """Extract latest episodes for a subtitle group from the parsed page.
+        """Extract releases for a subtitle group from the parsed page.
+
+        Each release is a single resource entry (one language/quality
+        variant). Multiple releases may correspond to the same episode.
 
         Args:
             soup: Parsed BeautifulSoup page.
-            group_id: Subtitle group ID whose episodes to extract.
-            max_episodes: Maximum number of episodes to return.
+            group_id: Subtitle group ID whose releases to extract.
+            max_releases: Maximum number of releases to return.
 
         Returns:
-            List of dicts with ``title`` and ``date`` keys.
+            List of dicts with ``title``, ``date``, and optionally
+            ``url`` (release page) and ``magnet`` (magnet link) keys.
         """
-        _DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
-
         header_div = soup.find("div", id=str(group_id))
         if not header_div:
             return []
@@ -340,40 +392,31 @@ class MikanClient:
         if not ep_table:
             return []
 
-        episodes: list[dict[str, str]] = []
-        for row in ep_table.select("tr")[:max_episodes]:
-            title_tag = row.select_one("a.magnet-link-wrap")
-            if not title_tag:
-                continue
-            ep_title = title_tag.get_text(strip=True)
-            ep_date = next(
-                (
-                    td.get_text(strip=True)
-                    for td in row.select("td")
-                    if _DATE_RE.match(td.get_text(strip=True))
-                ),
-                "",
-            )
-            if ep_title:
-                episodes.append({"title": ep_title, "date": ep_date})
+        releases: list[dict[str, str]] = []
+        for row in ep_table.select("tr")[:max_releases]:
+            release = MikanClient._parse_release_row(row)
+            if release is not None:
+                releases.append(release)
 
-        return episodes
+        return releases
 
     @staticmethod
     def _parse_subgroups(html: str) -> list[dict[str, Any]]:
-        """Parse subtitle groups and their latest episodes from a bangumi page.
+        """Parse subtitle groups and their releases from a bangumi page.
 
         Each group dict contains:
         - ``id`` (int) — subtitle group ID
         - ``name`` (str) — group name
-        - ``episodes`` (list[dict]) — latest episodes with ``title`` and
-          ``date`` keys (up to 5 per group)
+        - ``releases`` (list[dict]) — up to 20 releases with ``title``,
+          ``date``, and optionally ``url``/``magnet`` keys.
+          Note: one episode may have multiple releases (different
+          language/quality variants).
 
         Args:
             html: Raw HTML of the bangumi page.
 
         Returns:
-            List of group dicts with episode details.
+            List of group dicts with release details.
         """
         soup = BeautifulSoup(html, "lxml")
         results: list[dict[str, Any]] = []
@@ -390,8 +433,8 @@ class MikanClient:
                 continue
             seen.add(group_id)
 
-            episodes = MikanClient._extract_group_episodes(soup, group_id)
-            results.append({"id": group_id, "name": name, "episodes": episodes})
+            releases = MikanClient._extract_group_releases(soup, group_id)
+            results.append({"id": group_id, "name": name, "releases": releases})
 
         return results
 

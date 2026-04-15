@@ -40,6 +40,21 @@ class FakeClient:
         self.call_count += 1
         return None  # always returns None
 
+    @ttl_cached(maxsize=64, ttl=300)
+    async def fetch_by_kwargs(
+        self,
+        *,
+        subject_type: int = 2,
+        collection_type: int | None = None,
+    ) -> str:
+        self.call_count += 1
+        return f"sub={subject_type},col={collection_type}"
+
+    @ttl_cached(maxsize=64, ttl=300)
+    async def fetch_mixed(self, item_id: int, *, quality: str = "1080p") -> str:
+        self.call_count += 1
+        return f"{item_id}-{quality}"
+
 
 # ---- Tests ---------------------------------------------------------------
 
@@ -170,3 +185,50 @@ class TestTTLCachedDecorator:
 
         await client.fetch(1, 3)
         assert client.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_kwargs_only_different_values_not_conflated(self) -> None:
+        """Different kwargs must produce different cache keys (bug fix test).
+
+        Previously, _make_cache_key ignored kwargs when no custom key function
+        was provided, causing all kwargs-only calls to share cache key ().
+        """
+        client = FakeClient()
+        r1 = await client.fetch_by_kwargs(subject_type=2)
+        assert client.call_count == 1
+        assert r1 == "sub=2,col=None"
+
+        # Different kwargs should miss cache
+        r2 = await client.fetch_by_kwargs(subject_type=2, collection_type=1)
+        assert client.call_count == 2
+        assert r2 == "sub=2,col=1"
+
+        # Same kwargs should hit cache
+        r3 = await client.fetch_by_kwargs(subject_type=2, collection_type=1)
+        assert client.call_count == 2
+        assert r3 == r2
+
+    @pytest.mark.asyncio
+    async def test_kwargs_only_same_values_cached(self) -> None:
+        """Same kwargs should hit the cache."""
+        client = FakeClient()
+        await client.fetch_by_kwargs(subject_type=3)
+        await client.fetch_by_kwargs(subject_type=3)
+        assert client.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_mixed_args_and_kwargs(self) -> None:
+        """Methods with both positional args and keyword args."""
+        client = FakeClient()
+        r1 = await client.fetch_mixed(1, quality="1080p")
+        assert client.call_count == 1
+
+        # Same call → cached
+        r2 = await client.fetch_mixed(1, quality="1080p")
+        assert client.call_count == 1
+        assert r1 == r2
+
+        # Different kwarg → new call
+        r3 = await client.fetch_mixed(1, quality="720p")
+        assert client.call_count == 2
+        assert r3 != r1

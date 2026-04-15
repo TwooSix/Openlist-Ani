@@ -16,7 +16,6 @@ class WebsiteFactory:
         resources = await parser.fetch_feed("https://acg.rip/.xml")
     """
 
-    # Domain to parser class mapping
     _DOMAIN_MAPPING = {
         # Mikan Project - requires special handling
         "mikanani.me": MikanWebsite,
@@ -56,24 +55,20 @@ class WebsiteFactory:
             parsed = urlparse(url)
             domain = parsed.netloc.lower()
 
-            # Remove www. prefix if present
             if domain.startswith("www."):
                 domain = domain[4:]
 
             if not domain:
                 raise ValueError(f"Cannot extract domain from URL: {url}")
 
-            # Try exact domain match first
             if domain in self._DOMAIN_MAPPING:
                 parser_class = self._DOMAIN_MAPPING[domain]
                 return parser_class()
 
-            # Try subdomain matching
             for registered_domain, parser_class in self._DOMAIN_MAPPING.items():
                 if domain.endswith(f".{registered_domain}"):
                     return parser_class()
 
-            # Default to common RSS parser for unknown domains
             return CommonRSSWebsite()
 
         except Exception as e:

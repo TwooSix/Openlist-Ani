@@ -120,6 +120,11 @@ def _make_cache_key(
     """Build a hashable cache key from the method arguments."""
     if key_func is not None:
         return key_func(*args, **kwargs)
+    sorted_kwargs = tuple(sorted(kwargs.items())) if kwargs else ()
+    if args and sorted_kwargs:
+        return args + sorted_kwargs
     if args:
         return args[0] if len(args) == 1 else args
+    if sorted_kwargs:
+        return sorted_kwargs
     return ()

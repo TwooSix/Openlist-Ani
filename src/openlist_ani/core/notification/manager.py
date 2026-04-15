@@ -8,6 +8,7 @@ notification bots and handles sending notifications to all configured channels.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
@@ -79,14 +80,13 @@ class NotificationManager:
     async def stop(self) -> None:
         """Stop the batch notification worker and send any pending notifications."""
         self._running = False
-        try:
-            if self._batch_task:
-                self._batch_task.cancel()
+        if self._batch_task:
+            self._batch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._batch_task
-        finally:
-            # Send any remaining notifications before propagating cancellation.
-            await self._send_batched_notifications()
-            logger.debug("Notification manager stopped")
+        # Send any remaining notifications after the worker has stopped.
+        await self._send_batched_notifications()
+        logger.debug("Notification manager stopped")
 
     async def _batch_worker(self) -> None:
         """Background worker that periodically sends batched notifications."""
@@ -166,11 +166,12 @@ class NotificationManager:
             logger.debug("No notification bots configured, skipping notification")
             return {}
 
-        results = {}
-        for bot in self._bots:
+        results: dict[str, bool] = {}
+        for idx, bot in enumerate(self._bots):
             bot_type = type(bot).__name__
+            key = bot_type if bot_type not in results else f"{bot_type}_{idx}"
             success = await self._send_with_retry(bot, message)
-            results[bot_type] = success
+            results[key] = success
             if success:
                 logger.info(f"Notification sent via {bot_type}")
             else:
@@ -258,6 +259,4 @@ class NotificationManager:
             logger.warning("No notification bots were successfully initialized")
             return None
 
-        # Get batch interval from config, default to 5 minutes
-        batch_interval = getattr(config, "batch_interval", 300.0)
-        return cls(bots, batch_interval=batch_interval)
+        return cls(bots, batch_interval=config.batch_interval)

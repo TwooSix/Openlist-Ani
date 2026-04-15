@@ -382,9 +382,9 @@ class TestFetchBangumiSubgroups:
 
         subgroups = await client.fetch_bangumi_subgroups(3826)
         assert len(subgroups) == 3
-        assert subgroups[0] == {"id": 1210, "name": "黑白字幕组", "episodes": []}
-        assert subgroups[1] == {"id": 1243, "name": "六四位元字幕组", "episodes": []}
-        assert subgroups[2] == {"id": 615, "name": "Kirara Fantasia", "episodes": []}
+        assert subgroups[0] == {"id": 1210, "name": "黑白字幕组", "releases": []}
+        assert subgroups[1] == {"id": 1243, "name": "六四位元字幕组", "releases": []}
+        assert subgroups[2] == {"id": 615, "name": "Kirara Fantasia", "releases": []}
 
     @pytest.mark.asyncio
     async def test_fetch_subgroups_empty(self):
@@ -442,3 +442,189 @@ class TestParseSubgroups:
         assert len(subgroups) == 2
         assert subgroups[0]["id"] == 100
         assert subgroups[1]["id"] == 200
+
+
+class TestMikanEnsureAuthenticated:
+    """Test _ensure_authenticated auto-login flow."""
+
+    @pytest.mark.asyncio
+    async def test_auto_login_when_not_authenticated(self):
+        """_ensure_authenticated should trigger login() if not yet logged in."""
+        client = MikanClient(username="testuser", password=_MOCK_CREDENTIAL)
+        assert not client.is_authenticated
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        # Mock GET for CSRF token page
+        mock_get_resp = _make_mock_response(status=200, text=LOGIN_PAGE_HTML)
+        mock_session.get = MagicMock(return_value=mock_get_resp)
+
+        # Mock POST for login — success (redirect to home)
+        mock_post_resp = _make_mock_response(
+            status=200,
+            text=LOGIN_SUCCESS_HTML,
+            url="https://mikanani.me/",
+        )
+        mock_session.post = MagicMock(return_value=mock_post_resp)
+
+        client._session = mock_session
+
+        result = await client._ensure_authenticated()
+        assert result is True
+        assert client.is_authenticated
+
+        # Verify login was actually performed (POST was called)
+        mock_session.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skip_login_when_already_authenticated(self):
+        """_ensure_authenticated should return True without calling login()."""
+        client = MikanClient(username="testuser", password=_MOCK_CREDENTIAL)
+        client._authenticated = True
+
+        # No session needed — login should not be called
+        result = await client._ensure_authenticated()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_auto_login_failure_returns_false(self):
+        """_ensure_authenticated should return False when login fails."""
+        client = MikanClient(username="baduser", password=_MOCK_CREDENTIAL)
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        mock_get_resp = _make_mock_response(status=200, text=LOGIN_PAGE_HTML)
+        mock_session.get = MagicMock(return_value=mock_get_resp)
+
+        mock_post_resp = _make_mock_response(
+            status=200,
+            text=LOGIN_FAIL_HTML,
+            url="https://mikanani.me/Account/Login?ReturnUrl=%2F",
+        )
+        mock_session.post = MagicMock(return_value=mock_post_resp)
+
+        client._session = mock_session
+
+        result = await client._ensure_authenticated()
+        assert result is False
+        assert not client.is_authenticated
+
+
+class TestMikanClientClose:
+    """Test MikanClient.close() session cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_close_cleans_up_session(self):
+        """close() should close the session and reset auth state."""
+        client = MikanClient(username="user", password=_MOCK_CREDENTIAL)
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_session.close = AsyncMock()
+
+        client._session = mock_session
+        client._authenticated = True
+
+        await client.close()
+
+        mock_session.close.assert_called_once()
+        assert client._session is None
+        assert not client.is_authenticated
+
+    @pytest.mark.asyncio
+    async def test_close_noop_when_no_session(self):
+        """close() should be safe to call when no session exists."""
+        client = MikanClient(username="user", password=_MOCK_CREDENTIAL)
+        assert client._session is None
+
+        # Should not raise
+        await client.close()
+        assert client._session is None
+        assert not client.is_authenticated
+
+    @pytest.mark.asyncio
+    async def test_close_noop_when_session_already_closed(self):
+        """close() should be safe to call when session is already closed."""
+        client = MikanClient(username="user", password=_MOCK_CREDENTIAL)
+
+        mock_session = MagicMock()
+        mock_session.closed = True  # Already closed
+        mock_session.close = AsyncMock()
+
+        client._session = mock_session
+        client._authenticated = True
+
+        await client.close()
+
+        # Should not call close on an already-closed session
+        mock_session.close.assert_not_called()
+        # But auth state should still be reset
+        assert not client.is_authenticated
+
+
+class TestMikanCsrfFallback:
+    """Test CSRF token extraction with regex failure and BS4 fallback."""
+
+    @pytest.mark.asyncio
+    async def test_csrf_regex_fallback_to_beautifulsoup(self):
+        """When regex fails to match, BeautifulSoup should find the token."""
+        client = MikanClient(username="user", password=_MOCK_CREDENTIAL)
+
+        # HTML where the attribute order differs from the regex pattern,
+        # so the regex won't match, but BS4 will find the input by name.
+        tricky_html = """
+        <html>
+        <body>
+        <form>
+            <input value="bs4-found-token"
+                   name="__RequestVerificationToken"
+                   data-extra="something"
+                   type="hidden" />
+        </form>
+        </body>
+        </html>
+        """
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_get_resp = _make_mock_response(status=200, text=tricky_html)
+        mock_session.get = MagicMock(return_value=mock_get_resp)
+
+        client._session = mock_session
+
+        token = await client._fetch_csrf_token("https://mikanani.me/Account/Login")
+        assert token == "bs4-found-token"
+
+    @pytest.mark.asyncio
+    async def test_csrf_not_found_returns_none(self):
+        """When neither regex nor BS4 finds the token, return None."""
+        client = MikanClient(username="user", password=_MOCK_CREDENTIAL)
+
+        no_token_html = "<html><body><form>No token here</form></body></html>"
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_get_resp = _make_mock_response(status=200, text=no_token_html)
+        mock_session.get = MagicMock(return_value=mock_get_resp)
+
+        client._session = mock_session
+
+        token = await client._fetch_csrf_token("https://mikanani.me/Account/Login")
+        assert token is None
+
+    @pytest.mark.asyncio
+    async def test_csrf_non_200_returns_none(self):
+        """When the CSRF page returns non-200, return None."""
+        client = MikanClient(username="user", password=_MOCK_CREDENTIAL)
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_get_resp = _make_mock_response(status=500, text="Error")
+        mock_session.get = MagicMock(return_value=mock_get_resp)
+
+        client._session = mock_session
+
+        token = await client._fetch_csrf_token("https://mikanani.me/Account/Login")
+        assert token is None

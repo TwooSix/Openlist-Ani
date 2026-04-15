@@ -21,15 +21,16 @@ https = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
 url = "http://localhost:5244"
 token = ""
 download_path = "/"
-offline_download_tool = "QBITTORRENT"
+offline_download_tool = "QBITTORRENT"  # Supported: aria2, qBittorrent, PikPak, 115 Cloud, 115 Open, 123Pan, 123 Open, SimpleHttp, Thunder, ThunderBrowser, ThunderX, Transmission (case-insensitive)
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
 [llm]
 openai_api_key = ""
 openai_base_url = "https://api.openai.com/v1"
 openai_model = "gpt-4o"
-tmdb_api_key = ""
+tmdb_api_key = ""  # Built-in default key provided; only set this to override with your own TMDB key
 tmdb_language = "zh-CN"  # TMDB metadata language: zh-CN (Chinese), en-US (English), ja-JP (Japanese), etc.
+# provider_type = "openai"  # LLM provider: "openai" or "anthropic"
 
 [notification]
 enabled = false  # Enable/disable notification system
@@ -49,11 +50,21 @@ batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 
 
 [assistant]
 enabled = false  # Enable/disable assistant module
+# max_context_tokens = 128000  # Max context window size
+# session_compact_threshold = 100000  # When to compact session history
+# skills_dir = "skills"  # Skill files search directory
+# data_dir = "data/assistant"  # Assistant data/memory directory
 
 # Telegram assistant configuration (required if assistant is enabled)
 [assistant.telegram]
 bot_token = ""  # Telegram bot token from @BotFather
 allowed_users = []  # List of allowed Telegram user IDs (empty = allow all)
+
+# Auto memory consolidation (optional)
+# [assistant.auto_dream]
+# enabled = true  # Enable auto memory consolidation
+# min_hours = 24.0  # Min hours between consolidations
+# min_sessions = 5  # Min sessions before consolidation
 
 [bangumi]
 access_token = ""  # Bangumi API Access Token (also supports env var BANGUMI_TOKEN)

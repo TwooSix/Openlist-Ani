@@ -7,7 +7,6 @@ class TelegramBot(BotBase):
     def __init__(self, bot_token: str, user_id: str) -> None:
         self.bot_token = bot_token
         self.user_id = user_id
-        self.support_markdown = True
 
     async def send_message(self, message: str) -> bool:
         """Send message via Telegram"""

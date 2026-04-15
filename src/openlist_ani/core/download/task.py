@@ -65,30 +65,23 @@ class DownloadTask:
     for persistence and recovery.
     """
 
-    # Core identifiers
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
-    # State
     state: DownloadState = DownloadState.PENDING
     error_message: str | None = None
     retry_count: int = 0
     max_retries: int = 3
     progress: float | None = None
 
-    # Paths
-    base_path: str = ""  # Root download directory (e.g. /PikPak/Debug)
-    output_path: str | None = None  # Final file path after completion
+    base_path: str = ""
+    output_path: str | None = None
 
-    # Timestamps
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     started_at: str | None = None
     completed_at: str | None = None
 
-    # Resource info
     resource_info: AnimeResourceInfo = field(default_factory=AnimeResourceInfo)
-
-    # Extension point for downloader-specific data (temp paths, task IDs, etc.)
     downloader_data: dict[str, Any] = field(default_factory=dict)
 
     def update_state(self, new_state: DownloadState) -> None:

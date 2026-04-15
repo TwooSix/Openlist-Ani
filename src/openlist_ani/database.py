@@ -1,9 +1,15 @@
+import re
 from datetime import datetime
 from pathlib import Path
 
 import aiosqlite
 
 from .core.website.model import AnimeResourceInfo
+from .logger import logger
+
+_DANGEROUS_KEYWORD_RE = re.compile(
+    r"\b(?:drop|delete|insert|update|alter|create)\b", re.IGNORECASE
+)
 
 DB_FILE = Path.cwd() / "data/data.db"
 
@@ -133,23 +139,12 @@ class AniDatabase:
             # Security: Only allow SELECT queries
             sql_lower = sql.strip().lower()
             if not sql_lower.startswith("select"):
-                from .logger import logger
-
                 logger.error(f"Only SELECT queries are allowed, got: {sql}")
                 return [{"error": "Only SELECT queries are allowed"}]
 
-            # Block dangerous keywords
-            dangerous_keywords = [
-                "drop",
-                "delete",
-                "insert",
-                "update",
-                "alter",
-                "create",
-            ]
-            if any(keyword in sql_lower for keyword in dangerous_keywords):
-                from .logger import logger
-
+            # Block dangerous keywords (word-boundary match to avoid
+            # false positives on column names like "created_at")
+            if _DANGEROUS_KEYWORD_RE.search(sql_lower):
                 logger.error(f"Dangerous SQL keyword detected: {sql}")
                 return [{"error": "Query contains dangerous keywords"}]
 
@@ -157,14 +152,9 @@ class AniDatabase:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(sql, params)
                 rows = await cursor.fetchall()
-
-                # Convert Row objects to dictionaries
-                results = [dict(row) for row in rows]
-                return results
+                return [dict(row) for row in rows]
 
         except aiosqlite.Error as e:
-            from .logger import logger
-
             logger.error(f"Error executing SQL query: {e}")
             return [{"error": str(e)}]
 
