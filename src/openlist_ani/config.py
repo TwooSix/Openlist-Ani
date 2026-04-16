@@ -4,6 +4,8 @@ Supports hot-reloading and Pydantic validation.
 """
 
 import os
+import re
+import string
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -40,9 +42,32 @@ class PriorityConfig(BaseModel):
     )  # Quality priority (high to low); set to [] to disable
 
 
+class MetadataFilterConfig(BaseModel):
+    """Configuration for metadata-based blacklist filtering.
+
+    Each field is a list of values to exclude.  An RSS entry whose
+    metadata matches any value in the corresponding list is filtered out.
+    """
+
+    exclude_fansub: list[str] = Field(
+        default_factory=list
+    )  # Fansub groups to exclude, e.g. ["XX字幕组"]
+    exclude_quality: list[str] = Field(
+        default_factory=list
+    )  # Quality values to exclude, e.g. ["480p"]
+    exclude_languages: list[str] = Field(
+        default_factory=list
+    )  # Language values to exclude, e.g. ["未知"]
+    exclude_patterns: list[str] = Field(
+        default_factory=list
+    )  # Regex patterns to exclude RSS entries by title
+
+
 class RSSConfig(BaseModel):
     urls: list[str] = Field(default_factory=list)
     interval_time: int = 300  # RSS fetch interval in seconds (default: 5 minutes)
+    strict: bool = False  # Strict mode: filter entries whose rename stem matches existing downloads
+    filter: MetadataFilterConfig = MetadataFilterConfig()
     priority: PriorityConfig = PriorityConfig()
 
 
@@ -178,6 +203,12 @@ class UserConfig(BaseModel):
     backend: BackendConfig = BackendConfig()
 
 
+# Supported field names for ``rename_format`` in ``[openlist]``.
+_SUPPORTED_RENAME_FIELDS: frozenset[str] = frozenset(
+    {"anime_name", "season", "episode", "fansub", "quality", "languages"}
+)
+
+
 class ConfigManager:
     def __init__(self, config_path: str = "config.toml"):
         self.config_path = Path(os.getcwd()) / config_path
@@ -270,6 +301,8 @@ class ConfigManager:
         warnings: list[str] = []
 
         self._validate_core_config(errors)
+        self._validate_rename_format(errors)
+        self._validate_exclude_patterns(errors)
         self._validate_llm_config(errors)
         self._validate_notification_config(errors, warnings)
         self._validate_assistant_config(errors, warnings)
@@ -289,6 +322,43 @@ class ConfigManager:
                 "OpenList token is not configured in [openlist] token. "
                 "Authentication will fail without a valid token."
             )
+
+    def _validate_rename_format(self, errors: list[str]) -> None:
+        """Validate that ``rename_format`` uses only supported field names."""
+        fmt = self.openlist.rename_format
+        if not fmt:
+            return
+
+        formatter = string.Formatter()
+        try:
+            parsed_fields = {
+                field_name
+                for _, field_name, _, _ in formatter.parse(fmt)
+                if field_name is not None
+            }
+        except (ValueError, KeyError) as e:
+            errors.append(
+                f"Invalid rename_format syntax: '{fmt}'. Error: {e}"
+            )
+            return
+
+        unsupported = parsed_fields - _SUPPORTED_RENAME_FIELDS
+        if unsupported:
+            errors.append(
+                f"rename_format contains unsupported fields: {unsupported}. "
+                f"Supported fields: {sorted(_SUPPORTED_RENAME_FIELDS)}"
+            )
+
+    def _validate_exclude_patterns(self, errors: list[str]) -> None:
+        """Validate that ``exclude_patterns`` entries are valid regular expressions."""
+        for i, pattern in enumerate(self.rss.filter.exclude_patterns):
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                errors.append(
+                    f"rss.filter.exclude_patterns[{i}] is not a valid regex: "
+                    f"'{pattern}'. Error: {e}"
+                )
 
     def _validate_llm_config(self, errors: list[str]) -> None:
         if not self.llm.openai_api_key:

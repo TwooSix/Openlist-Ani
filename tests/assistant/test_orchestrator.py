@@ -199,7 +199,7 @@ class TestToolOrchestrator:
             async def execute(self, **kwargs):
                 nonlocal call_count
                 call_count += 1
-                await asyncio.sleep(10)  # Very slow
+                await asyncio.sleep(0.01)  # Short sleep; enough for cancellation test
                 return "slow result"
 
         registry = ToolRegistry()

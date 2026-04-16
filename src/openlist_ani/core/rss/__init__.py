@@ -2,7 +2,20 @@
 RSS feed management package.
 """
 
+from .filter import (
+    FilterChain,
+    MetadataFilter,
+    PriorityFilter,
+    RegexTitleFilter,
+    StrictRenameFilter,
+)
 from .manager import RSSManager
-from .priority import ResourcePriorityFilter
 
-__all__ = ["RSSManager", "ResourcePriorityFilter"]
+__all__ = [
+    "FilterChain",
+    "MetadataFilter",
+    "PriorityFilter",
+    "RSSManager",
+    "RegexTitleFilter",
+    "StrictRenameFilter",
+]

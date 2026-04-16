@@ -208,11 +208,12 @@ class TestListSessions:
         await storage.record_message(Message(role=Role.USER, content="Hello"))
         await storage.record_message(Message(role=Role.ASSISTANT, content="Hi!"))
 
-        # Ensure s2 gets a strictly newer mtime.
-        # Filesystem mtime resolution is typically 1 second on Linux,
-        # so we must sleep long enough to guarantee ordering.
-        import asyncio
-        await asyncio.sleep(1.1)
+        # Backdate s1's file so s2 is strictly newer without a real sleep.
+        import os
+
+        s1_path = storage._sessions_dir / f"{s1}.jsonl"
+        old_time = time.time() - 10
+        os.utime(s1_path, (old_time, old_time))
 
         s2 = await storage.start_new_session()
         await storage.record_message(

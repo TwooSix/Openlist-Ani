@@ -7,6 +7,10 @@ from unittest.mock import AsyncMock, patch
 from openlist_ani.core.website.model import AnimeResourceInfo, VideoQuality
 
 
+class _StopPoll(Exception):
+    """Sentinel exception used to break the worker's poll loop in tests."""
+
+
 def _make_resource(
     title: str = "Test Anime - 01",
     download_url: str = "magnet:?xt=urn:btih:abc123",
@@ -54,7 +58,7 @@ async def _run_dispatch_once(queue, mock_manager):
         mock_config.openlist.download_path = "/downloads"
 
         try:
-            async with asyncio.timeout(0.1):
+            async with asyncio.timeout(0.02):
                 await DownloadDispatcher(mock_manager, queue, active).run()
         except TimeoutError:
             pass
@@ -68,6 +72,10 @@ async def _run_poll_once(rss_entries, parse_results):
     mock_rss = AsyncMock()
     mock_rss.check_update = AsyncMock(return_value=rss_entries)
 
+    async def _cancel_sleep(_seconds: float) -> None:
+        """Interrupt the worker's inter-poll sleep so we exit immediately."""
+        raise _StopPoll
+
     with (
         patch(
             "openlist_ani.backend.worker.parse_metadata",
@@ -76,25 +84,38 @@ async def _run_poll_once(rss_entries, parse_results):
         ) as mock_parse,
         patch("openlist_ani.backend.worker.config") as mock_config,
         patch(
-            "openlist_ani.core.rss.priority.db.find_resources_by_episode",
+            "openlist_ani.core.rss.filter.priority.db.find_resources_by_episode",
             new_callable=AsyncMock,
             return_value=[],
         ),
         patch(
             "openlist_ani.backend.worker.db",
         ) as mock_db,
+        patch(
+            "openlist_ani.backend.worker.asyncio.sleep",
+            side_effect=_cancel_sleep,
+        ),
     ):
         mock_config.rss.interval_time = 999
+        mock_config.rss.strict = False
+        mock_config.rss.filter.exclude_patterns = []
+        mock_config.rss.filter.exclude_fansub = []
+        mock_config.rss.filter.exclude_quality = []
+        mock_config.rss.filter.exclude_languages = []
+        mock_config.rss.filter.model_copy = lambda deep=False: mock_config.rss.filter
         mock_config.rss.priority.fansub = []
         mock_config.rss.priority.languages = []
         mock_config.rss.priority.quality = []
         mock_config.rss.priority.field_order = []
+        mock_config.rss.priority.model_copy = lambda deep=False: mock_config.rss.priority
+        mock_config.openlist.rename_format = (
+            "{anime_name} S{season:02d}E{episode:02d}"
+        )
         mock_db.add_resource = AsyncMock()
 
         try:
-            async with asyncio.timeout(0.2):
-                await RSSPollWorker(mock_rss, queue).run()
-        except TimeoutError:
+            await RSSPollWorker(mock_rss, queue).run()
+        except _StopPoll:
             pass
 
     queued = []

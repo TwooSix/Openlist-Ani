@@ -11,6 +11,7 @@ from openlist_ani.config import (
     ConfigManager,
     LLMConfig,
     LogConfig,
+    MetadataFilterConfig,
     NotificationConfig,
     OpenListConfig,
     ProxyConfig,
@@ -522,3 +523,170 @@ class TestProxyEnvVars:
         # Access data — should not crash
         d = mgr.data
         assert isinstance(d, UserConfig)
+
+
+class TestRenameFormatValidation:
+    """Tests for rename_format field validation in ConfigManager.validate()."""
+
+    def test_valid_default_format_passes(self, tmp_path, monkeypatch):
+        """Default rename_format should pass validation."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr.save()
+        assert mgr.validate() is True
+
+    def test_valid_custom_format_passes(self, tmp_path, monkeypatch):
+        """Custom format with only supported fields should pass."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.openlist.rename_format = "{anime_name} E{episode:02d}"
+        mgr.save()
+        assert mgr.validate() is True
+
+    def test_unsupported_field_fails(self, tmp_path, monkeypatch):
+        """Format with unsupported field name should fail validation."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.openlist.rename_format = (
+            "{anime_name} {nonexistent_field}"
+        )
+        mgr.save()
+        assert mgr.validate() is False
+
+    def test_empty_format_no_error(self, tmp_path, monkeypatch):
+        """Empty format string should not cause validation error."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.openlist.rename_format = ""
+        mgr.save()
+        assert mgr.validate() is True
+
+    def test_all_supported_fields_pass(self, tmp_path, monkeypatch):
+        """Format using all supported fields should pass."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.openlist.rename_format = (
+            "{anime_name} S{season}E{episode} "
+            "{fansub} {quality} {languages}"
+        )
+        mgr.save()
+        assert mgr.validate() is True
+
+
+class TestRSSConfigStrict:
+    """Tests for the strict field in RSSConfig."""
+
+    def test_default_is_false(self):
+        cfg = RSSConfig()
+        assert cfg.strict is False
+
+    def test_set_to_true(self):
+        cfg = RSSConfig(strict=True)
+        assert cfg.strict is True
+
+
+class TestRSSConfigExcludePatterns:
+    """Tests for the exclude_patterns field in MetadataFilterConfig."""
+
+    def test_default_is_empty(self):
+        cfg = MetadataFilterConfig()
+        assert cfg.exclude_patterns == []
+
+    def test_set_patterns(self):
+        cfg = MetadataFilterConfig(exclude_patterns=["合集", "SP\\d+"])
+        assert len(cfg.exclude_patterns) == 2
+        assert "合集" in cfg.exclude_patterns
+
+
+class TestMetadataFilterConfig:
+    """Tests for MetadataFilterConfig defaults and values."""
+
+    def test_defaults(self):
+        cfg = MetadataFilterConfig()
+        assert cfg.exclude_fansub == []
+        assert cfg.exclude_quality == []
+        assert cfg.exclude_languages == []
+        assert cfg.exclude_patterns == []
+
+    def test_custom_values(self):
+        cfg = MetadataFilterConfig(
+            exclude_fansub=["BadSub"],
+            exclude_quality=["480p"],
+            exclude_languages=["未知"],
+        )
+        assert cfg.exclude_fansub == ["BadSub"]
+        assert cfg.exclude_quality == ["480p"]
+        assert cfg.exclude_languages == ["未知"]
+
+    def test_rss_config_includes_filter(self):
+        cfg = RSSConfig()
+        assert isinstance(cfg.filter, MetadataFilterConfig)
+
+
+class TestExcludePatternsValidation:
+    """Tests for exclude_patterns regex validation in ConfigManager.validate()."""
+
+    def test_valid_patterns_pass(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.rss.filter.exclude_patterns = ["合集", "SP\\d+", "HEVC"]
+        mgr.save()
+        assert mgr.validate() is True
+
+    def test_invalid_regex_fails(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.rss.filter.exclude_patterns = ["[invalid"]
+        mgr.save()
+        assert mgr.validate() is False
+
+    def test_empty_patterns_pass(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.rss.filter.exclude_patterns = []
+        mgr.save()
+        assert mgr.validate() is True
+
+    def test_mixed_valid_invalid_fails(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://example.com/feed"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.rss.filter.exclude_patterns = ["valid_regex", "(unclosed"]
+        mgr.save()
+        assert mgr.validate() is False
+

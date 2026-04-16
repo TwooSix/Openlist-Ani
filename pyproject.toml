@@ -49,4 +49,4 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-x --dist worksteal -n auto -q"
+norecursedirs = ["tests/manual_test_script"]

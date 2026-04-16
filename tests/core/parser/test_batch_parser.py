@@ -200,7 +200,7 @@ class TestParseMetadataBatch:
             ),
             patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
             patch("openlist_ani.core.parser.parser.get_tmdb_client"),
-            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
+            patch("openlist_ani.core.parser.parser.create_llm_client"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"
@@ -233,7 +233,7 @@ class TestParseMetadataBatch:
             ),
             patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
             patch("openlist_ani.core.parser.parser.get_tmdb_client"),
-            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
+            patch("openlist_ani.core.parser.parser.create_llm_client"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"
@@ -280,7 +280,7 @@ class TestParseMetadataBatch:
             ),
             patch("openlist_ani.core.parser.parser.TMDBResolver") as MockResolver,
             patch("openlist_ani.core.parser.parser.get_tmdb_client"),
-            patch("openlist_ani.core.parser.parser.OpenAILLMClient"),
+            patch("openlist_ani.core.parser.parser.create_llm_client"),
         ):
             mock_config.llm.openai_api_key = "test-key"
             mock_config.llm.openai_base_url = "https://api.example.com"

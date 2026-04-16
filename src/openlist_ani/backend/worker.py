@@ -8,7 +8,13 @@ from ..core.download import DownloadManager
 from ..core.parser.model import ParseResult
 from ..core.parser.parser import parse_metadata
 from ..core.rss import RSSManager
-from ..core.rss.priority import ResourcePriorityFilter
+from ..core.rss.filter import (
+    FilterChain,
+    MetadataFilter,
+    PriorityFilter,
+    RegexTitleFilter,
+    StrictRenameFilter,
+)
 from ..core.website.model import AnimeResourceInfo
 from ..database import db
 from ..logger import logger
@@ -31,11 +37,14 @@ class RSSPollWorker:
     ) -> None:
         self._rss = rss
         self._queue = queue
-        self._priority_filter = ResourcePriorityFilter()
         self._skip_cache: TTLCache[str, float] = TTLCache(
             maxsize=self._SKIP_CACHE_MAXSIZE, ttl=self._SKIP_CACHE_TTL
         )
         self._last_priority = config.rss.priority.model_copy(deep=True)
+        self._last_strict: bool = config.rss.strict
+        self._last_rename_format: str = config.openlist.rename_format
+        self._last_filter_cfg = config.rss.filter.model_copy(deep=True)
+        self._filter_chain: FilterChain = self._build_filter_chain()
 
     # ── pipeline entry point ─────────────────────────────────────────
 
@@ -53,7 +62,7 @@ class RSSPollWorker:
                 if fresh:
                     logger.info(f"Fetched {len(entries)} entries from RSS feeds")
                     enriched = await self._enrich_by_parser(fresh)
-                    filtered = await self._apply_priority_filter(enriched)
+                    filtered = await self._filter_chain.apply(enriched)
                     self._cache_skipped_entries(enriched, filtered)
                     await self._enqueue_accepted_entries(filtered)
                 else:
@@ -66,15 +75,46 @@ class RSSPollWorker:
     # ── pipeline stages ──────────────────────────────────────────────
 
     def _detect_config_changes(self) -> None:
-        """Clear skip cache when priority config is modified at runtime."""
-        current = config.rss.priority
-        if current != self._last_priority:
+        """Rebuild filter chain and clear skip cache on config changes."""
+        current_priority = config.rss.priority
+        current_strict = config.rss.strict
+        current_rename_fmt = config.openlist.rename_format
+        current_filter_cfg = config.rss.filter
+
+        changed = False
+        if current_priority != self._last_priority:
             logger.info(
                 "Priority config changed, clearing skip cache "
                 f"({len(self._skip_cache)} entries)"
             )
+            changed = True
+        if current_strict != self._last_strict:
+            logger.info(f"Strict mode changed to {current_strict}")
+            changed = True
+        if current_rename_fmt != self._last_rename_format:
+            logger.info("Rename format changed")
+            changed = True
+        if current_filter_cfg != self._last_filter_cfg:
+            logger.info("Filter config changed")
+            changed = True
+
+        if changed:
             self._skip_cache.clear()
-            self._last_priority = current.model_copy(deep=True)
+            self._last_priority = current_priority.model_copy(deep=True)
+            self._last_strict = current_strict
+            self._last_rename_format = current_rename_fmt
+            self._last_filter_cfg = current_filter_cfg.model_copy(deep=True)
+            self._filter_chain = self._build_filter_chain()
+
+    def _build_filter_chain(self) -> FilterChain:
+        """Construct the filter chain based on current config."""
+        chain = FilterChain()
+        chain.add_filter(RegexTitleFilter())
+        chain.add_filter(MetadataFilter())
+        if config.rss.strict:
+            chain.add_filter(StrictRenameFilter())
+        chain.add_filter(PriorityFilter())
+        return chain
 
     async def _fetch_new_entries(self) -> list[AnimeResourceInfo]:
         """Fetch latest entries from all configured RSS feeds."""
@@ -102,12 +142,6 @@ class RSSPollWorker:
             if self._apply_metadata(entry, result):
                 enriched.append(entry)
         return enriched
-
-    async def _apply_priority_filter(
-        self, enriched: list[AnimeResourceInfo]
-    ) -> list[AnimeResourceInfo]:
-        """Keep only entries that are not dominated by already-downloaded resources."""
-        return await self._priority_filter.filter_batch(enriched)
 
     def _cache_skipped_entries(
         self,

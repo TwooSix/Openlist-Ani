@@ -5,7 +5,7 @@ from ...logger import logger
 from ..website.model import AnimeResourceInfo
 from .constants import DEFAULT_BATCH_SIZE
 from .llm.batch_parser import parse_title_batch_via_llm
-from .llm.client import OpenAILLMClient
+from .llm.client import create_llm_client
 from .model import ParseResult
 from .tmdb.api import get_tmdb_client
 from .tmdb.resolver import TMDBResolver
@@ -52,11 +52,7 @@ async def _parse_misses(
     Returns:
         A list of ParseResult for every miss entry, in order.
     """
-    llm = OpenAILLMClient(
-        api_key=config.llm.openai_api_key,
-        base_url=config.llm.openai_base_url,
-        model=config.llm.openai_model,
-    )
+    llm = create_llm_client(config.llm)
     tmdb_client = get_tmdb_client()
     resolver = TMDBResolver(llm_client=llm, tmdb_client=tmdb_client)
 
