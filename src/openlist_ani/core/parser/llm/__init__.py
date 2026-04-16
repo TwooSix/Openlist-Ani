@@ -1,3 +1,3 @@
-from .client import LLMClient, OpenAILLMClient
+from .client import AnthropicLLMClient, LLMClient, OpenAILLMClient, create_llm_client
 
-__all__ = ["LLMClient", "OpenAILLMClient"]
+__all__ = ["AnthropicLLMClient", "LLMClient", "OpenAILLMClient", "create_llm_client"]

@@ -16,26 +16,24 @@ All other fields default to no priority (everything passes).
 
 from __future__ import annotations
 
-from ...config import config
-from ...database import db
-from ...logger import logger
-from ..website.model import AnimeResourceInfo
-
-# Type alias for the episode-level grouping key.
-_EpisodeKey = tuple[str, int, int]  # (anime_name, season, episode)
+from ....config import config
+from ....database import db
+from ....logger import logger
+from ...website.model import AnimeResourceInfo
+from .base import EpisodeKey, group_by_episode
 
 
-class ResourcePriorityFilter:
+class PriorityFilter:
     """Filters a batch of parsed resources according to priority rules.
 
     Config values are read from the hot-reloadable ``config.priority``
-    on every call to ``filter_batch``, so changes in *config.toml*
+    on every call to ``apply``, so changes in *config.toml*
     take effect without a restart.
     """
 
     # ── public API ───────────────────────────────────────────────────
 
-    async def filter_batch(
+    async def apply(
         self,
         candidates: list[AnimeResourceInfo],
     ) -> list[AnimeResourceInfo]:
@@ -52,16 +50,16 @@ class ResourcePriorityFilter:
 
         priority_cfg = config.rss.priority
         fansub_list = priority_cfg.fansub
-        lang_list = priority_cfg.languages
+        language_list = priority_cfg.languages
         quality_list = priority_cfg.quality
         field_order = priority_cfg.field_order
 
         # Fast path: no priority rules at all → pass everything through.
-        if not fansub_list and not lang_list and not quality_list:
+        if not fansub_list and not language_list and not quality_list:
             return candidates
 
         # Group by (anime_name, season, episode).
-        groups = self._group_by_episode(candidates)
+        groups = group_by_episode(candidates)
         accepted: list[AnimeResourceInfo] = []
 
         for key, group in groups.items():
@@ -69,7 +67,7 @@ class ResourcePriorityFilter:
                 key,
                 group,
                 fansub_list,
-                lang_list,
+                language_list,
                 quality_list,
                 field_order,
             )
@@ -80,35 +78,14 @@ class ResourcePriorityFilter:
             logger.info(f"Priority filter: {len(accepted)} accepted, {skipped} skipped")
         return accepted
 
-    # ── grouping ─────────────────────────────────────────────────────
-
-    @staticmethod
-    def _group_by_episode(
-        candidates: list[AnimeResourceInfo],
-    ) -> dict[_EpisodeKey | None, list[AnimeResourceInfo]]:
-        """Group candidates by (anime_name, season, episode).
-
-        Entries missing any of the three fields are put into a ``None``
-        group and will bypass priority filtering entirely (not enough
-        metadata to make decisions).
-        """
-        groups: dict[_EpisodeKey | None, list[AnimeResourceInfo]] = {}
-        for c in candidates:
-            if c.anime_name is None or c.season is None or c.episode is None:
-                groups.setdefault(None, []).append(c)
-            else:
-                key: _EpisodeKey = (c.anime_name, c.season, c.episode)
-                groups.setdefault(key, []).append(c)
-        return groups
-
     # ── per-group filtering ──────────────────────────────────────────
 
     async def _filter_group(
         self,
-        key: _EpisodeKey | None,
+        key: EpisodeKey | None,
         group: list[AnimeResourceInfo],
         fansub_list: list[str],
-        lang_list: list[str],
+        language_list: list[str],
         quality_list: list[str],
         field_order: list[str],
     ) -> list[AnimeResourceInfo]:
@@ -136,7 +113,7 @@ class ResourcePriorityFilter:
                 candidate,
                 known,
                 fansub_list,
-                lang_list,
+                language_list,
                 quality_list,
                 field_order,
             ):
@@ -151,7 +128,7 @@ class ResourcePriorityFilter:
         # Batch-internal selection among the remaining candidates.
         if len(remaining) > 1:
             best = self._select_best_in_batch(
-                remaining, fansub_list, lang_list, quality_list, field_order
+                remaining, fansub_list, language_list, quality_list, field_order
             )
             accepted.extend(best)
         else:
@@ -188,7 +165,7 @@ class ResourcePriorityFilter:
         candidate: AnimeResourceInfo,
         downloaded: list[dict],
         fansub_list: list[str],
-        lang_list: list[str],
+        language_list: list[str],
         quality_list: list[str],
         field_order: list[str],
     ) -> bool:
@@ -209,7 +186,7 @@ class ResourcePriorityFilter:
                 candidate,
                 downloaded,
                 fansub_list,
-                lang_list,
+                language_list,
                 quality_list,
             )
             if cand_level is None and best_dl is None:
@@ -231,7 +208,7 @@ class ResourcePriorityFilter:
         candidate: AnimeResourceInfo,
         downloaded: list[dict],
         fansub_list: list[str],
-        lang_list: list[str],
+        language_list: list[str],
         quality_list: list[str],
     ) -> tuple[int | None, int | None]:
         """Return ``(candidate_level, best_downloaded_level)`` for *field*."""
@@ -252,9 +229,9 @@ class ResourcePriorityFilter:
             )
             return cand, best
 
-        if field == "languages" and lang_list:
-            cand = self._get_language_level(candidate, lang_list)
-            best = self._get_best_downloaded_language_level(downloaded, lang_list)
+        if field == "languages" and language_list:
+            cand = self._get_language_level(candidate, language_list)
+            best = self._get_best_downloaded_language_level(downloaded, language_list)
             return cand, best
 
         return None, None  # unknown or empty field → skip
@@ -264,29 +241,35 @@ class ResourcePriorityFilter:
     @staticmethod
     def _get_language_level(
         candidate: AnimeResourceInfo,
-        lang_list: list[str],
+        language_list: list[str],
     ) -> int | None:
-        """Return the best (lowest) priority index among the candidate's languages."""
-        best: int | None = None
-        for lang in candidate.languages:
-            idx = _index_or_none(lang.value, lang_list)
-            if idx is not None and (best is None or idx < best):
-                best = idx
-        return best
+        """Return the priority index for the candidate's language set.
+
+        The candidate's languages are joined into a sorted string
+        (e.g. ``[CHS, CHT]`` → ``"简繁"``).  Matching uses
+        ``_language_level``: exact match first, then single-character
+        contains fallback.
+        """
+        if not candidate.languages:
+            return None
+        lang_str = "".join(sorted(lang.value for lang in candidate.languages))
+        return _language_level(lang_str, language_list)
 
     @staticmethod
     def _get_best_downloaded_language_level(
         downloaded: list[dict],
-        lang_list: list[str],
+        language_list: list[str],
     ) -> int | None:
         """Return the best priority index among all downloaded language sets."""
         best: int | None = None
         for rec in downloaded:
             lang_str = rec["languages"] or ""
-            for ch in lang_str:
-                idx = _index_or_none(ch, lang_list)
-                if idx is not None and (best is None or idx < best):
-                    best = idx
+            if not lang_str:
+                continue
+            sorted_str = "".join(sorted(lang_str))
+            idx = _language_level(sorted_str, language_list)
+            if idx is not None and (best is None or idx < best):
+                best = idx
         return best
 
     # ── batch-internal lexicographic selection ──────────────────────
@@ -295,7 +278,7 @@ class ResourcePriorityFilter:
         self,
         candidates: list[AnimeResourceInfo],
         fansub_list: list[str],
-        lang_list: list[str],
+        language_list: list[str],
         quality_list: list[str],
         field_order: list[str],
     ) -> list[AnimeResourceInfo]:
@@ -307,7 +290,7 @@ class ResourcePriorityFilter:
         """
         levels = [
             self._compute_priority_levels(
-                c, fansub_list, lang_list, quality_list, field_order
+                c, fansub_list, language_list, quality_list, field_order
             )
             for c in candidates
         ]
@@ -325,7 +308,7 @@ class ResourcePriorityFilter:
         self,
         candidate: AnimeResourceInfo,
         fansub_list: list[str],
-        lang_list: list[str],
+        language_list: list[str],
         quality_list: list[str],
         field_order: list[str],
     ) -> tuple[int | None, ...]:
@@ -340,8 +323,8 @@ class ResourcePriorityFilter:
             elif field == "quality" and quality_list:
                 val = candidate.quality.value if candidate.quality else ""
                 levels.append(_index_or_none(val, quality_list))
-            elif field == "languages" and lang_list:
-                levels.append(self._get_language_level(candidate, lang_list))
+            elif field == "languages" and language_list:
+                levels.append(self._get_language_level(candidate, language_list))
         return tuple(levels)
 
 
@@ -354,6 +337,39 @@ def _index_or_none(value: str, lst: list[str]) -> int | None:
         return lst.index(value)
     except ValueError:
         return None
+
+
+def _language_level(lang_str: str, priority_list: list[str]) -> int | None:
+    """Return the priority index for a joined language string.
+
+    Matching strategy:
+
+    1. **Exact match**: look up the sorted *lang_str* directly in
+       *priority_list* (e.g. ``"简繁"`` matches ``"简繁"``).
+    2. **Contains fallback**: if no exact match, find the best
+       single-character entry in *priority_list* that appears in
+       *lang_str* (e.g. ``"简"`` is contained in ``"简繁"``).
+
+    Exact match always takes precedence.  This allows users to
+    configure ``["简", "简繁", "繁"]`` so that *pure CHS* has higher
+    priority than *CHS+CHT dual*.  Backward compatible: with
+    ``["简", "繁"]`` a dual ``"简繁"`` string still matches ``"简"``
+    via the contains fallback.
+    """
+    # Sort the lang_str and each entry for consistent comparison.
+    sorted_str = "".join(sorted(lang_str))
+
+    # Pass 1: exact match against sorted entries.
+    for i, entry in enumerate(priority_list):
+        if "".join(sorted(entry)) == sorted_str:
+            return i
+
+    # Pass 2: single-character contains fallback.
+    best: int | None = None
+    for i, entry in enumerate(priority_list):
+        if len(entry) == 1 and entry in sorted_str and (best is None or i < best):
+            best = i
+    return best
 
 
 def _best_field_level(values: list[str], priority_list: list[str]) -> int | None:

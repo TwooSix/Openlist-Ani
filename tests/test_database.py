@@ -5,10 +5,11 @@ import pytest
 from openlist_ani.database import AniDatabase
 
 
-@pytest.fixture
-async def test_db(tmp_path):
-    """Create a temporary database for testing."""
-    db = AniDatabase(db_path=tmp_path / "test.db")
+@pytest.fixture(scope="module")
+async def test_db(tmp_path_factory):
+    """Create a single temporary database shared across all tests in this module."""
+    tmp = tmp_path_factory.mktemp("db")
+    db = AniDatabase(db_path=tmp / "test.db")
     await db.init()
     return db
 

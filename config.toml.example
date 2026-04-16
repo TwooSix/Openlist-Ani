@@ -5,12 +5,18 @@ port = 26666  # Backend API listening port
 [rss]
 urls = []
 interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)
+strict = false  # Strict mode: only download entries that can be successfully renamed (requires rename_format)
 
+[rss.filter]
+exclude_patterns = []  # Regex patterns to exclude RSS entries by title (e.g. ["合集", "SP\\d+", "HEVC"])
+exclude_fansub = []  # Blacklist fansub groups (exact match, e.g. ["XX字幕组", "YY字幕组"])
+exclude_quality = []  # Blacklist quality levels (e.g. ["480p"])
+exclude_languages = []  # Blacklist languages (e.g. ["未知"]). Available: "简", "繁", "日", "英", "未知"
 
 [rss.priority]
 field_order = ["fansub", "quality", "languages"]  # Field comparison order, earlier fields take precedence
 fansub = []  # Fansub group priority, earlier = higher (e.g. ["Fansub_A", "Fansub_B"])
-languages = []  # Language priority, earlier = higher (available: "简", "繁", "日", "英")
+languages = []  # Language priority, earlier = higher. Single: "简", "繁", "日", "英"; Combo: "简繁" (CHS+CHT dual). E.g. ["简", "简繁", "繁"]
 quality = ["2160p", "1080p", "720p", "480p"]  # Quality priority, earlier = higher. Set [] to disable
 
 [proxy]

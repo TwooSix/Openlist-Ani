@@ -68,7 +68,7 @@ class PerfStats:
 
 
 _stats: PerfStats | None = None
-_OriginalOpenAILLMClient = parser_module.OpenAILLMClient
+_OriginalCreateLLMClient = parser_module.create_llm_client
 _OriginalGetTMDBClient = parser_module.get_tmdb_client
 
 
@@ -393,7 +393,18 @@ async def main() -> None:
             format="<level>{level: <8}</level> | {message}",
         )
 
-    parser_module.OpenAILLMClient = TrackedOpenAILLMClient
+    def _create_tracked_llm_client(llm_config):
+        client = _OriginalCreateLLMClient(llm_config)
+        if isinstance(client, OpenAILLMClient):
+            tracked = TrackedOpenAILLMClient(
+                api_key=llm_config.openai_api_key,
+                base_url=llm_config.openai_base_url,
+                model=llm_config.openai_model,
+            )
+            return tracked
+        return client
+
+    parser_module.create_llm_client = _create_tracked_llm_client
     parser_module.get_tmdb_client = _get_tracked_tmdb_client
     try:
         _stats = PerfStats()
@@ -413,7 +424,7 @@ async def main() -> None:
 
         sys.exit(0 if all_passed else 1)
     finally:
-        parser_module.OpenAILLMClient = _OriginalOpenAILLMClient
+        parser_module.create_llm_client = _OriginalCreateLLMClient
         parser_module.get_tmdb_client = _OriginalGetTMDBClient
 
 

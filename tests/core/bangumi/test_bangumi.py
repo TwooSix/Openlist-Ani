@@ -882,21 +882,20 @@ class TestBangumiClientThrottle:
 
     async def test_throttle_delays_rapid_calls(self):
         """Rapid successive _throttle calls should enforce minimum interval."""
-        client = BangumiClient(access_token="test")
+        from unittest.mock import AsyncMock, patch
 
-        loop = asyncio.get_event_loop()
+        client = BangumiClient(access_token="test")
 
         # First call — no delay expected
         await client._throttle()
-        first_done = loop.time()
 
-        # Second call — should sleep for approximately _REQUEST_INTERVAL
-        await client._throttle()
-        second_done = loop.time()
-
-        elapsed_between = second_done - first_done
-        # The second call should have waited at least close to _REQUEST_INTERVAL
-        assert elapsed_between >= _REQUEST_INTERVAL * 0.8
+        # Second call — should attempt to sleep for approximately _REQUEST_INTERVAL
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await client._throttle()
+            mock_sleep.assert_called_once()
+            delay = mock_sleep.call_args[0][0]
+            assert delay >= _REQUEST_INTERVAL * 0.5
+            assert delay <= _REQUEST_INTERVAL
 
     async def test_throttle_no_delay_after_interval(self):
         """No delay when enough time has passed since the last request."""

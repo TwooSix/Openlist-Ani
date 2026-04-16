@@ -141,7 +141,7 @@ class TestAutoDreamRunnerGates:
     @pytest.fixture
     def setup(self, tmp_path):
         """Create runner with minimal config and mock provider."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
 
         config = AutoDreamConfig(enabled=True, min_hours=24.0, min_sessions=2)
         provider = AsyncMock()
@@ -150,6 +150,7 @@ class TestAutoDreamRunnerGates:
                 "R", (), {"text": "Done", "tool_calls": [], "stop_reason": "stop", "usage": {}}
             )()
         )
+        provider.format_raw_tools = MagicMock(return_value=[])
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
