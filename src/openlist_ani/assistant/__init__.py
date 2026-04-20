@@ -61,7 +61,9 @@ async def run() -> None:
     from .tool.builtin.agent_tool import AgentTool
     from .tool.builtin.send_message_tool import SendMessageTool
     from .tool.builtin.skill_tool import SkillTool
+    from .tool.builtin.grep_tool import GrepTool
     from .tool.builtin.memory_tool import MemoryTool
+    from .tool.builtin.read_file_tool import ReadFileTool
     from .tool.builtin.web_fetch_tool import WebFetchTool
     from .tool.registry import ToolRegistry
 
@@ -129,6 +131,8 @@ async def run() -> None:
         registry.register(AgentTool(provider, registry))
         registry.register(WebFetchTool(provider, registry))
         registry.register(MemoryTool(memory.memory_dir))
+        registry.register(ReadFileTool())
+        registry.register(GrepTool())
 
         context = ContextBuilder(
             memory, catalog,
