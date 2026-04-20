@@ -15,6 +15,12 @@ from .schema import (
     CreateDownloadResponse,
     DownloadListResponse,
     DownloadTaskResponse,
+    ParseRSSRequest,
+    ParseRSSResponse,
+    ResolveMagnetRequest,
+    ResolveMagnetResponse,
+    ResolveTorrentRequest,
+    ResolveTorrentResponse,
     RestartResponse,
 )
 from .service import BackendService
@@ -68,3 +74,41 @@ async def get_download(task_id: str) -> DownloadTaskResponse:
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
     return task
+
+
+@router.post("/parse_rss")
+async def parse_rss(request: ParseRSSRequest) -> ParseRSSResponse:
+    """Parse an RSS feed and return its resource entries.
+
+    Returns raw, un-enriched entries (title, download_url, fansub, etc.).
+    The caller (assistant) decides which entries to enqueue via
+    ``/api/downloads``.
+    """
+    svc = BackendService.get()
+    return await svc.parse_rss(url=request.url, limit=request.limit)
+
+
+@router.post("/resolve_magnet")
+async def resolve_magnet(request: ResolveMagnetRequest) -> ResolveMagnetResponse:
+    """Resolve a magnet URI to its real title and file list.
+
+    Order of operations: ``dn=`` parameter → libtorrent metadata
+    (DHT/peers, bounded by ``metadata_timeout``).  Detects collection
+    releases via title-keyword matching so callers can refuse them.
+    """
+    svc = BackendService.get()
+    return await svc.resolve_magnet(
+        magnet=request.magnet, metadata_timeout=request.metadata_timeout
+    )
+
+
+@router.post("/resolve_torrent")
+async def resolve_torrent(request: ResolveTorrentRequest) -> ResolveTorrentResponse:
+    """Resolve a .torrent file URL to its real title and file list.
+
+    Downloads the .torrent via HTTP(S) (size- and time-bounded), then
+    parses the blob with libtorrent.  Mirrors ``/api/resolve_magnet``'s
+    response shape so callers can share the same downstream pipeline.
+    """
+    svc = BackendService.get()
+    return await svc.resolve_torrent(url=request.url)

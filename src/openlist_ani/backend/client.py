@@ -132,3 +132,54 @@ class BackendClient:
         """
         logger.info("BackendClient: Requesting restart")
         return await self._request("POST", "/api/restart")
+
+    # ── parse_rss ────────────────────────────────────────────────────
+
+    async def parse_rss(
+        self,
+        url: str,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Parse an RSS feed via the backend.
+
+        Args:
+            url: RSS feed URL.
+            limit: Optional cap on number of entries returned.
+
+        Returns:
+            API response dict with ``entries`` list.
+        """
+        logger.debug(f"BackendClient: Parsing RSS {url}")
+        body: dict[str, Any] = {"url": url}
+        if limit is not None:
+            body["limit"] = limit
+        return await self._request("POST", "/api/parse_rss", json=body)
+
+    # ── resolve_magnet ───────────────────────────────────────────────
+
+    async def resolve_magnet(
+        self,
+        magnet: str,
+        metadata_timeout: int = 30,
+    ) -> dict[str, Any]:
+        """Resolve a magnet to its real title via the backend."""
+        logger.debug("BackendClient: Resolving magnet")
+        return await self._request(
+            "POST",
+            "/api/resolve_magnet",
+            json={"magnet": magnet, "metadata_timeout": metadata_timeout},
+        )
+
+    # ── resolve_torrent ──────────────────────────────────────────────
+
+    async def resolve_torrent(
+        self,
+        url: str,
+    ) -> dict[str, Any]:
+        """Resolve a .torrent file URL to its real title via the backend."""
+        logger.debug("BackendClient: Resolving torrent file")
+        return await self._request(
+            "POST",
+            "/api/resolve_torrent",
+            json={"url": url},
+        )

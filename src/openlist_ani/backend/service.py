@@ -8,14 +8,24 @@ business logic methods used by API routes.
 from __future__ import annotations
 
 from ..config import config
+from ..core.download.magnet import resolve_magnet as _resolve_magnet
+from ..core.download.magnet import resolve_torrent as _resolve_torrent
 from ..core.download.manager import DownloadManager
 from ..core.download.task import DownloadTask
 from ..core.parser.model import ParseResult
 from ..core.parser.parser import parse_metadata
+from ..core.website.factory import WebsiteFactory
 from ..core.website.model import AnimeResourceInfo
 from ..database import db
 from ..logger import logger
-from .schema import DownloadTaskResponse
+from .schema import (
+    DownloadTaskResponse,
+    ParseRSSEntry,
+    ParseRSSResponse,
+    ResolveMagnetFile,
+    ResolveMagnetResponse,
+    ResolveTorrentResponse,
+)
 
 
 def _build_task_response(task: DownloadTask) -> DownloadTaskResponse:
@@ -141,3 +151,126 @@ class BackendService:
         if task is None:
             return None
         return _build_task_response(task)
+
+    # ── parse_rss ───────────────────────────────────────────────────
+
+    async def parse_rss(
+        self,
+        url: str,
+        limit: int | None = None,
+    ) -> ParseRSSResponse:
+        """Fetch + parse an RSS feed and return its resource entries.
+
+        Reuses :class:`WebsiteFactory` to pick the right adapter (Mikan,
+        ANi API, generic).  No metadata enrichment / TMDB lookup happens
+        here — keep this endpoint cheap and side-effect-free; the
+        assistant decides what to download.
+        """
+        if not url:
+            return ParseRSSResponse(
+                success=False, message="'url' is required."
+            )
+
+        try:
+            website = WebsiteFactory().create(url)
+        except ValueError as e:
+            return ParseRSSResponse(
+                success=False, message=f"Cannot pick parser for URL: {e}"
+            )
+
+        try:
+            entries: list[AnimeResourceInfo] = await website.fetch_feed(url)
+        except Exception as e:  # noqa: BLE001 — surface upstream HTTP errors
+            logger.warning(f"parse_rss: feed fetch failed for {url}: {e}")
+            return ParseRSSResponse(
+                success=False, message=f"Failed to fetch RSS: {e}"
+            )
+
+        total = len(entries)
+        if limit is not None and limit > 0:
+            entries = entries[:limit]
+
+        items: list[ParseRSSEntry] = []
+        for i, e in enumerate(entries):
+            items.append(
+                ParseRSSEntry(
+                    index=i,
+                    title=e.title,
+                    download_url=e.download_url,
+                    anime_name=e.anime_name,
+                    episode=e.episode,
+                    fansub=e.fansub,
+                    quality=e.quality.value if e.quality else None,
+                    languages=[lang.value for lang in (e.languages or [])],
+                )
+            )
+
+        return ParseRSSResponse(
+            success=True,
+            message=(
+                f"Parsed {len(items)} of {total} entries"
+                if limit and total > len(items)
+                else f"Parsed {len(items)} entries"
+            ),
+            total=total,
+            entries=items,
+        )
+
+    # ── resolve_magnet ──────────────────────────────────────────────
+
+    async def resolve_magnet(
+        self,
+        magnet: str,
+        metadata_timeout: int = 30,
+    ) -> ResolveMagnetResponse:
+        """Resolve a magnet to its title (via dn= or libtorrent metadata).
+
+        Detects collection releases by title-keyword matching so the
+        caller can refuse to enqueue them — OpenList-Ani's downloader
+        cannot currently rename multi-episode payloads.
+
+        ``metadata_timeout`` bounds the libtorrent fetch budget; it is
+        ignored when the magnet's ``dn=`` parameter is already usable.
+        """
+        result = await _resolve_magnet(
+            magnet, metadata_timeout=metadata_timeout
+        )
+        return ResolveMagnetResponse(
+            success=result.success,
+            message=result.message,
+            title=result.title,
+            source=result.source,
+            file_count=result.file_count,
+            files=[
+                ResolveMagnetFile(name=f.name, size=f.size)
+                for f in result.files
+            ],
+            is_collection=result.is_collection,
+            collection_reason=result.collection_reason,
+        )
+
+    # ── resolve_torrent ─────────────────────────────────────────────
+
+    async def resolve_torrent(
+        self,
+        url: str,
+    ) -> ResolveTorrentResponse:
+        """Resolve a .torrent file URL to its title / file list.
+
+        Mirrors :meth:`resolve_magnet` so callers can feed the result
+        into the same downstream pipeline.
+        """
+        result = await _resolve_torrent(url)
+        return ResolveTorrentResponse(
+            success=result.success,
+            message=result.message,
+            title=result.title,
+            source=result.source,
+            file_count=result.file_count,
+            files=[
+                ResolveMagnetFile(name=f.name, size=f.size)
+                for f in result.files
+            ],
+            is_collection=result.is_collection,
+            collection_reason=result.collection_reason,
+        )
