@@ -368,14 +368,10 @@ class BangumiClient:
         comment: str | None = None,
         tags: list[str] | None = None,
         private: bool | None = None,
-        ep_status: int | None = None,
     ) -> None:
         """Create or modify a collection entry for the current user.
 
-        Uses POST ``/v0/users/-/collections/{subject_id}`` to create /
-        set the collection type, then PATCH the same endpoint when
-        ``ep_status`` is provided (the POST endpoint does **not** accept
-        ``ep_status``).
+        Uses POST ``/v0/users/-/collections/{subject_id}``.
 
         Args:
             subject_id: Bangumi subject ID.
@@ -385,14 +381,12 @@ class BangumiClient:
             comment: User comment/review text.
             tags: List of tags.
             private: Whether the collection is private.
-            ep_status: Number of watched episodes.
 
         Raises:
             aiohttp.ClientResponseError: On API errors.
         """
         path = f"/v0/users/-/collections/{subject_id}"
 
-        # --- Step 1: POST to create / update the collection entry ----
         post_body: dict[str, Any] = {}
         if collection_type is not None:
             post_body["type"] = collection_type
@@ -408,16 +402,78 @@ class BangumiClient:
         if post_body:
             await self._request("POST", path, json_body=post_body)
 
-        # --- Step 2: PATCH to set ep_status (not supported by POST) --
-        if ep_status is not None:
-            await self._request("PATCH", path, json_body={"ep_status": ep_status})
-
         # Invalidate collection cache since we modified it
         clear_cache(self.fetch_user_collections)
 
         logger.info(
             f"Bangumi: Updated collection for subject {subject_id} "
-            f"(type={collection_type}, ep_status={ep_status})"
+            f"(type={collection_type})"
+        )
+
+    async def update_episode_progress(
+        self,
+        subject_id: int,
+        watched_eps: int,
+    ) -> None:
+        """Set episode progress so that exactly eps 1-*watched_eps* are "done".
+
+        Episodes after *watched_eps* that were previously marked are reset
+        to uncollected (type=0), ensuring the progress is accurate even when
+        the user rewinds.
+
+        Uses ``GET /v0/episodes`` to resolve episode IDs, then
+        ``PATCH /v0/users/-/collections/{subject_id}/episodes`` to batch-
+        update them.  The API automatically recalculates the subject's
+        completion progress.
+
+        Args:
+            subject_id: Bangumi subject ID.
+            watched_eps: Number of episodes watched (from ep 1).
+
+        Raises:
+            ValueError: When *watched_eps* < 1 or no episodes found.
+            aiohttp.ClientResponseError: On API errors.
+        """
+        if watched_eps < 1:
+            raise ValueError("watched_eps must be >= 1")
+
+        episodes = await self.fetch_subject_episodes(
+            subject_id, episode_type=0,
+        )
+        # Sort by ep number and take the first N
+        episodes.sort(key=lambda e: e.get("sort", e.get("ep", 0)))
+
+        watched = episodes[:watched_eps]
+        remaining = episodes[watched_eps:]
+
+        if not watched:
+            raise ValueError(
+                f"No main-story episodes found for subject {subject_id}"
+            )
+
+        path = f"/v0/users/-/collections/{subject_id}/episodes"
+
+        # Mark eps 1..N as done (type=2)
+        watched_ids = [ep["id"] for ep in watched]
+        await self._request(
+            "PATCH", path,
+            json_body={"episode_id": watched_ids, "type": 2},
+        )
+
+        # Reset eps N+1.. to uncollected (type=0) so progress rewinds work
+        if remaining:
+            remaining_ids = [ep["id"] for ep in remaining]
+            await self._request(
+                "PATCH", path,
+                json_body={"episode_id": remaining_ids, "type": 0},
+            )
+
+        # Invalidate collection cache since we modified it
+        clear_cache(self.fetch_user_collections)
+
+        logger.info(
+            f"Bangumi: Set episode progress for subject {subject_id} "
+            f"to {watched_eps}/{len(episodes)}"
         )
 
     async def fetch_subject_episodes(
