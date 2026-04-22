@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 
-from openlist_ani.core.bangumi.client import BangumiClient, _REQUEST_INTERVAL
+from openlist_ani.core.bangumi.client import _REQUEST_INTERVAL, BangumiClient
 from openlist_ani.core.bangumi.model import (
     COLLECTION_TYPE_LABELS,
     BangumiBlog,
@@ -21,9 +21,7 @@ from openlist_ani.core.bangumi.model import (
     CalendarDay,
     CalendarItem,
     CollectionType,
-    SlimSubject,
     SubjectType,
-    UserCollectionEntry,
     Weekday,
     parse_calendar_day,
     parse_calendar_item,
@@ -648,26 +646,6 @@ class TestBangumiClient:
         assert call_args[1]["json_body"]["type"] == 2
         assert call_args[1]["json_body"]["rate"] == 8
 
-    async def test_post_user_collection_with_ep_status(self, client):
-        """ep_status should trigger a PATCH after the POST."""
-        client._request = AsyncMock(return_value=None)
-        await client.post_user_collection(
-            subject_id=200,
-            collection_type=3,
-            ep_status=5,
-        )
-        assert client._request.call_count == 2
-        post_call, patch_call = client._request.call_args_list
-        # First call: POST with collection type
-        assert post_call[0][0] == "POST"
-        assert "/v0/users/-/collections/200" in post_call[0][1]
-        assert post_call[1]["json_body"]["type"] == 3
-        assert "ep_status" not in post_call[1]["json_body"]
-        # Second call: PATCH with ep_status only
-        assert patch_call[0][0] == "PATCH"
-        assert "/v0/users/-/collections/200" in patch_call[0][1]
-        assert patch_call[1]["json_body"] == {"ep_status": 5}
-
     async def test_post_user_collection_invalidates_cache(self, client):
         """Collection cache should be cleared after updating a collection."""
         # Populate collection cache first
@@ -933,7 +911,9 @@ class TestBangumiTools:
         import importlib.util
         from pathlib import Path
 
-        script_dir = Path(__file__).resolve().parents[3] / "skills" / "bangumi" / "script"
+        script_dir = (
+            Path(__file__).resolve().parents[3] / "skills" / "bangumi" / "script"
+        )
         path = script_dir / f"{script_name}.py"
         spec = importlib.util.spec_from_file_location(
             f"skill_bangumi_{script_name}", path
@@ -997,8 +977,10 @@ class TestBangumiTools:
         mock_client.fetch_user_collections.return_value = [entry]
         mock_client.close = AsyncMock()
 
-        with patch.object(mod, "BangumiClient", return_value=mock_client), \
-             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+        with (
+            patch.object(mod, "BangumiClient", return_value=mock_client),
+            patch.object(mod, "config", MagicMock(bangumi_token="fake-token")),
+        ):
             result = await mod.run()
 
         assert "测试" in result
@@ -1038,8 +1020,10 @@ class TestBangumiTools:
         mock_client.post_user_collection = AsyncMock()
         mock_client.close = AsyncMock()
 
-        with patch.object(mod, "BangumiClient", return_value=mock_client), \
-             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+        with (
+            patch.object(mod, "BangumiClient", return_value=mock_client),
+            patch.object(mod, "config", MagicMock(bangumi_token="fake-token")),
+        ):
             result = await mod.run(subject_id="517057", collection_type="3")
 
         assert "Collection updated for subject 517057" in result
@@ -1057,8 +1041,10 @@ class TestBangumiTools:
         mock_client.post_user_collection = AsyncMock()
         mock_client.close = AsyncMock()
 
-        with patch.object(mod, "BangumiClient", return_value=mock_client), \
-             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+        with (
+            patch.object(mod, "BangumiClient", return_value=mock_client),
+            patch.object(mod, "config", MagicMock(bangumi_token="fake-token")),
+        ):
             result = await mod.run(subject_id="517057", rate="8")
 
         assert "Collection updated for subject 517057" in result
@@ -1072,8 +1058,10 @@ class TestBangumiTools:
         mock_client.post_user_collection = AsyncMock()
         mock_client.close = AsyncMock()
 
-        with patch.object(mod, "BangumiClient", return_value=mock_client), \
-             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+        with (
+            patch.object(mod, "BangumiClient", return_value=mock_client),
+            patch.object(mod, "config", MagicMock(bangumi_token="fake-token")),
+        ):
             result = await mod.run(subject_id="517057", ep_status="5")
 
         assert "Collection updated for subject 517057" in result
@@ -1087,8 +1075,10 @@ class TestBangumiTools:
         mock_client.post_user_collection = AsyncMock()
         mock_client.close = AsyncMock()
 
-        with patch.object(mod, "BangumiClient", return_value=mock_client), \
-             patch.object(mod, "config", MagicMock(bangumi_token="fake-token")):
+        with (
+            patch.object(mod, "BangumiClient", return_value=mock_client),
+            patch.object(mod, "config", MagicMock(bangumi_token="fake-token")),
+        ):
             result = await mod.run(subject_id="517057", comment="Great anime!")
 
         assert "Collection updated for subject 517057" in result

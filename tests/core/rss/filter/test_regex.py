@@ -31,13 +31,28 @@ def _mock_config(exclude_patterns: list[str] | None = None):
 
 class TestRegexTitleFilter:
     @pytest.mark.asyncio
-    async def test_empty_patterns_passes_all(self):
-        """No patterns configured → everything passes."""
+    async def test_default_pattern_excludes_collections(self):
+        """Default pattern should exclude collection-style titles."""
         f = RegexTitleFilter()
-        candidates = [_make_resource("A"), _make_resource("B")]
+        candidates = [
+            _make_resource(
+                "[7³ACG] 岁月流逝饭菜依旧美味/Hibi wa Sugiredo Meshi Umashi S01 | 01-12 [简繁字幕] BDrip 1080p x265 OPUS 2.0"
+            ),
+            _make_resource(
+                "[SweetSub][正相反的你与我][Seihantai na Kimi to Boku][01-12 精校合集][WebRip][1080P][AVC 8bit][简日双语]"
+            ),
+            _make_resource(
+                "[奶活家教压制组][东京喰种√A/东京喰种][Tokyo Ghoul][S01][TV01-12Fin][BDRip][1080p][FLAC][X265]"
+            ),
+            _make_resource(
+                "[云光字幕组]葬送的芙莉莲 第二季 Sousou no Frieren S2 [合集][简体双语][1080p]招募翻译V2"
+            ),
+            _make_resource("[字幕组] 动漫02 - 01"),
+        ]
         with patch(_CFG, _mock_config([])):
             result = f.apply(candidates)
-        assert len(result) == 2
+        assert len(result) == 1
+        assert result[0].title == "[字幕组] 动漫02 - 01"
 
     @pytest.mark.asyncio
     async def test_empty_batch(self):
