@@ -2,7 +2,8 @@
 Regex-based title exclusion filter.
 
 Filters out RSS entries whose title matches any of the user-configured
-regular expression patterns in ``config.rss.filter.exclude_patterns``.
+regular expression patterns in ``config.rss.filter.exclude_patterns``,
+plus a built-in blacklist for collection-style titles.
 """
 
 from __future__ import annotations
@@ -13,6 +14,9 @@ from ....config import config
 from ....logger import logger
 from ...website.model import AnimeResourceInfo
 
+# 现阶段不支持合集下载，默认过滤
+_DEFAULT_EXCLUDE_PATTERNS = [r"(\d{2}-\d{2}|合集)"]
+
 
 class RegexTitleFilter:
     """Filter candidates by matching their title against exclusion patterns.
@@ -20,6 +24,7 @@ class RegexTitleFilter:
     Config values are read from the hot-reloadable
     ``config.rss.filter.exclude_patterns`` on every call to ``apply``,
     so changes in *config.toml* take effect without a restart.
+    A built-in pattern also excludes titles that look like collections.
     """
 
     def apply(
@@ -37,7 +42,8 @@ class RegexTitleFilter:
         if not candidates:
             return []
 
-        patterns = config.rss.filter.exclude_patterns
+        configured_patterns = list(config.rss.filter.exclude_patterns or [])
+        patterns = [*_DEFAULT_EXCLUDE_PATTERNS, *configured_patterns]
         if not patterns:
             return candidates
 
@@ -55,7 +61,5 @@ class RegexTitleFilter:
 
         skipped = len(candidates) - len(accepted)
         if skipped:
-            logger.info(
-                f"Regex filter: {len(accepted)} accepted, {skipped} excluded"
-            )
+            logger.info(f"Regex filter: {len(accepted)} accepted, {skipped} excluded")
         return accepted

@@ -111,9 +111,9 @@ class RSSPollWorker:
         chain = FilterChain()
         chain.add_filter(RegexTitleFilter())
         chain.add_filter(MetadataFilter())
+        chain.add_filter(PriorityFilter())
         if config.rss.strict:
             chain.add_filter(StrictRenameFilter())
-        chain.add_filter(PriorityFilter())
         return chain
 
     async def _fetch_new_entries(self) -> list[AnimeResourceInfo]:
