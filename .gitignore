@@ -27,5 +27,6 @@ data/
 .github/instructions/
 .github/skills/
 
+.codex
 .agents/
 .claude/
