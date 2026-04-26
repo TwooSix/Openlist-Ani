@@ -29,8 +29,6 @@ from openlist_ani.assistant.tool.base import BaseTool
 
 from .base import Provider
 
-from loguru import logger
-
 
 def _get_max_tokens_for_model(model: str) -> int:
     """Get model-specific default max_tokens."""
@@ -122,6 +120,10 @@ class OpenAIProvider(Provider):
                     )
                 )
 
+        # Capture reasoning_content for providers that support thinking mode
+        # (e.g. DeepSeek). Must be passed back in subsequent API calls.
+        reasoning_content = getattr(msg, "reasoning_content", None)
+
         return ProviderResponse(
             text=msg.content or "",
             tool_calls=tool_calls,
@@ -130,6 +132,7 @@ class OpenAIProvider(Provider):
                 "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
                 "completion_tokens": response.usage.completion_tokens if response.usage else 0,
             },
+            reasoning_content=reasoning_content,
         )
 
     @staticmethod
@@ -217,37 +220,89 @@ class OpenAIProvider(Provider):
 
         collected_tool_calls: dict[int, dict[str, str]] = {}
         usage_data: dict[str, int] = {}
+        reasoning_parts: list[str] = []
 
         async for chunk in stream:
-            if chunk.usage:
-                usage_data = {
-                    "prompt_tokens": chunk.usage.prompt_tokens,
-                    "completion_tokens": chunk.usage.completion_tokens,
-                }
+            for response in self._handle_stream_chunk(
+                chunk, collected_tool_calls, usage_data, reasoning_parts
+            ):
+                yield response
 
-            if not chunk.choices:
-                continue
+    def _handle_stream_chunk(
+        self,
+        chunk: Any,
+        collected_tool_calls: dict[int, dict[str, str]],
+        usage_data: dict[str, int],
+        reasoning_parts: list[str],
+    ) -> list[ProviderResponse]:
+        """Update stream state from one chunk and return responses to yield."""
+        self._update_usage_from_chunk(chunk, usage_data)
+        if not chunk.choices:
+            return []
 
-            choice = chunk.choices[0]
-            delta = choice.delta
-
-            if delta and delta.content:
-                yield ProviderResponse(text=delta.content)
-
-            if delta and delta.tool_calls:
-                self._accumulate_tool_call_deltas(
-                    collected_tool_calls, delta.tool_calls
+        choice = chunk.choices[0]
+        delta = choice.delta
+        responses = self._handle_delta(delta, collected_tool_calls, reasoning_parts)
+        if choice.finish_reason:
+            responses.append(
+                self._build_final_stream_response(
+                    choice.finish_reason, collected_tool_calls, usage_data,
+                    reasoning_parts,
                 )
+            )
+        return responses
 
-            if choice.finish_reason:
-                yield ProviderResponse(
-                    text="",
-                    tool_calls=self._build_tool_calls_from_collected(
-                        collected_tool_calls
-                    ),
-                    stop_reason=choice.finish_reason,
-                    usage=usage_data,
-                )
+    @staticmethod
+    def _update_usage_from_chunk(chunk: Any, usage_data: dict[str, int]) -> None:
+        """Mutate usage_data with usage info from a stream chunk, if present."""
+        if not chunk.usage:
+            return
+        usage_data.clear()
+        usage_data.update(
+            {
+                "prompt_tokens": chunk.usage.prompt_tokens,
+                "completion_tokens": chunk.usage.completion_tokens,
+            }
+        )
+
+    def _handle_delta(
+        self,
+        delta: Any,
+        collected_tool_calls: dict[int, dict[str, str]],
+        reasoning_parts: list[str],
+    ) -> list[ProviderResponse]:
+        """Accumulate one stream delta and return immediate text responses."""
+        if delta is None:
+            return []
+
+        responses: list[ProviderResponse] = []
+        delta_reasoning = getattr(delta, "reasoning_content", None)
+        if delta_reasoning:
+            reasoning_parts.append(delta_reasoning)
+        if delta.content:
+            responses.append(ProviderResponse(text=delta.content))
+        if delta.tool_calls:
+            self._accumulate_tool_call_deltas(
+                collected_tool_calls, delta.tool_calls
+            )
+        return responses
+
+    def _build_final_stream_response(
+        self,
+        finish_reason: str,
+        collected_tool_calls: dict[int, dict[str, str]],
+        usage_data: dict[str, int],
+        reasoning_parts: list[str],
+    ) -> ProviderResponse:
+        """Build the final metadata response for a completed stream."""
+        reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
+        return ProviderResponse(
+            text="",
+            tool_calls=self._build_tool_calls_from_collected(collected_tool_calls),
+            stop_reason=finish_reason,
+            usage=usage_data,
+            reasoning_content=reasoning_content,
+        )
 
     def format_tool_definitions(self, tools: list[BaseTool]) -> list[dict]:
         return [
@@ -281,40 +336,58 @@ class OpenAIProvider(Provider):
         api_messages: list[dict] = []
 
         for msg in messages:
-            if msg.role == Role.SYSTEM:
-                api_messages.append({"role": "system", "content": msg.content})
-
-            elif msg.role == Role.USER:
-                api_messages.append({"role": "user", "content": msg.content})
-
-            elif msg.role == Role.ASSISTANT:
-                entry: dict[str, Any] = {"role": "assistant"}
-                if msg.tool_calls:
-                    entry["tool_calls"] = [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                            },
-                        }
-                        for tc in msg.tool_calls
-                    ]
-                    # OpenAI requires content to be present (can be null)
-                    entry["content"] = msg.content or None
-                else:
-                    entry["content"] = msg.content
-                api_messages.append(entry)
-
-            elif msg.role == Role.TOOL:
-                for result in msg.tool_results:
-                    api_messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": result.tool_call_id,
-                            "content": result.content,
-                        }
-                    )
+            api_messages.extend(self._convert_message(msg))
 
         return api_messages
+
+    def _convert_message(self, msg: Message) -> list[dict]:
+        """Convert a single internal Message to OpenAI API message(s)."""
+        if msg.role in (Role.SYSTEM, Role.USER):
+            return [{"role": msg.role.value, "content": msg.content}]
+        if msg.role == Role.ASSISTANT:
+            return [self._convert_assistant_message(msg)]
+        if msg.role == Role.TOOL:
+            return self._convert_tool_message(msg)
+        return []
+
+    @staticmethod
+    def _convert_assistant_message(msg: Message) -> dict:
+        """Convert an assistant Message to an OpenAI API message."""
+        entry: dict[str, Any] = {"role": "assistant"}
+        if msg.tool_calls:
+            entry["tool_calls"] = [
+                OpenAIProvider._format_tool_call(tc) for tc in msg.tool_calls
+            ]
+            # OpenAI requires content to be present (can be null)
+            entry["content"] = msg.content or None
+        else:
+            entry["content"] = msg.content
+        # Pass back reasoning_content for providers that require it
+        # (e.g. DeepSeek thinking mode). Must be included even if empty string.
+        if msg.reasoning_content is not None:
+            entry["reasoning_content"] = msg.reasoning_content
+        return entry
+
+    @staticmethod
+    def _format_tool_call(tc: ToolCall) -> dict:
+        """Convert a ToolCall to OpenAI function-call format."""
+        return {
+            "id": tc.id,
+            "type": "function",
+            "function": {
+                "name": tc.name,
+                "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+            },
+        }
+
+    @staticmethod
+    def _convert_tool_message(msg: Message) -> list[dict]:
+        """Convert a tool Message to OpenAI API message(s)."""
+        return [
+            {
+                "role": "tool",
+                "tool_call_id": result.tool_call_id,
+                "content": result.content,
+            }
+            for result in msg.tool_results
+        ]

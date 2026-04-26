@@ -80,6 +80,9 @@ class MockProvider(Provider):
         yield ProviderResponse(
             tool_calls=response.tool_calls,
             stop_reason=response.stop_reason or "stop",
+            usage=response.usage,
+            reasoning_content=response.reasoning_content,
+            thinking_blocks=response.thinking_blocks,
         )
 
     def format_tool_definitions(self, tools: list[BaseTool]) -> list[dict]:

@@ -104,6 +104,29 @@ class TestAnthropicProvider:
         assert content[1]["type"] == "tool_use"
         assert content[1]["name"] == "read"
 
+    def test_convert_messages_assistant_passes_back_thinking_before_tool_use(self):
+        provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
+        thinking_block = {
+            "type": "thinking",
+            "thinking": "I should inspect the file.",
+            "signature": "sig_123",
+        }
+        tc = ToolCall(id="tc_1", name="read", arguments={"path": "/home/user/data"})
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="Let me read that.",
+                tool_calls=[tc],
+                thinking_blocks=[thinking_block],
+            )
+        ]
+        _, api_messages = provider._convert_messages(messages)
+
+        content = api_messages[0]["content"]
+        assert content[0] == thinking_block
+        assert content[1]["type"] == "text"
+        assert content[2]["type"] == "tool_use"
+
     def test_convert_messages_tool_results_as_user(self):
         provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
         tr = ToolResult(tool_call_id="tc_1", name="read", content="file data")

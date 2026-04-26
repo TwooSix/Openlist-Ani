@@ -98,6 +98,35 @@ class TestAgenticLoop:
         assert EventType.TOOL_END in types
 
     @pytest.mark.asyncio
+    async def test_tool_call_round_preserves_thinking_blocks(self, memory, registry):
+        """Thinking blocks must be kept on assistant tool-use messages."""
+        thinking_block = {
+            "type": "thinking",
+            "thinking": "I need to search first.",
+            "signature": "sig_123",
+        }
+        provider = MockProvider([
+            ProviderResponse(
+                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                thinking_blocks=[thinking_block],
+            ),
+            ProviderResponse(text="Found the results."),
+        ])
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory)
+
+        results = []
+        async for event in loop.process("Search for something"):
+            results.append(event)
+
+        assistant_tool_messages = [
+            msg for msg in loop._messages
+            if msg.role == Role.ASSISTANT and msg.tool_calls
+        ]
+        assert _collect_text(results) == "Found the results."
+        assert assistant_tool_messages[0].thinking_blocks == [thinking_block]
+
+    @pytest.mark.asyncio
     async def test_multi_round_tool_calls(self, memory, registry):
         """Multiple rounds of tool calls before final text."""
         provider = MockProvider([

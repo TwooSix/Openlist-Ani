@@ -258,7 +258,13 @@ async def _run_subagent_loop(
 
         # Append assistant message with tool calls
         messages.append(
-            Message(role=Role.ASSISTANT, tool_calls=response.tool_calls, content=response.text)
+            Message(
+                role=Role.ASSISTANT,
+                tool_calls=response.tool_calls,
+                content=response.text,
+                reasoning_content=response.reasoning_content,
+                thinking_blocks=response.thinking_blocks,
+            )
         )
 
         # Execute tool calls via orchestrator (parallel/serial)
