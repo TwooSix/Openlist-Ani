@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="imgs/logo.png" alt="Openlist-Ani Logo" width="420" />
+</p>
+
 <h1 align="center">Openlist-Ani</h1>
 
 <p align="center">
@@ -5,7 +9,7 @@
 </p>
 
 <p align="center">
-  从动漫番剧相关的 RSS 订阅源中自动获取番剧更新，通过 Openlist 离线下载至对应网盘，<br/>
+  Openlist-Ani，简称O-Ani，从动漫番剧相关的 RSS 订阅源中自动获取番剧更新，通过 Openlist 离线下载至对应网盘，<br/>
   并结合 LLM 分析资源名，将资源重命名为 Emby / Jellyfin 可解析的格式。
 </p>
 
