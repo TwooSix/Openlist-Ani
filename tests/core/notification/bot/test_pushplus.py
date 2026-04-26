@@ -44,9 +44,7 @@ class TestPushPlusBotSendMessage:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = AsyncMock(
-            return_value={"code": 200, "msg": "ok", "data": ""}
-        )
+        mock_resp.json = AsyncMock(return_value={"code": 200, "msg": "ok", "data": ""})
         mock_resp.request_info = MagicMock()
         mock_resp.history = ()
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -120,9 +118,7 @@ class TestPushPlusBotSendMessage:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = AsyncMock(
-            return_value={"code": 400, "data": ""}
-        )
+        mock_resp.json = AsyncMock(return_value={"code": 400, "data": ""})
         mock_resp.request_info = MagicMock()
         mock_resp.history = ()
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)

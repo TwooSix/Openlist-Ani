@@ -29,15 +29,20 @@ class TestListAction:
 
     @pytest.mark.asyncio
     async def test_list_with_files(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
-        fm = format_frontmatter({
-            "name": "User Preferences",
-            "type": "user",
-            "description": "Coding preferences",
-        })
+        fm = format_frontmatter(
+            {
+                "name": "User Preferences",
+                "type": "user",
+                "description": "Coding preferences",
+            }
+        )
         (memory_dir.path / "user_prefs.md").write_text(
-            fm + "- Likes dark mode\n", encoding="utf-8",
+            fm + "- Likes dark mode\n",
+            encoding="utf-8",
         )
 
         result = await tool.execute(action="list")
@@ -49,10 +54,13 @@ class TestListAction:
 class TestReadAction:
     @pytest.mark.asyncio
     async def test_read_existing(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "notes.md").write_text(
-            "- Important note\n", encoding="utf-8",
+            "- Important note\n",
+            encoding="utf-8",
         )
         result = await tool.execute(action="read", filename="notes.md")
         assert "Important note" in result
@@ -60,10 +68,7 @@ class TestReadAction:
     @pytest.mark.asyncio
     async def test_read_nonexistent(self, tool: MemoryTool):
         result = await tool.execute(action="read", filename="ghost.md")
-        assert (
-            "not found" in result.lower()
-            or "does not exist" in result.lower()
-        )
+        assert "not found" in result.lower() or "does not exist" in result.lower()
 
     @pytest.mark.asyncio
     async def test_read_missing_filename(self, tool: MemoryTool):
@@ -73,7 +78,8 @@ class TestReadAction:
     @pytest.mark.asyncio
     async def test_read_path_traversal(self, tool: MemoryTool):
         result = await tool.execute(
-            action="read", filename="../../etc/passwd",
+            action="read",
+            filename="../../etc/passwd",
         )
         assert "error" in result.lower()
 
@@ -81,7 +87,9 @@ class TestReadAction:
 class TestWriteAction:
     @pytest.mark.asyncio
     async def test_write_with_frontmatter(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         result = await tool.execute(
             action="write",
@@ -101,7 +109,9 @@ class TestWriteAction:
 
     @pytest.mark.asyncio
     async def test_write_without_frontmatter(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         result = await tool.execute(
             action="write",
@@ -145,13 +155,17 @@ class TestWriteAction:
 class TestDeleteAction:
     @pytest.mark.asyncio
     async def test_delete_existing(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "to_delete.md").write_text(
-            "temp\n", encoding="utf-8",
+            "temp\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
-            action="delete", filename="to_delete.md",
+            action="delete",
+            filename="to_delete.md",
         )
         assert "deleted" in result.lower()
         assert memory_dir.read_memory("to_delete.md") == ""
@@ -159,22 +173,24 @@ class TestDeleteAction:
     @pytest.mark.asyncio
     async def test_delete_nonexistent(self, tool: MemoryTool):
         result = await tool.execute(
-            action="delete", filename="ghost.md",
+            action="delete",
+            filename="ghost.md",
         )
-        assert (
-            "not found" in result.lower()
-            or "does not exist" in result.lower()
-        )
+        assert "not found" in result.lower() or "does not exist" in result.lower()
 
     @pytest.mark.asyncio
     async def test_delete_memory_md_protected(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "MEMORY.md").write_text(
-            "index\n", encoding="utf-8",
+            "index\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
-            action="delete", filename="MEMORY.md",
+            action="delete",
+            filename="MEMORY.md",
         )
         assert "cannot" in result.lower() or "protected" in result.lower()
         assert (memory_dir.path / "MEMORY.md").is_file()
@@ -186,13 +202,17 @@ class TestDeleteAction:
 
     @pytest.mark.asyncio
     async def test_delete_reminds_update_index(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "tmp.md").write_text(
-            "x\n", encoding="utf-8",
+            "x\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
-            action="delete", filename="tmp.md",
+            action="delete",
+            filename="tmp.md",
         )
         assert "MEMORY.md" in result or "update_index" in result
 
@@ -200,10 +220,13 @@ class TestDeleteAction:
 class TestUpdateAction:
     @pytest.mark.asyncio
     async def test_update_replaces_text(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "prefs.md").write_text(
-            "- Likes dark mode\n- Uses vim\n", encoding="utf-8",
+            "- Likes dark mode\n- Uses vim\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
             action="update",
@@ -225,17 +248,17 @@ class TestUpdateAction:
             old_str="x",
             new_str="y",
         )
-        assert (
-            "not found" in result.lower()
-            or "does not exist" in result.lower()
-        )
+        assert "not found" in result.lower() or "does not exist" in result.lower()
 
     @pytest.mark.asyncio
     async def test_update_old_str_not_found(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "test.md").write_text(
-            "hello world\n", encoding="utf-8",
+            "hello world\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
             action="update",
@@ -247,10 +270,13 @@ class TestUpdateAction:
 
     @pytest.mark.asyncio
     async def test_update_old_str_not_unique(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "dup.md").write_text(
-            "- item\n- item\n", encoding="utf-8",
+            "- item\n- item\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
             action="update",
@@ -262,10 +288,13 @@ class TestUpdateAction:
 
     @pytest.mark.asyncio
     async def test_update_same_old_new(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         (memory_dir.path / "same.md").write_text(
-            "content\n", encoding="utf-8",
+            "content\n",
+            encoding="utf-8",
         )
         result = await tool.execute(
             action="update",
@@ -278,7 +307,8 @@ class TestUpdateAction:
     @pytest.mark.asyncio
     async def test_update_missing_params(self, tool: MemoryTool):
         result = await tool.execute(
-            action="update", filename="test.md",
+            action="update",
+            filename="test.md",
         )
         assert "required" in result.lower() or "error" in result.lower()
 
@@ -296,7 +326,9 @@ class TestUpdateAction:
 class TestUpdateIndexAction:
     @pytest.mark.asyncio
     async def test_update_index(
-        self, tool: MemoryTool, memory_dir: MemoryDir,
+        self,
+        tool: MemoryTool,
+        memory_dir: MemoryDir,
     ):
         result = await tool.execute(
             action="update_index",
@@ -351,10 +383,7 @@ class TestToolMetadata:
         assert tool.is_concurrency_safe({"action": "delete"}) is False
 
     def test_concurrency_unsafe_update_index(self, tool: MemoryTool):
-        assert (
-            tool.is_concurrency_safe({"action": "update_index"})
-            is False
-        )
+        assert tool.is_concurrency_safe({"action": "update_index"}) is False
 
     def test_concurrency_none_input(self, tool: MemoryTool):
         assert tool.is_concurrency_safe(None) is False
@@ -372,10 +401,7 @@ class TestToolMetadata:
             )
             == "memory.read(x.md)"
         )
-        assert (
-            tool.user_facing_name({"action": "list"})
-            == "memory.list"
-        )
+        assert tool.user_facing_name({"action": "list"}) == "memory.list"
         assert tool.user_facing_name() == "memory"
 
     def test_activity_description(self, tool: MemoryTool):
@@ -385,9 +411,7 @@ class TestToolMetadata:
             )
             or ""
         )
-        assert "Listing" in (
-            tool.get_activity_description({"action": "list"}) or ""
-        )
+        assert "Listing" in (tool.get_activity_description({"action": "list"}) or "")
         assert tool.get_activity_description(None) is None
 
 

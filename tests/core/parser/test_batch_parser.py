@@ -12,7 +12,6 @@ from openlist_ani.core.parser.model import (
     ParseResult,
     ResourceTitleParseResult,
     TMDBCandidate,
-    TMDBMatch,
 )
 from openlist_ani.core.parser.parser import parse_metadata
 from openlist_ani.core.website.model import AnimeResourceInfo
@@ -403,9 +402,7 @@ class TestGenerateTmdbQueries:
 # =========================================================================
 
 
-def _make_candidate(
-    tmdb_id: int, name: str, original_name: str = ""
-) -> TMDBCandidate:
+def _make_candidate(tmdb_id: int, name: str, original_name: str = "") -> TMDBCandidate:
     return TMDBCandidate(
         id=tmdb_id,
         name=name,
@@ -424,7 +421,9 @@ class TestSelectTmdbCandidate:
             {"tmdb_id": 209867, "anime_name": "Frieren", "confidence": "high"}
         )
         candidates = [
-            _make_candidate(209867, "Frieren: Beyond Journey's End", "葬送のフリーレン"),
+            _make_candidate(
+                209867, "Frieren: Beyond Journey's End", "葬送のフリーレン"
+            ),
             _make_candidate(100000, "Other Anime"),
         ]
         result = await select_tmdb_candidate(mock_llm, "Frieren", candidates)

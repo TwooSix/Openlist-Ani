@@ -37,12 +37,10 @@ def skill_dir(tmp_path: Path):
     script_dir = skill_base / "script"
     script_dir.mkdir()
     (script_dir / "greet.py").write_text(
-        "async def run(name='World', **kwargs):\n"
-        "    return f'Hello, {name}!'\n"
+        "async def run(name='World', **kwargs):\n    return f'Hello, {name}!'\n"
     )
     (script_dir / "default.py").write_text(
-        "def run(**kwargs):\n"
-        "    return 'Hello from default!'\n"
+        "def run(**kwargs):\n    return 'Hello from default!'\n"
     )
 
     return tmp_path / "skills"
@@ -220,10 +218,7 @@ class TestBuildCatalogPromptBudget:
             skill_dir = skills_dir / f"skill_{i}"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text(
-                f"---\n"
-                f"name: skill_{i}\n"
-                f"description: Short desc {i}\n"
-                f"---\n"
+                f"---\nname: skill_{i}\ndescription: Short desc {i}\n---\n"
             )
         catalog = SkillCatalog(skills_dir)
         catalog.discover()
@@ -284,8 +279,10 @@ class TestBuildCatalogPromptBudget:
         prompt = catalog.build_catalog_prompt(context_window_tokens=1_000_000)
         # The combined description+when_to_use (2000+ chars) should be capped
         # at MAX_LISTING_DESC_CHARS in the Description: line
-        desc_line = [line for line in prompt.split("\n") if line.startswith("Description:")][0]
-        desc_content = desc_line[len("Description: "):]
+        desc_line = [
+            line for line in prompt.split("\n") if line.startswith("Description:")
+        ][0]
+        desc_content = desc_line[len("Description: ") :]
         assert len(desc_content) <= MAX_LISTING_DESC_CHARS
         assert desc_content.endswith("…")
 

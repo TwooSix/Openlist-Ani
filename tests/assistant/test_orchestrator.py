@@ -1,6 +1,5 @@
 """Tests for parallel/serial tool orchestration."""
 
-
 import pytest
 
 from openlist_ani.assistant.core.models import ToolCall, ToolResult
@@ -63,9 +62,11 @@ class TestPartitionToolCalls:
     def test_mixed_safe_unsafe_safe(self):
         """[safe, safe, unsafe, safe, safe] -> 3 batches."""
         registry = self._make_registry(
-            ReadOnlyTool("r1"), ReadOnlyTool("r2"),
+            ReadOnlyTool("r1"),
+            ReadOnlyTool("r2"),
             WriteTool("w1"),
-            ReadOnlyTool("r3"), ReadOnlyTool("r4"),
+            ReadOnlyTool("r3"),
+            ReadOnlyTool("r4"),
         )
         calls = [
             ToolCall(id="1", name="r1", arguments={}),
@@ -229,9 +230,7 @@ class TestApplyPerMessageBudget:
             ToolResult(tool_call_id="1", name="a", content="short"),
             ToolResult(tool_call_id="2", name="b", content="also short"),
         ]
-        out = apply_per_message_budget(
-            results, per_result_max=1000, aggregate_max=5000
-        )
+        out = apply_per_message_budget(results, per_result_max=1000, aggregate_max=5000)
         assert out[0].content == "short"
         assert out[1].content == "also short"
 
@@ -303,8 +302,10 @@ class TestTruncateResult:
     def test_metadata_preserved(self):
         """tool_call_id, name, is_error should survive truncation."""
         r = ToolResult(
-            tool_call_id="abc", name="my_tool",
-            content="y" * 1000, is_error=True,
+            tool_call_id="abc",
+            name="my_tool",
+            content="y" * 1000,
+            is_error=True,
         )
         out = _truncate_result(r, max_chars=50)
         assert out.tool_call_id == "abc"

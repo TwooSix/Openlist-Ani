@@ -35,11 +35,13 @@ class TestScanMemoryFiles:
     @pytest.mark.asyncio
     async def test_scans_md_files_with_frontmatter(self, memory_dir: MemoryDir):
         # Write a memory file with frontmatter
-        fm = format_frontmatter({
-            "name": "User Preferences",
-            "type": "user",
-            "description": "Coding preferences",
-        })
+        fm = format_frontmatter(
+            {
+                "name": "User Preferences",
+                "type": "user",
+                "description": "Coding preferences",
+            }
+        )
         (memory_dir.path / "user_prefs.md").write_text(
             fm + "- Likes dark mode\n", encoding="utf-8"
         )
@@ -52,9 +54,7 @@ class TestScanMemoryFiles:
 
     @pytest.mark.asyncio
     async def test_excludes_entrypoint(self, memory_dir: MemoryDir):
-        (memory_dir.path / ENTRYPOINT_NAME).write_text(
-            "# Index\n", encoding="utf-8"
-        )
+        (memory_dir.path / ENTRYPOINT_NAME).write_text("# Index\n", encoding="utf-8")
         (memory_dir.path / "topic.md").write_text("content\n", encoding="utf-8")
 
         headers = await memory_dir.scan_memory_files()
@@ -270,9 +270,7 @@ class TestMigration:
     async def test_migrate_memory_md(self, tmp_path):
         data_dir = tmp_path / "data"
         data_dir.mkdir()
-        (data_dir / "MEMORY.md").write_text(
-            "- Old memory fact\n", encoding="utf-8"
-        )
+        (data_dir / "MEMORY.md").write_text("- Old memory fact\n", encoding="utf-8")
 
         md = MemoryDir(data_dir / "memory")
         await md.migrate_from_flat_files(data_dir)
@@ -284,9 +282,7 @@ class TestMigration:
     async def test_migrate_user_md(self, tmp_path):
         data_dir = tmp_path / "data"
         data_dir.mkdir()
-        (data_dir / "USER.md").write_text(
-            "- User likes dark mode\n", encoding="utf-8"
-        )
+        (data_dir / "USER.md").write_text("- User likes dark mode\n", encoding="utf-8")
 
         md = MemoryDir(data_dir / "memory")
         await md.migrate_from_flat_files(data_dir)

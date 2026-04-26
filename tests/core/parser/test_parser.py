@@ -311,10 +311,12 @@ class TestParseMetadata:
             ),
         )
 
-        mock_batch_parse = AsyncMock(side_effect=[
-            [failed_result],   # First call fails
-            [success_result],  # Second call succeeds (retry)
-        ])
+        mock_batch_parse = AsyncMock(
+            side_effect=[
+                [failed_result],  # First call fails
+                [success_result],  # Second call succeeds (retry)
+            ]
+        )
 
         with (
             patch("openlist_ani.core.parser.parser.config") as mock_config,

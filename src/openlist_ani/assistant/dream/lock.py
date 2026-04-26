@@ -156,13 +156,9 @@ class ConsolidationLock:
     ) -> list[str]:
         """Return session IDs (JSONL filenames without extension) with
         mtime after *since* (seconds since epoch)."""
-        return await asyncio.to_thread(
-            self._list_sessions_sync, since, sessions_dir
-        )
+        return await asyncio.to_thread(self._list_sessions_sync, since, sessions_dir)
 
-    def _list_sessions_sync(
-        self, since: float, sessions_dir: Path
-    ) -> list[str]:
+    def _list_sessions_sync(self, since: float, sessions_dir: Path) -> list[str]:
         if not sessions_dir.is_dir():
             return []
 

@@ -27,7 +27,6 @@ from openlist_ani.assistant.tool.registry import ToolRegistry
 
 from .conftest import MockProvider, WriteTool
 
-
 # ── MessageQueue unit tests ──────────────────────────────────────────
 
 
@@ -150,15 +149,17 @@ class TestMidTurnInterruption:
         registry.register(w1)
         registry.register(w2)
 
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[
-                    ToolCall(id="tc_1", name="w1", arguments={}),
-                    ToolCall(id="tc_2", name="w2", arguments={}),
-                ],
-            ),
-            ProviderResponse(text="All done."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[
+                        ToolCall(id="tc_1", name="w1", arguments={}),
+                        ToolCall(id="tc_2", name="w2", arguments={}),
+                    ],
+                ),
+                ProviderResponse(text="All done."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -191,15 +192,17 @@ class TestMidTurnInterruption:
         registry.register(w1)
         registry.register(w2)
 
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[
-                    ToolCall(id="tc_1", name="w1", arguments={}),
-                    ToolCall(id="tc_2", name="w2", arguments={}),
-                ],
-            ),
-            ProviderResponse(text="I see your new message!"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[
+                        ToolCall(id="tc_1", name="w1", arguments={}),
+                        ToolCall(id="tc_2", name="w2", arguments={}),
+                    ],
+                ),
+                ProviderResponse(text="I see your new message!"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, message_queue=mq)
 
@@ -240,16 +243,18 @@ class TestMidTurnInterruption:
         registry.register(w2)
         registry.register(w3)
 
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[
-                    ToolCall(id="tc_1", name="w1", arguments={}),
-                    ToolCall(id="tc_2", name="w2", arguments={}),
-                    ToolCall(id="tc_3", name="w3", arguments={}),
-                ],
-            ),
-            ProviderResponse(text="OK"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[
+                        ToolCall(id="tc_1", name="w1", arguments={}),
+                        ToolCall(id="tc_2", name="w2", arguments={}),
+                        ToolCall(id="tc_3", name="w3", arguments={}),
+                    ],
+                ),
+                ProviderResponse(text="OK"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, message_queue=mq)
 
@@ -267,16 +272,22 @@ class TestMidTurnInterruption:
         assert len(last_tool_msg.tool_results) == 3
 
         # w1: normal result
-        w1_result = next(r for r in last_tool_msg.tool_results if r.tool_call_id == "tc_1")
+        w1_result = next(
+            r for r in last_tool_msg.tool_results if r.tool_call_id == "tc_1"
+        )
         assert not w1_result.is_error
         assert w1_result.content == "result_1"
 
         # w2 and w3: tombstones
-        w2_result = next(r for r in last_tool_msg.tool_results if r.tool_call_id == "tc_2")
+        w2_result = next(
+            r for r in last_tool_msg.tool_results if r.tool_call_id == "tc_2"
+        )
         assert w2_result.is_error
         assert "interrupted" in w2_result.content.lower()
 
-        w3_result = next(r for r in last_tool_msg.tool_results if r.tool_call_id == "tc_3")
+        w3_result = next(
+            r for r in last_tool_msg.tool_results if r.tool_call_id == "tc_3"
+        )
         assert w3_result.is_error
         assert "interrupted" in w3_result.content.lower()
 
@@ -294,12 +305,14 @@ class TestMidTurnInterruption:
         w1 = CallbackWriteTool("w1", "done", on_complete=_enqueue_multiple)
         registry.register(w1)
 
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="w1", arguments={})],
-            ),
-            ProviderResponse(text="Got all messages."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="w1", arguments={})],
+                ),
+                ProviderResponse(text="Got all messages."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, message_queue=mq)
 
@@ -326,15 +339,17 @@ class TestMidTurnInterruption:
         registry.register(w1)
         registry.register(w2)
 
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[
-                    ToolCall(id="tc_1", name="w1", arguments={}),
-                    ToolCall(id="tc_2", name="w2", arguments={}),
-                ],
-            ),
-            ProviderResponse(text="All done normally."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[
+                        ToolCall(id="tc_1", name="w1", arguments={}),
+                        ToolCall(id="tc_2", name="w2", arguments={}),
+                    ],
+                ),
+                ProviderResponse(text="All done normally."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, message_queue=mq)
 

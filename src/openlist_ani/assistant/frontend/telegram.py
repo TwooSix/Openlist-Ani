@@ -146,9 +146,7 @@ class TelegramFrontend(Frontend):
 
         return self._chat_loops[chat_id]
 
-    async def _setup_chat_session(
-        self, chat_id: int, loop: AgenticLoop
-    ) -> None:
+    async def _setup_chat_session(self, chat_id: int, loop: AgenticLoop) -> None:
         """Resume or create a session for a specific chat_id."""
         storage = loop.session_storage
         if storage is None:
@@ -157,7 +155,8 @@ class TelegramFrontend(Frontend):
         # Find existing telegram sessions for this chat_id
         existing = await storage.list_sessions()
         matching = [
-            s for s in existing
+            s
+            for s in existing
             if s.metadata.get("frontend") == "telegram"
             and s.metadata.get("chat_id") == chat_id
         ]
@@ -165,9 +164,7 @@ class TelegramFrontend(Frontend):
         if matching:
             latest = matching[0]  # sorted by mtime desc
             await loop.resume(latest.session_id)
-            logger.info(
-                f"Resumed session {latest.session_id} for chat {chat_id}"
-            )
+            logger.info(f"Resumed session {latest.session_id} for chat {chat_id}")
         else:
             await storage.start_new_session(
                 metadata={
@@ -407,7 +404,11 @@ class TelegramFrontend(Frontend):
 
         async for event in loop.process(user_text):
             await self._handle_stream_event(
-                event, status_msg, lines, edit_state, final_parts,
+                event,
+                status_msg,
+                lines,
+                edit_state,
+                final_parts,
             )
 
         # Flush any pending edit before returning
@@ -485,9 +486,7 @@ class TelegramFrontend(Frontend):
         full_response = "\n".join(final_parts)
         if full_response:
             escaped = _escape_mdv2(full_response)
-            await self._send_chunked(
-                update, escaped, parse_mode=ParseMode.MARKDOWN_V2
-            )
+            await self._send_chunked(update, escaped, parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await update.message.reply_text("No response.")
 

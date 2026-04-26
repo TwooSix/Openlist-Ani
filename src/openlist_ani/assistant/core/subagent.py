@@ -27,7 +27,12 @@ from openlist_ani.assistant._constants import (
     API_RETRY_BACKOFF_BASE,
     MAX_API_RETRIES,
 )
-from openlist_ani.assistant.core.models import Message, ProviderResponse, Role, ToolResult
+from openlist_ani.assistant.core.models import (
+    Message,
+    ProviderResponse,
+    Role,
+    ToolResult,
+)
 from openlist_ani.assistant.tool.orchestrator import ToolOrchestrator
 from openlist_ani.assistant.tool.registry import ToolRegistry
 
@@ -40,10 +45,12 @@ from loguru import logger
 
 # Tools that must never be available to sub-agents.
 # Mirrors Claude Code's ALL_AGENT_DISALLOWED_TOOLS pattern.
-_SUBAGENT_DISALLOWED_TOOLS: frozenset[str] = frozenset({
-    "agent",        # Prevent recursive sub-agent spawning
-    "send_message", # No frontend callback in sub-agent context
-})
+_SUBAGENT_DISALLOWED_TOOLS: frozenset[str] = frozenset(
+    {
+        "agent",  # Prevent recursive sub-agent spawning
+        "send_message",  # No frontend callback in sub-agent context
+    }
+)
 
 
 @dataclass
@@ -108,7 +115,10 @@ def _build_filtered_registry(
             continue
 
         # If allowed_tool_names is set, only include listed tools
-        if config.allowed_tool_names is not None and tool.name not in config.allowed_tool_names:
+        if (
+            config.allowed_tool_names is not None
+            and tool.name not in config.allowed_tool_names
+        ):
             continue
 
         sub_registry.register(tool)
@@ -150,7 +160,7 @@ async def _retry_with_backoff(
     reason: str,
 ) -> None:
     """Log a warning and sleep with exponential backoff before retrying."""
-    delay = API_RETRY_BACKOFF_BASE * (2 ** attempt)
+    delay = API_RETRY_BACKOFF_BASE * (2**attempt)
     logger.warning(
         f"SubAgent[{agent_type}] round {round_num + 1}: "
         f"{reason} (attempt {attempt + 1}/{MAX_API_RETRIES}), "
@@ -186,7 +196,10 @@ async def _call_provider_with_recovery(
             )
             if attempt < MAX_API_RETRIES - 1:
                 await _retry_with_backoff(
-                    config.agent_type, round_num, attempt, "provider call timed out",
+                    config.agent_type,
+                    round_num,
+                    attempt,
+                    "provider call timed out",
                 )
                 continue
             break
@@ -196,7 +209,10 @@ async def _call_provider_with_recovery(
             last_error = e
             if _is_transient_error(e) and attempt < MAX_API_RETRIES - 1:
                 await _retry_with_backoff(
-                    config.agent_type, round_num, attempt, f"transient error: {e}",
+                    config.agent_type,
+                    round_num,
+                    attempt,
+                    f"transient error: {e}",
                 )
                 continue
             break
@@ -239,7 +255,11 @@ async def _run_subagent_loop(
 
         # Call provider with per-call timeout and retry
         result = await _call_provider_with_recovery(
-            provider, messages, tool_defs, config, round_num,
+            provider,
+            messages,
+            tool_defs,
+            config,
+            round_num,
         )
 
         # If result is a string, it's an error message

@@ -489,9 +489,9 @@ class TestBuildFinalFilenameEnumFields:
         d = _make_downloader("{anime_name} [{quality}]", with_mock_client=False)
         task = _make_task(quality=quality)
         result = d._build_final_filename(task, "A", 1, 1)
-        assert f"[{value_str}]" in result, (
-            f"Expected '[{value_str}]' in '{result}' for {quality!r}"
-        )
+        assert (
+            f"[{value_str}]" in result
+        ), f"Expected '[{value_str}]' in '{result}' for {quality!r}"
         _assert_no_enum_repr(result)
 
     def test_languages_in_format_is_joined_plain_string(self):
@@ -658,9 +658,7 @@ class TestOpenListDownloaderEndToEnd:
 
     async def test_full_download_lifecycle(self, mock_async_sleep):
         """Verify the complete download flow with mocked client calls."""
-        d = _make_downloader(
-            rename_format="{anime_name} S{season:02d}E{episode:02d}"
-        )
+        d = _make_downloader(rename_format="{anime_name} S{season:02d}E{episode:02d}")
         mock_client = d._client
 
         info = AnimeResourceInfo(
@@ -680,9 +678,7 @@ class TestOpenListDownloaderEndToEnd:
         mock_client.list_files = AsyncMock(return_value=[])
         # add_offline_download
         mock_client.add_offline_download = AsyncMock(
-            return_value=[
-                OpenlistTask(id="dl-task-1", name="offline dl")
-            ]
+            return_value=[OpenlistTask(id="dl-task-1", name="offline dl")]
         )
 
         # -- Step 2: _wait_download_complete --
@@ -705,12 +701,8 @@ class TestOpenListDownloaderEndToEnd:
 
         # -- Step 3: _wait_transfer_complete --
         # No transfer task found after max retries — skip
-        mock_client.get_offline_download_transfer_undone = AsyncMock(
-            return_value=[]
-        )
-        mock_client.get_offline_download_transfer_done = AsyncMock(
-            return_value=[]
-        )
+        mock_client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
+        mock_client.get_offline_download_transfer_done = AsyncMock(return_value=[])
 
         # -- Step 4: _detect_downloaded_file --
         # After transfer polling, list_files returns the downloaded file
@@ -777,9 +769,7 @@ class TestOpenListDownloaderEndToEnd:
         with pytest.raises(DownloadError, match="temporary directory"):
             await d.download(task)
 
-    async def test_download_raises_on_offline_download_failure(
-        self, mock_async_sleep
-    ):
+    async def test_download_raises_on_offline_download_failure(self, mock_async_sleep):
         """Should raise DownloadError when add_offline_download returns None."""
         d = _make_downloader()
         mock_client = d._client
@@ -802,9 +792,7 @@ class TestOpenListDownloaderEndToEnd:
         with pytest.raises(DownloadError, match="Failed to create offline download"):
             await d.download(task)
 
-    async def test_download_raises_on_file_detect_failure(
-        self, mock_async_sleep
-    ):
+    async def test_download_raises_on_file_detect_failure(self, mock_async_sleep):
         """Should raise DownloadError when no video file is detected."""
         d = _make_downloader()
         mock_client = d._client
@@ -829,18 +817,12 @@ class TestOpenListDownloaderEndToEnd:
         mock_client.get_offline_download_undone = AsyncMock(return_value=[])
         mock_client.get_offline_download_done = AsyncMock(
             return_value=[
-                OpenlistTask(
-                    id="dl-1", name="dl", state=OpenlistTaskState.SUCCEEDED
-                )
+                OpenlistTask(id="dl-1", name="dl", state=OpenlistTaskState.SUCCEEDED)
             ]
         )
         # No transfer task
-        mock_client.get_offline_download_transfer_undone = AsyncMock(
-            return_value=[]
-        )
-        mock_client.get_offline_download_transfer_done = AsyncMock(
-            return_value=[]
-        )
+        mock_client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
+        mock_client.get_offline_download_transfer_done = AsyncMock(return_value=[])
         # Cleanup
         mock_client.remove_path = AsyncMock(return_value=True)
 
@@ -853,9 +835,7 @@ class TestOpenListDownloaderEndToEnd:
             with pytest.raises(DownloadError, match="Could not detect"):
                 await d.download(task)
 
-    async def test_download_idempotent_with_existing_task_id(
-        self, mock_async_sleep
-    ):
+    async def test_download_idempotent_with_existing_task_id(self, mock_async_sleep):
         """If task already has a task_id, _submit_download should be a no-op."""
         d = _make_downloader()
         mock_client = d._client
@@ -885,12 +865,8 @@ class TestOpenListDownloaderEndToEnd:
             ]
         )
         # No transfer
-        mock_client.get_offline_download_transfer_undone = AsyncMock(
-            return_value=[]
-        )
-        mock_client.get_offline_download_transfer_done = AsyncMock(
-            return_value=[]
-        )
+        mock_client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
+        mock_client.get_offline_download_transfer_done = AsyncMock(return_value=[])
         # File detect
         mock_client.list_files = AsyncMock(
             side_effect=[
@@ -939,9 +915,7 @@ class TestOpenListDownloaderEndToEnd:
         # Cleanup should still be called because temp_path was set
         mock_client.remove_path.assert_awaited_once()
 
-    async def test_download_failed_state_raises_download_error(
-        self, mock_async_sleep
-    ):
+    async def test_download_failed_state_raises_download_error(self, mock_async_sleep):
         """Should raise DownloadError when the download task state is FAILED."""
         d = _make_downloader()
         mock_client = d._client
@@ -965,9 +939,7 @@ class TestOpenListDownloaderEndToEnd:
         mock_client.get_offline_download_undone = AsyncMock(return_value=[])
         mock_client.get_offline_download_done = AsyncMock(
             return_value=[
-                OpenlistTask(
-                    id="dl-1", name="dl", state=OpenlistTaskState.FAILED
-                )
+                OpenlistTask(id="dl-1", name="dl", state=OpenlistTaskState.FAILED)
             ]
         )
         mock_client.remove_path = AsyncMock(return_value=True)

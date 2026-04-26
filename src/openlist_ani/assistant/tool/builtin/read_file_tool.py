@@ -59,9 +59,7 @@ def _read_text_blocking(path: Path) -> tuple[str | None, str | None]:
     return (head + rest).decode("utf-8", errors="replace"), None
 
 
-def _format_listing(
-    raw: str, path: Path, offset: int, limit: int
-) -> str:
+def _format_listing(raw: str, path: Path, offset: int, limit: int) -> str:
     """Slice ``raw`` to a window, redact, and add line numbers + footer."""
     lines = raw.splitlines()
     total = len(lines)
@@ -121,9 +119,7 @@ class ReadFileTool(BaseTool):
                 },
                 "offset": {
                     "type": "integer",
-                    "description": (
-                        "0-based starting line. Default 0."
-                    ),
+                    "description": ("0-based starting line. Default 0."),
                 },
                 "limit": {
                     "type": "integer",
@@ -146,9 +142,7 @@ class ReadFileTool(BaseTool):
     def is_concurrency_safe(self, tool_input: dict | None = None) -> bool:
         return True
 
-    def get_activity_description(
-        self, tool_input: dict | None = None
-    ) -> str | None:
+    def get_activity_description(self, tool_input: dict | None = None) -> str | None:
         if tool_input and (p := tool_input.get("path")):
             return f"Reading {p}"
         return "Reading file"

@@ -221,7 +221,7 @@ def _build_post_compact_summary_message(summary: str) -> str:
         "Continue the conversation from where it left off without asking "
         "the user any further questions. Resume directly — do not "
         "acknowledge the summary, do not recap what was happening, "
-        "do not preface with \"I'll continue\" or similar. Pick up the "
+        'do not preface with "I\'ll continue" or similar. Pick up the '
         "last task as if the break never happened."
     )
 
@@ -380,8 +380,7 @@ class AutoCompactor:
         # Validate pivot
         if pivot_index <= 0 or pivot_index >= len(messages):
             logger.debug(
-                f"Invalid pivot index {pivot_index} for "
-                f"{len(messages)} messages"
+                f"Invalid pivot index {pivot_index} for {len(messages)} messages"
             )
             return None
 
@@ -434,9 +433,7 @@ class AutoCompactor:
         summary_messages = self._build_summary_messages(messages)
 
         # Add the compact prompt
-        summary_messages.append(
-            Message(role=Role.USER, content=COMPACT_PROMPT)
-        )
+        summary_messages.append(Message(role=Role.USER, content=COMPACT_PROMPT))
 
         # Call LLM for summary
         response = await self._provider.chat_completion(summary_messages)
@@ -447,7 +444,8 @@ class AutoCompactor:
 
         # Build post-compact messages
         new_messages = self._build_post_compact_messages(
-            messages, summary_text,
+            messages,
+            summary_text,
         )
 
         post_chars = _estimate_chars(new_messages)
@@ -487,9 +485,11 @@ class AutoCompactor:
 
         if msg.role == Role.TOOL:
             results_summary = "\n".join(
-                f"[{tr.name}]: {tr.content[:500]}..."
-                if len(tr.content) > 500
-                else f"[{tr.name}]: {tr.content}"
+                (
+                    f"[{tr.name}]: {tr.content[:500]}..."
+                    if len(tr.content) > 500
+                    else f"[{tr.name}]: {tr.content}"
+                )
                 for tr in msg.tool_results
             )
             return Message(
@@ -527,17 +527,10 @@ class AutoCompactor:
                 continue
             # Merge consecutive same-role messages to prevent API
             # rejection from providers that enforce role alternation.
-            if (
-                summary_messages
-                and summary_messages[-1].role == converted.role
-            ):
+            if summary_messages and summary_messages[-1].role == converted.role:
                 summary_messages[-1] = Message(
                     role=converted.role,
-                    content=(
-                        summary_messages[-1].content
-                        + "\n\n"
-                        + converted.content
-                    ),
+                    content=(summary_messages[-1].content + "\n\n" + converted.content),
                 )
             else:
                 summary_messages.append(converted)
@@ -555,7 +548,8 @@ class AutoCompactor:
         """
         # Keep the original system message
         system_msg = next(
-            (msg for msg in messages if msg.role == Role.SYSTEM), None,
+            (msg for msg in messages if msg.role == Role.SYSTEM),
+            None,
         )
 
         new_messages: list[Message] = []
@@ -564,9 +558,7 @@ class AutoCompactor:
 
         # Add summary as a user message
         summary_user_content = _build_post_compact_summary_message(summary_text)
-        new_messages.append(
-            Message(role=Role.USER, content=summary_user_content)
-        )
+        new_messages.append(Message(role=Role.USER, content=summary_user_content))
 
         # Post-compact file restoration
         self._restore_recent_files(new_messages)
@@ -588,10 +580,5 @@ class AutoCompactor:
         ]
         for path, content in recent_files:
             file_parts.append(f"\n--- {path} ---\n{content}")
-        messages.append(
-            Message(role=Role.USER, content="\n".join(file_parts))
-        )
-        logger.info(
-            f"Post-compact: restored {len(recent_files)} file(s)"
-        )
-
+        messages.append(Message(role=Role.USER, content="\n".join(file_parts)))
+        logger.info(f"Post-compact: restored {len(recent_files)} file(s)")

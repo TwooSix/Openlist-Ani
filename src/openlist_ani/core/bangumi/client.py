@@ -438,7 +438,8 @@ class BangumiClient:
             raise ValueError("watched_eps must be >= 1")
 
         episodes = await self.fetch_subject_episodes(
-            subject_id, episode_type=0,
+            subject_id,
+            episode_type=0,
         )
         # Sort by ep number and take the first N
         episodes.sort(key=lambda e: e.get("sort", e.get("ep", 0)))
@@ -447,16 +448,15 @@ class BangumiClient:
         remaining = episodes[watched_eps:]
 
         if not watched:
-            raise ValueError(
-                f"No main-story episodes found for subject {subject_id}"
-            )
+            raise ValueError(f"No main-story episodes found for subject {subject_id}")
 
         path = f"/v0/users/-/collections/{subject_id}/episodes"
 
         # Mark eps 1..N as done (type=2)
         watched_ids = [ep["id"] for ep in watched]
         await self._request(
-            "PATCH", path,
+            "PATCH",
+            path,
             json_body={"episode_id": watched_ids, "type": 2},
         )
 
@@ -464,7 +464,8 @@ class BangumiClient:
         if remaining:
             remaining_ids = [ep["id"] for ep in remaining]
             await self._request(
-                "PATCH", path,
+                "PATCH",
+                path,
                 json_body={"episode_id": remaining_ids, "type": 0},
             )
 

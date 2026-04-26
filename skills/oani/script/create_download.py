@@ -42,7 +42,9 @@ async def run(
         title: Resource title for identification (required).
     """
     if not download_url:
-        return "Error: 'download_url' parameter is required (magnet link or torrent URL)."
+        return (
+            "Error: 'download_url' parameter is required (magnet link or torrent URL)."
+        )
     if not title:
         return "Error: 'title' parameter is required."
 
@@ -75,6 +77,8 @@ async def run(
 
     if success:
         task_id = task.get("id", "unknown")
-        return f"Download created successfully.\nTask ID: {task_id}\nTitle: {title}\n{msg}"
+        return (
+            f"Download created successfully.\nTask ID: {task_id}\nTitle: {title}\n{msg}"
+        )
     else:
         return f"Failed to create download: {msg}"

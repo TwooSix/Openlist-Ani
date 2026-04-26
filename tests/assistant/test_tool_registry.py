@@ -191,14 +191,17 @@ class TestValidateToolInput:
                 "query": {"type": "string"},
             },
         }
-        assert _validate_tool_input(
-            "test", {"query": "hello", "extra": 42}, schema
-        ) is None
+        assert (
+            _validate_tool_input("test", {"query": "hello", "extra": 42}, schema)
+            is None
+        )
 
     def test_empty_schema_passes(self):
         """Empty or missing schema passes everything."""
         assert _validate_tool_input("test", {"anything": 42}, {}) is None
-        assert _validate_tool_input("test", {"anything": 42}, {"type": "string"}) is None
+        assert (
+            _validate_tool_input("test", {"anything": 42}, {"type": "string"}) is None
+        )
 
     def test_no_required_field(self):
         """Schema without required section passes empty args."""
@@ -259,7 +262,8 @@ class TestDispatchValidation:
         registry.register(StrictTool())
 
         tc = ToolCall(
-            id="tc_1", name="strict_tool",
+            id="tc_1",
+            name="strict_tool",
             arguments={"query": 42},  # should be string
         )
         result = await registry.dispatch(tc)

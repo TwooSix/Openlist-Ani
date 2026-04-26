@@ -36,25 +36,19 @@ async def test_files_with_matches(project):
 
 @pytest.mark.asyncio
 async def test_content_mode(project):
-    out = await GrepTool().execute(
-        pattern=r"return", output_mode="content"
-    )
+    out = await GrepTool().execute(pattern=r"return", output_mode="content")
     assert "return 1" in out or "return 2" in out
 
 
 @pytest.mark.asyncio
 async def test_count_mode(project):
-    out = await GrepTool().execute(
-        pattern=r"return", output_mode="count"
-    )
+    out = await GrepTool().execute(pattern=r"return", output_mode="count")
     assert ":1" in out  # rg --count emits "<file>:N"
 
 
 @pytest.mark.asyncio
 async def test_glob_filter(project):
-    out = await GrepTool().execute(
-        pattern=r"hello", glob="**/*.md"
-    )
+    out = await GrepTool().execute(pattern=r"hello", glob="**/*.md")
     assert "x.md" in out
     assert "a.py" not in out
 
@@ -70,9 +64,7 @@ async def test_redacts_match_content(project):
     leak = project / "data" / "scratch.log"
     leak.parent.mkdir(parents=True, exist_ok=True)
     leak.write_text("token=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n")
-    out = await GrepTool().execute(
-        pattern=r"token", output_mode="content"
-    )
+    out = await GrepTool().execute(pattern=r"token", output_mode="content")
     assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in out
     assert "<REDACTED>" in out
 

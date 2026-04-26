@@ -559,9 +559,7 @@ class TestRenameFormatValidation:
         mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
-        mgr._config.openlist.rename_format = (
-            "{anime_name} {nonexistent_field}"
-        )
+        mgr._config.openlist.rename_format = "{anime_name} {nonexistent_field}"
         mgr.save()
         assert mgr.validate() is False
 
@@ -586,8 +584,7 @@ class TestRenameFormatValidation:
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.openlist.rename_format = (
-            "{anime_name} S{season}E{episode} "
-            "{fansub} {quality} {languages}"
+            "{anime_name} S{season}E{episode} {fansub} {quality} {languages}"
         )
         mgr.save()
         assert mgr.validate() is True
@@ -689,4 +686,3 @@ class TestExcludePatternsValidation:
         mgr._config.rss.filter.exclude_patterns = ["valid_regex", "(unclosed"]
         mgr.save()
         assert mgr.validate() is False
-

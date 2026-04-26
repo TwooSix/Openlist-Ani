@@ -52,12 +52,16 @@ class TestMaxOutputTokensRecovery:
         call_count = 0
 
         class EscalatingProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
                     # System prompt build call (context builder)
-                    return ProviderResponse(text="Partial response...", stop_reason="max_tokens")
+                    return ProviderResponse(
+                        text="Partial response...", stop_reason="max_tokens"
+                    )
                 if call_count == 2:
                     # Escalated call — should have max_tokens_override set
                     self._last_max_tokens = max_tokens_override
@@ -83,7 +87,9 @@ class TestMaxOutputTokensRecovery:
         call_count = 0
 
         class ContinueProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
@@ -115,7 +121,9 @@ class TestMaxOutputTokensRecovery:
         call_count = 0
 
         class AlwaysMaxTokensProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 # First call: normal max_tokens → triggers escalation
@@ -125,8 +133,7 @@ class TestMaxOutputTokensRecovery:
                 # Fifth call: continue #3 → recovery limit reached
                 if call_count <= 5:
                     return ProviderResponse(
-                        text=f"Part {call_count}...",
-                        stop_reason="max_tokens"
+                        text=f"Part {call_count}...", stop_reason="max_tokens"
                     )
                 return ProviderResponse(text="Final")
 
@@ -150,9 +157,11 @@ class TestTurnTracking:
     @pytest.mark.asyncio
     async def test_no_tools_no_turns(self, memory, registry):
         """Pure text response should not increment turn count."""
-        provider = MockProvider([
-            ProviderResponse(text="Hello!"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Hello!"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -164,12 +173,14 @@ class TestTurnTracking:
     @pytest.mark.asyncio
     async def test_single_tool_one_turn(self, memory, registry):
         """One tool call cycle should increment turn count by 1."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(text="Done"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(text="Done"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -181,15 +192,17 @@ class TestTurnTracking:
     @pytest.mark.asyncio
     async def test_multi_tool_rounds(self, memory, registry):
         """Multiple tool rounds should increment turn count per round."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_2", name="edit", arguments={})],
-            ),
-            ProviderResponse(text="All done"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_2", name="edit", arguments={})],
+                ),
+                ProviderResponse(text="All done"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -201,21 +214,23 @@ class TestTurnTracking:
     @pytest.mark.asyncio
     async def test_turn_count_accumulates_across_calls(self, memory, registry):
         """Turn count should accumulate across multiple process() calls."""
-        provider = MockProvider([
-            # First call: one tool round
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(text="Result 1"),
-            # Second call: two tool rounds
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_2", name="grep", arguments={})],
-            ),
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_3", name="edit", arguments={})],
-            ),
-            ProviderResponse(text="Result 2"),
-        ])
+        provider = MockProvider(
+            [
+                # First call: one tool round
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(text="Result 1"),
+                # Second call: two tool rounds
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_2", name="grep", arguments={})],
+                ),
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_3", name="edit", arguments={})],
+                ),
+                ProviderResponse(text="Result 2"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -230,12 +245,14 @@ class TestTurnTracking:
     @pytest.mark.asyncio
     async def test_reset_clears_turn_count(self, memory, registry):
         """reset() should clear the turn count."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(text="Done"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(text="Done"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -253,15 +270,17 @@ class TestTombstoneHandling:
     @pytest.mark.asyncio
     async def test_all_tool_calls_get_results(self, memory, registry):
         """Normal case: all tool calls should have matching results."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[
-                    ToolCall(id="tc_1", name="grep", arguments={}),
-                    ToolCall(id="tc_2", name="edit", arguments={}),
-                ],
-            ),
-            ProviderResponse(text="Done"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[
+                        ToolCall(id="tc_1", name="grep", arguments={}),
+                        ToolCall(id="tc_2", name="edit", arguments={}),
+                    ],
+                ),
+                ProviderResponse(text="Done"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 

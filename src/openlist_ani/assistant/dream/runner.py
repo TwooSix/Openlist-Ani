@@ -21,7 +21,11 @@ from openlist_ani.assistant._constants import (
     DREAM_MAX_ROUNDS,
     DREAM_SCAN_INTERVAL_SECONDS,
 )
-from openlist_ani.assistant.core.models import Message, ProviderResponse, Role, ToolResult
+from openlist_ani.assistant.core.models import (
+    Message,
+    Role,
+    ToolResult,
+)
 from openlist_ani.assistant.dream.config import AutoDreamConfig
 from openlist_ani.assistant.dream.lock import ConsolidationLock
 from openlist_ani.assistant.dream.prompt import build_consolidation_prompt
@@ -40,9 +44,19 @@ class DreamResult:
 
 
 # Read-only commands allowed in the dream agent's restricted shell
-_ALLOWED_COMMANDS = frozenset({
-    "ls", "find", "grep", "cat", "stat", "wc", "head", "tail", "rg",
-})
+_ALLOWED_COMMANDS = frozenset(
+    {
+        "ls",
+        "find",
+        "grep",
+        "cat",
+        "stat",
+        "wc",
+        "head",
+        "tail",
+        "rg",
+    }
+)
 
 
 class AutoDreamRunner:
@@ -175,9 +189,7 @@ class AutoDreamRunner:
             Message(role=Role.USER, content="Begin consolidation."),
         ]
 
-        tool_defs = self._provider.format_raw_tools(
-            self._get_dream_tool_definitions()
-        )
+        tool_defs = self._provider.format_raw_tools(self._get_dream_tool_definitions())
         files_touched: list[str] = []
 
         for round_num in range(DREAM_MAX_ROUNDS):
@@ -223,9 +235,7 @@ class AutoDreamRunner:
                     )
                 )
 
-            messages.append(
-                Message(role=Role.TOOL, tool_results=tool_results)
-            )
+            messages.append(Message(role=Role.TOOL, tool_results=tool_results))
 
         # Hit max rounds
         return DreamResult(

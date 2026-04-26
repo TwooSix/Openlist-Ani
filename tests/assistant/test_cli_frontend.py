@@ -47,10 +47,7 @@ class TestEscCancelTurn:
     def test_escape_in_bindings(self):
         """App BINDINGS should include an escape binding."""
         app = _make_app()
-        binding_keys = [
-            b[0] if isinstance(b, tuple) else b.key
-            for b in app.BINDINGS
-        ]
+        binding_keys = [b[0] if isinstance(b, tuple) else b.key for b in app.BINDINGS]
         assert "escape" in binding_keys
 
     def test_cancel_turn_action_exists(self):
@@ -101,6 +98,6 @@ class TestQuitDuringExecution:
         processing_pos = source.find("_processing_task")
         assert quit_pos != -1, "/quit check not found in on_input_submitted"
         assert processing_pos != -1, "_processing_task check not found"
-        assert quit_pos < processing_pos, (
-            "/quit check should come BEFORE _processing_task check"
-        )
+        assert (
+            quit_pos < processing_pos
+        ), "/quit check should come BEFORE _processing_task check"

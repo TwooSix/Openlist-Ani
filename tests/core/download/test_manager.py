@@ -4,7 +4,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from openlist_ani.core.download.downloader.base import DownloadError
 from openlist_ani.core.download.manager import DownloadManager

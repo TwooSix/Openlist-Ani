@@ -43,6 +43,7 @@ def _get_max_tokens_for_model(model: str) -> int:
             return default_tokens
 
     from openlist_ani.assistant._constants import DEFAULT_MAX_OUTPUT_TOKENS
+
     return DEFAULT_MAX_OUTPUT_TOKENS
 
 
@@ -205,12 +206,25 @@ class AnthropicProvider(Provider):
         delta = event.delta
         if delta.type == "text_delta":
             return ProviderResponse(text=delta.text)
-        if delta.type == "input_json_delta" and current_block_idx in current_tool_blocks:
+        if (
+            delta.type == "input_json_delta"
+            and current_block_idx in current_tool_blocks
+        ):
             current_tool_blocks[current_block_idx]["input_json"] += delta.partial_json
-        if delta.type == "thinking_delta" and current_block_idx in current_thinking_blocks:
-            current_thinking_blocks[current_block_idx]["thinking"] += getattr(delta, "thinking", "")
-        if delta.type == "signature_delta" and current_block_idx in current_thinking_blocks:
-            current_thinking_blocks[current_block_idx]["signature"] = getattr(delta, "signature", "")
+        if (
+            delta.type == "thinking_delta"
+            and current_block_idx in current_thinking_blocks
+        ):
+            current_thinking_blocks[current_block_idx]["thinking"] += getattr(
+                delta, "thinking", ""
+            )
+        if (
+            delta.type == "signature_delta"
+            and current_block_idx in current_thinking_blocks
+        ):
+            current_thinking_blocks[current_block_idx]["signature"] = getattr(
+                delta, "signature", ""
+            )
         return None
 
     @staticmethod
@@ -284,12 +298,16 @@ class AnthropicProvider(Provider):
             async for event in stream:
                 if event.type == "content_block_start":
                     current_block_idx = self._handle_block_start(
-                        event, current_block_idx, current_tool_blocks,
+                        event,
+                        current_block_idx,
+                        current_tool_blocks,
                         current_thinking_blocks,
                     )
                 elif event.type == "content_block_delta":
                     response = self._handle_block_delta(
-                        event, current_block_idx, current_tool_blocks,
+                        event,
+                        current_block_idx,
+                        current_tool_blocks,
                         current_thinking_blocks,
                     )
                     if response is not None:
@@ -368,9 +386,7 @@ class AnthropicProvider(Provider):
             return {"role": "user", "content": result_blocks}
         return None
 
-    def _convert_messages(
-        self, messages: list[Message]
-    ) -> tuple[str, list[dict]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[str, list[dict]]:
         """Convert internal Message format to Anthropic API format.
 
         Anthropic requires system messages to be passed separately.

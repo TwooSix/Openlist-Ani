@@ -42,6 +42,7 @@ def _get_max_tokens_for_model(model: str) -> int:
             return default_tokens
 
     from openlist_ani.assistant._constants import DEFAULT_MAX_OUTPUT_TOKENS
+
     return DEFAULT_MAX_OUTPUT_TOKENS
 
 
@@ -130,7 +131,9 @@ class OpenAIProvider(Provider):
             stop_reason=choice.finish_reason or "",
             usage={
                 "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "completion_tokens": (
+                    response.usage.completion_tokens if response.usage else 0
+                ),
             },
             reasoning_content=reasoning_content,
         )
@@ -147,7 +150,8 @@ class OpenAIProvider(Provider):
             func_args = getattr(func, "arguments", None) if func else None
 
             entry = collected.setdefault(
-                idx, {"id": "", "name": "", "args": ""},
+                idx,
+                {"id": "", "name": "", "args": ""},
             )
             if tc_delta.id:
                 entry["id"] = tc_delta.id
@@ -213,7 +217,10 @@ class OpenAIProvider(Provider):
         api_messages = self._convert_messages(messages)
         max_tokens = max_tokens_override or self._default_max_tokens
         kwargs = self._build_stream_kwargs(
-            api_messages, max_tokens, temperature, tools,
+            api_messages,
+            max_tokens,
+            temperature,
+            tools,
         )
 
         stream = await self._client.chat.completions.create(**kwargs)
@@ -246,7 +253,9 @@ class OpenAIProvider(Provider):
         if choice.finish_reason:
             responses.append(
                 self._build_final_stream_response(
-                    choice.finish_reason, collected_tool_calls, usage_data,
+                    choice.finish_reason,
+                    collected_tool_calls,
+                    usage_data,
                     reasoning_parts,
                 )
             )
@@ -282,9 +291,7 @@ class OpenAIProvider(Provider):
         if delta.content:
             responses.append(ProviderResponse(text=delta.content))
         if delta.tool_calls:
-            self._accumulate_tool_call_deltas(
-                collected_tool_calls, delta.tool_calls
-            )
+            self._accumulate_tool_call_deltas(collected_tool_calls, delta.tool_calls)
         return responses
 
     def _build_final_stream_response(

@@ -137,9 +137,7 @@ class TestMetadataFilter:
         """Entries with any excluded language should be filtered out."""
         f = MetadataFilter()
         candidates = [
-            _make_resource(
-                "A", languages=[LanguageType.CHS, LanguageType.CHT]
-            ),
+            _make_resource("A", languages=[LanguageType.CHS, LanguageType.CHT]),
             _make_resource("B", languages=[LanguageType.JP]),
             _make_resource("C", languages=[LanguageType.UNKNOWN]),
         ]
@@ -154,9 +152,7 @@ class TestMetadataFilter:
         """If any of candidate's languages matches exclusion, it's excluded."""
         f = MetadataFilter()
         candidates = [
-            _make_resource(
-                "A", languages=[LanguageType.CHS, LanguageType.UNKNOWN]
-            ),
+            _make_resource("A", languages=[LanguageType.CHS, LanguageType.UNKNOWN]),
         ]
         with patch(_CFG, _mock_config(exclude_languages=["未知"])):
             result = f.apply(candidates)

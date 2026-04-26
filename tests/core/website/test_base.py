@@ -93,9 +93,7 @@ class TestWebsiteBaseFetchFeed:
                 new_callable=AsyncMock,
                 side_effect=ValueError(error_msg),
             ),
-            patch(
-                "openlist_ani.core.website.base.logger"
-            ) as mock_logger,
+            patch("openlist_ani.core.website.base.logger") as mock_logger,
         ):
             result = await parser.fetch_feed("https://example.com/rss")
 

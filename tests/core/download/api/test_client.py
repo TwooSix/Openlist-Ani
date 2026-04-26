@@ -81,9 +81,7 @@ class TestCheckHealth:
         mock_get = AsyncMock(return_value={"code": 200, "data": {}})
         with patch.object(client, "_get", mock_get):
             await client.is_healthy()
-            mock_get.assert_called_once_with(
-                f"{BASE_URL}/api/public/settings"
-            )
+            mock_get.assert_called_once_with(f"{BASE_URL}/api/public/settings")
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +130,7 @@ class TestAddOfflineDownload:
 
     async def test_failure_returns_none(self, client):
         """Should return None when API responds with a non-200 code."""
-        mock_post = AsyncMock(
-            return_value={"code": 500, "message": "internal error"}
-        )
+        mock_post = AsyncMock(return_value={"code": 500, "message": "internal error"})
         with patch.object(client, "_post", mock_post):
             result = await client.add_offline_download(
                 urls=["magnet:?xt=hash"],
@@ -156,9 +152,7 @@ class TestAddOfflineDownload:
 
     async def test_success_with_empty_tasks(self, client):
         """Should return empty list when no tasks in response."""
-        mock_post = AsyncMock(
-            return_value={"code": 200, "data": {"tasks": []}}
-        )
+        mock_post = AsyncMock(return_value={"code": 200, "data": {"tasks": []}})
         with patch.object(client, "_post", mock_post):
             result = await client.add_offline_download(
                 urls=["magnet:?xt=hash"],
@@ -169,9 +163,7 @@ class TestAddOfflineDownload:
 
     async def test_success_with_null_tasks_field(self, client):
         """Should handle None tasks field gracefully."""
-        mock_post = AsyncMock(
-            return_value={"code": 200, "data": {"tasks": None}}
-        )
+        mock_post = AsyncMock(return_value={"code": 200, "data": {"tasks": None}})
         with patch.object(client, "_post", mock_post):
             result = await client.add_offline_download(
                 urls=["magnet:?xt=hash"],
@@ -182,9 +174,7 @@ class TestAddOfflineDownload:
 
     async def test_tool_accepts_string(self, client):
         """Should accept a plain string as the tool parameter."""
-        mock_post = AsyncMock(
-            return_value={"code": 200, "data": {"tasks": []}}
-        )
+        mock_post = AsyncMock(return_value={"code": 200, "data": {"tasks": []}})
         with patch.object(client, "_post", mock_post):
             await client.add_offline_download(
                 urls=["url1"],
@@ -239,9 +229,7 @@ class TestListFiles:
 
     async def test_success_empty_content(self, client):
         """Should return empty list when content is null/empty."""
-        mock_post = AsyncMock(
-            return_value={"code": 200, "data": {"content": None}}
-        )
+        mock_post = AsyncMock(return_value={"code": 200, "data": {"content": None}})
         with patch.object(client, "_post", mock_post):
             result = await client.list_files("/empty")
         assert result == []
@@ -253,18 +241,14 @@ class TestListFiles:
         for an empty directory.  Before the fix this caused an
         AttributeError because ``None.get("content")`` was called.
         """
-        mock_post = AsyncMock(
-            return_value={"code": 200, "data": None}
-        )
+        mock_post = AsyncMock(return_value={"code": 200, "data": None})
         with patch.object(client, "_post", mock_post):
             result = await client.list_files("/empty-dir")
         assert result == []
 
     async def test_failure_returns_none(self, client):
         """Should return None when API responds with non-200."""
-        mock_post = AsyncMock(
-            return_value={"code": 403, "message": "forbidden"}
-        )
+        mock_post = AsyncMock(return_value={"code": 403, "message": "forbidden"})
         with patch.object(client, "_post", mock_post):
             result = await client.list_files("/forbidden")
         assert result is None
@@ -297,9 +281,7 @@ class TestRenameFile:
 
     async def test_failure_returns_false(self, client):
         """Should return False on non-200 response."""
-        mock_post = AsyncMock(
-            return_value={"code": 500, "message": "rename failed"}
-        )
+        mock_post = AsyncMock(return_value={"code": 500, "message": "rename failed"})
         with patch.object(client, "_post", mock_post):
             result = await client.rename_file("/anime/ep01.mkv", "new.mkv")
         assert result is False
@@ -332,9 +314,7 @@ class TestMkdir:
 
     async def test_failure_returns_false(self, client):
         """Should return False on non-200 response."""
-        mock_post = AsyncMock(
-            return_value={"code": 500, "message": "mkdir failed"}
-        )
+        mock_post = AsyncMock(return_value={"code": 500, "message": "mkdir failed"})
         with patch.object(client, "_post", mock_post):
             result = await client.mkdir("/anime/Season 1")
         assert result is False
@@ -373,9 +353,7 @@ class TestMoveFile:
 
     async def test_failure_returns_false(self, client):
         """Should return False on non-200 response."""
-        mock_post = AsyncMock(
-            return_value={"code": 500, "message": "move failed"}
-        )
+        mock_post = AsyncMock(return_value={"code": 500, "message": "move failed"})
         with patch.object(client, "_post", mock_post):
             result = await client.move_file("/src", "/dst", ["file.mkv"])
         assert result is False
@@ -391,9 +369,7 @@ class TestMoveFile:
         """Should pass multiple filenames in the names list."""
         mock_post = AsyncMock(return_value={"code": 200})
         with patch.object(client, "_post", mock_post):
-            result = await client.move_file(
-                "/src", "/dst", ["file1.mkv", "file2.mp4"]
-            )
+            result = await client.move_file("/src", "/dst", ["file1.mkv", "file2.mp4"])
 
         assert result is True
         payload = mock_post.call_args[0][1]
@@ -420,9 +396,7 @@ class TestRemovePath:
 
     async def test_failure_returns_false(self, client):
         """Should return False on non-200 response."""
-        mock_post = AsyncMock(
-            return_value={"code": 500, "message": "remove failed"}
-        )
+        mock_post = AsyncMock(return_value={"code": 500, "message": "remove failed"})
         with patch.object(client, "_post", mock_post):
             result = await client.remove_path("/anime", ["dir"])
         assert result is False
@@ -515,9 +489,7 @@ class TestRequestRetry:
         )
 
         mock_session = AsyncMock()
-        mock_session.request = MagicMock(
-            side_effect=ValueError("JSON decode error")
-        )
+        mock_session.request = MagicMock(side_effect=ValueError("JSON decode error"))
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
@@ -569,9 +541,7 @@ class TestRequestRetry:
         )
 
         mock_session = AsyncMock()
-        mock_session.request = MagicMock(
-            side_effect=aiohttp.ClientError("fail")
-        )
+        mock_session.request = MagicMock(side_effect=aiohttp.ClientError("fail"))
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 

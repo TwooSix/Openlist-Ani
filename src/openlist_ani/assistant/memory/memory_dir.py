@@ -334,15 +334,9 @@ class MemoryDir:
         new_memory = self._dir / ENTRYPOINT_NAME
         if old_memory.is_file() and not new_memory.is_file():
             try:
-                content = await asyncio.to_thread(
-                    old_memory.read_text, "utf-8"
-                )
-                await asyncio.to_thread(
-                    new_memory.write_text, content, "utf-8"
-                )
-                logger.info(
-                    f"Migrated {old_memory} -> {new_memory}"
-                )
+                content = await asyncio.to_thread(old_memory.read_text, "utf-8")
+                await asyncio.to_thread(new_memory.write_text, content, "utf-8")
+                logger.info(f"Migrated {old_memory} -> {new_memory}")
             except OSError as e:
                 logger.error(f"Failed to migrate MEMORY.md: {e}")
 
@@ -351,23 +345,21 @@ class MemoryDir:
         new_user = self._dir / "user_profile.md"
         if old_user.is_file() and not new_user.is_file():
             try:
-                user_content = await asyncio.to_thread(
-                    old_user.read_text, "utf-8"
-                )
+                user_content = await asyncio.to_thread(old_user.read_text, "utf-8")
                 if user_content.strip():
-                    fm = format_frontmatter({
-                        "name": "User Profile",
-                        "type": "user",
-                        "description": "User profile migrated from USER.md",
-                    })
+                    fm = format_frontmatter(
+                        {
+                            "name": "User Profile",
+                            "type": "user",
+                            "description": "User profile migrated from USER.md",
+                        }
+                    )
                     await asyncio.to_thread(
                         new_user.write_text,
                         fm + user_content,
                         "utf-8",
                     )
-                    logger.info(
-                        f"Migrated {old_user} -> {new_user}"
-                    )
+                    logger.info(f"Migrated {old_user} -> {new_user}")
             except OSError as e:
                 logger.error(f"Failed to migrate USER.md: {e}")
 

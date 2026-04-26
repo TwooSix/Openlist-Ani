@@ -48,7 +48,10 @@ from openlist_ani.assistant.core.models import (
     ToolResult,
 )
 from openlist_ani.assistant.memory.compactor import AutoCompactor, ReadFileTracker
-from openlist_ani.assistant.tool.orchestrator import ToolOrchestrator, apply_per_message_budget
+from openlist_ani.assistant.tool.orchestrator import (
+    ToolOrchestrator,
+    apply_per_message_budget,
+)
 
 if TYPE_CHECKING:
     from openlist_ani.assistant.core.cancellation import CancellationToken
@@ -193,7 +196,9 @@ class AgenticLoop:
         # Turn counter across process() calls
         self._turn_count = 0
         # Pending user message queue — injected by frontend during active turns
-        self._message_queue = message_queue if message_queue is not None else MessageQueue()
+        self._message_queue = (
+            message_queue if message_queue is not None else MessageQueue()
+        )
         # Background auto-dream tasks (tracked for cleanup)
         self._dream_tasks: set[asyncio.Task] = set()
 
@@ -264,14 +269,11 @@ class AgenticLoop:
         resume_note = Message(
             role=Role.SYSTEM,
             content=(
-                "This session is being resumed. Continue from where "
-                "you left off."
+                "This session is being resumed. Continue from where you left off."
             ),
         )
         self._messages.append(resume_note)
-        logger.info(
-            f"Resumed session {session_id} with {len(messages)} messages"
-        )
+        logger.info(f"Resumed session {session_id} with {len(messages)} messages")
 
     @property
     def session_storage(self) -> SessionStorage | None:
@@ -393,14 +395,12 @@ class AgenticLoop:
                 logger.info("Reactive compact succeeded — retrying")
                 return "compact_applied"
             # Compact failed — also try emergency truncation
-            logger.warning(
-                "Reactive compact failed — attempting aggressive truncation"
-            )
+            logger.warning("Reactive compact failed — attempting aggressive truncation")
             self._truncate_if_needed()
             return "retry"
 
         if _is_transient(error) and attempt < MAX_API_RETRIES - 1:
-            delay = API_RETRY_BACKOFF_BASE * (2 ** attempt)
+            delay = API_RETRY_BACKOFF_BASE * (2**attempt)
             logger.info(f"Transient error — retrying in {delay:.1f}s")
             await _async_sleep(delay)
             return "retry"
@@ -413,9 +413,7 @@ class AgenticLoop:
     @staticmethod
     def _raise_exhausted(last_error: Exception | None) -> NoReturn:
         """Raise RuntimeError after all retry attempts are exhausted."""
-        error_msg = (
-            f"Provider error after {MAX_API_RETRIES} attempts: {last_error}"
-        )
+        error_msg = f"Provider error after {MAX_API_RETRIES} attempts: {last_error}"
         logger.error(error_msg)
         raise RuntimeError(error_msg) from last_error
 
@@ -462,7 +460,9 @@ class AgenticLoop:
                     f"{MAX_API_RETRIES}): {e}"
                 )
                 action = await self._handle_provider_error(
-                    e, attempt, has_attempted_reactive_compact,
+                    e,
+                    attempt,
+                    has_attempted_reactive_compact,
                 )
                 if action == "compact_applied":
                     return None  # Signal caller to retry the round
@@ -515,9 +515,7 @@ class AgenticLoop:
                 raise
             except Exception as e:
                 logger.opt(exception=True).error(f"AgenticLoop error: {e}")
-                await queue.put(
-                    LoopEvent(type=EventType.ERROR, text=str(e))
-                )
+                await queue.put(LoopEvent(type=EventType.ERROR, text=str(e)))
             finally:
                 await queue.put(None)  # Sentinel to signal completion
 
@@ -565,9 +563,7 @@ class AgenticLoop:
         ):
             if partial.text:
                 full_text_parts.append(partial.text)
-                await queue.put(
-                    LoopEvent(type=EventType.TEXT_DELTA, text=partial.text)
-                )
+                await queue.put(LoopEvent(type=EventType.TEXT_DELTA, text=partial.text))
                 # Checkpoint 2: cancellation after each stream chunk
                 if cancel_token and cancel_token.is_cancelled:
                     break
@@ -609,7 +605,10 @@ class AgenticLoop:
 
             try:
                 return await self._collect_stream(
-                    tool_defs, queue, max_tokens_override, cancel_token,
+                    tool_defs,
+                    queue,
+                    max_tokens_override,
+                    cancel_token,
                 )
             except Exception as e:
                 last_error = e
@@ -618,7 +617,9 @@ class AgenticLoop:
                     f"{MAX_API_RETRIES}): {e}"
                 )
                 action = await self._handle_provider_error(
-                    e, attempt, has_attempted_reactive_compact,
+                    e,
+                    attempt,
+                    has_attempted_reactive_compact,
                 )
                 if action == "compact_applied":
                     return None  # Signal caller to retry the round
@@ -706,9 +707,7 @@ class AgenticLoop:
                 thinking_blocks=response.thinking_blocks,
             )
         )
-        await queue.put(
-            LoopEvent(type=EventType.TEXT_DONE, text=response.text)
-        )
+        await queue.put(LoopEvent(type=EventType.TEXT_DONE, text=response.text))
         # Persist to JSONL session storage
         if self._session_storage:
             await self._session_storage.record_message(
@@ -734,9 +733,7 @@ class AgenticLoop:
                 current_session_id=self._session_storage.session_id
             )
             if result and result.files_touched:
-                logger.info(
-                    f"Auto-dream updated: {', '.join(result.files_touched)}"
-                )
+                logger.info(f"Auto-dream updated: {', '.join(result.files_touched)}")
         except Exception as e:
             logger.warning(f"Auto-dream failed: {e}")
 
@@ -750,15 +747,8 @@ class AgenticLoop:
         for tc in response.tool_calls:
             tool_names_used.append(tc.name)
             tool = self._registry.get(tc.name)
-            activity = (
-                tool.get_activity_description(tc.arguments)
-                if tool
-                else None
-            )
-            logger.info(
-                f"Tool call: {tc.name} "
-                f"(args={tc.arguments})"
-            )
+            activity = tool.get_activity_description(tc.arguments) if tool else None
+            logger.info(f"Tool call: {tc.name} (args={tc.arguments})")
             await queue.put(
                 LoopEvent(
                     type=EventType.TOOL_START,
@@ -801,14 +791,18 @@ class AgenticLoop:
         # Execute tools, collecting results until completion or interruption
         completed_results, executed_tool_ids, interrupted = (
             await self._execute_tools_until_interrupt(
-                response, queue, cancel_token,
+                response,
+                queue,
+                cancel_token,
             )
         )
 
         # Handle tombstone injection based on interruption state
         if interrupted:
             self._inject_interrupted_tombstones(
-                response, completed_results, executed_tool_ids,
+                response,
+                completed_results,
+                executed_tool_ids,
                 cancel_token,
             )
         else:
@@ -817,9 +811,7 @@ class AgenticLoop:
         # Apply truncation budget on collected results
         completed_results = apply_per_message_budget(completed_results)
 
-        self._messages.append(
-            Message(role=Role.TOOL, tool_results=completed_results)
-        )
+        self._messages.append(Message(role=Role.TOOL, tool_results=completed_results))
         self._turn_count += 1
 
         if interrupted:
@@ -870,9 +862,7 @@ class AgenticLoop:
 
             # Checkpoint 4: cancellation between tool executions
             if cancel_token and cancel_token.is_cancelled:
-                logger.info(
-                    "Cancellation token set — interrupting remaining tools"
-                )
+                logger.info("Cancellation token set — interrupting remaining tools")
                 return completed_results, executed_tool_ids, True
 
             # Check for pending user messages between tool executions
@@ -898,8 +888,7 @@ class AgenticLoop:
                 reason = (
                     "[Cancelled by user]"
                     if cancel_token and cancel_token.is_cancelled
-                    else "[Tool execution interrupted:"
-                    " user sent a new message]"
+                    else "[Tool execution interrupted: user sent a new message]"
                 )
                 completed_results.append(
                     ToolResult(
@@ -958,12 +947,8 @@ class AgenticLoop:
     ) -> None:
         """Emit a TEXT_DONE event and persist when max rounds are reached."""
         max_rounds_msg = "Reached maximum tool call rounds."
-        self._messages.append(
-            Message(role=Role.ASSISTANT, content=max_rounds_msg)
-        )
-        await queue.put(
-            LoopEvent(type=EventType.TEXT_DONE, text=max_rounds_msg)
-        )
+        self._messages.append(Message(role=Role.ASSISTANT, content=max_rounds_msg))
+        await queue.put(LoopEvent(type=EventType.TEXT_DONE, text=max_rounds_msg))
         # Persist to JSONL session storage
         if self._session_storage:
             await self._session_storage.record_message(
@@ -995,13 +980,19 @@ class AgenticLoop:
             for round_num in range(self._max_rounds):
                 logger.debug(f"AgenticLoop round {round_num + 1}/{self._max_rounds}")
 
-                action, max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact = (
-                    await self._execute_round(
-                        tool_defs, tool_names_used, queue, cancel_token,
-                        has_attempted_reactive_compact,
-                        max_tokens_override,
-                        max_output_tokens_recovery_count,
-                    )
+                (
+                    action,
+                    max_tokens_override,
+                    max_output_tokens_recovery_count,
+                    has_attempted_reactive_compact,
+                ) = await self._execute_round(
+                    tool_defs,
+                    tool_names_used,
+                    queue,
+                    cancel_token,
+                    has_attempted_reactive_compact,
+                    max_tokens_override,
+                    max_output_tokens_recovery_count,
                 )
                 if action == "return":
                     return
@@ -1042,7 +1033,12 @@ class AgenticLoop:
         """
         if self._is_cancelled(cancel_token):
             await self._emit_interrupted(queue)
-            return "return", max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact
+            return (
+                "return",
+                max_tokens_override,
+                max_output_tokens_recovery_count,
+                has_attempted_reactive_compact,
+            )
 
         # Context management pipeline
         compacted = await self._autocompactor.maybe_compact(self._messages)
@@ -1054,41 +1050,69 @@ class AgenticLoop:
         await queue.put(LoopEvent(type=EventType.THINKING))
 
         response = await self._stream_provider_call(
-            tool_defs, queue, has_attempted_reactive_compact,
-            max_tokens_override, cancel_token,
+            tool_defs,
+            queue,
+            has_attempted_reactive_compact,
+            max_tokens_override,
+            cancel_token,
         )
 
         # Handle reactive compact signal (response is None)
         if response is None:
             if self._is_cancelled(cancel_token):
                 await self._emit_interrupted(queue)
-                return "return", None, max_output_tokens_recovery_count, has_attempted_reactive_compact
+                return (
+                    "return",
+                    None,
+                    max_output_tokens_recovery_count,
+                    has_attempted_reactive_compact,
+                )
             return "continue", None, max_output_tokens_recovery_count, True
 
         if self._is_cancelled(cancel_token):
             await self._emit_interrupted(queue)
-            return "return", max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact
+            return (
+                "return",
+                max_tokens_override,
+                max_output_tokens_recovery_count,
+                has_attempted_reactive_compact,
+            )
 
         if not response.tool_calls:
             return await self._handle_text_response(
-                response, queue,
-                max_tokens_override, max_output_tokens_recovery_count,
+                response,
+                queue,
+                max_tokens_override,
+                max_output_tokens_recovery_count,
                 has_attempted_reactive_compact,
             )
 
         # Has tool_calls → dispatch
         max_tokens_override = None
         interrupted = await self._dispatch_tool_calls(
-            response, tool_names_used, queue, cancel_token,
+            response,
+            tool_names_used,
+            queue,
+            cancel_token,
         )
         if interrupted:
             logger.info("Mid-turn interruption — continuing to next API call")
 
         if self._is_cancelled(cancel_token):
             await self._emit_interrupted(queue)
-            return "return", max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact
+            return (
+                "return",
+                max_tokens_override,
+                max_output_tokens_recovery_count,
+                has_attempted_reactive_compact,
+            )
 
-        return "continue", max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact
+        return (
+            "continue",
+            max_tokens_override,
+            max_output_tokens_recovery_count,
+            has_attempted_reactive_compact,
+        )
 
     async def _handle_text_response(
         self,
@@ -1104,15 +1128,26 @@ class AgenticLoop:
         """
         should_continue, max_tokens_override, max_output_tokens_recovery_count = (
             self._handle_max_tokens_hit(
-                response, max_tokens_override,
+                response,
+                max_tokens_override,
                 max_output_tokens_recovery_count,
             )
         )
         if should_continue:
-            return "continue", max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact
+            return (
+                "continue",
+                max_tokens_override,
+                max_output_tokens_recovery_count,
+                has_attempted_reactive_compact,
+            )
 
         await self._finalize_text_response(response, queue)
-        return "break", max_tokens_override, max_output_tokens_recovery_count, has_attempted_reactive_compact
+        return (
+            "break",
+            max_tokens_override,
+            max_output_tokens_recovery_count,
+            has_attempted_reactive_compact,
+        )
 
     async def _handle_unrecoverable_error(
         self,
@@ -1125,12 +1160,8 @@ class AgenticLoop:
             "request. Please try again."
         )
         logger.error(f"AgenticLoop unrecoverable error: {error}")
-        self._messages.append(
-            Message(role=Role.ASSISTANT, content=error_msg)
-        )
-        await queue.put(
-            LoopEvent(type=EventType.TEXT_DONE, text=error_msg)
-        )
+        self._messages.append(Message(role=Role.ASSISTANT, content=error_msg))
+        await queue.put(LoopEvent(type=EventType.TEXT_DONE, text=error_msg))
 
     @staticmethod
     def _is_cancelled(cancel_token: CancellationToken | None) -> bool:
@@ -1142,6 +1173,4 @@ class AgenticLoop:
         queue: asyncio.Queue[LoopEvent | None],
     ) -> None:
         """Emit a TEXT_DONE interrupted event to the queue."""
-        await queue.put(
-            LoopEvent(type=EventType.TEXT_DONE, text=INTERRUPTED_TEXT)
-        )
+        await queue.put(LoopEvent(type=EventType.TEXT_DONE, text=INTERRUPTED_TEXT))

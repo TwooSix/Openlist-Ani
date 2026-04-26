@@ -21,7 +21,9 @@ async def run(
         url: ``http(s)://`` URL pointing at a .torrent file (required).
     """
     if not url:
-        return "Error: 'url' parameter is required (http(s):// link to a .torrent file)."
+        return (
+            "Error: 'url' parameter is required (http(s):// link to a .torrent file)."
+        )
 
     client = BackendClient(config.backend_url)
     try:

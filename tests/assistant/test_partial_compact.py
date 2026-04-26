@@ -18,12 +18,14 @@ class TestPartialCompact:
     @pytest.mark.asyncio
     async def test_basic_partial_compact(self):
         """Should summarize head and preserve tail."""
-        provider = MockProvider([
-            # The compaction LLM call
-            ProviderResponse(
-                text="<summary>Earlier conversation was about weather.</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                # The compaction LLM call
+                ProviderResponse(
+                    text="<summary>Earlier conversation was about weather.</summary>"
+                ),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
 
         messages = [
@@ -44,8 +46,11 @@ class TestPartialCompact:
         assert result[0].role == Role.SYSTEM
         assert result[0].content == "You are a helpful assistant."
         # Summary should be injected as user message
-        assert any("summary" in m.content.lower() or "weather" in m.content.lower()
-                    for m in result if m.role == Role.USER)
+        assert any(
+            "summary" in m.content.lower() or "weather" in m.content.lower()
+            for m in result
+            if m.role == Role.USER
+        )
         # Tail messages should be preserved
         tail_contents = [m.content for m in result if m.role != Role.SYSTEM]
         assert "What about tomorrow?" in tail_contents or any(
@@ -55,11 +60,11 @@ class TestPartialCompact:
     @pytest.mark.asyncio
     async def test_auto_pivot_preserves_tail(self):
         """When no pivot_index given, should auto-preserve N tail messages."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<summary>Old conversation summary.</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Old conversation summary.</summary>"),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
 
         messages = [
@@ -118,7 +123,9 @@ class TestPartialCompact:
         """Should return None if LLM call fails."""
 
         class FailingProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 raise RuntimeError("Provider down")
 
         provider = FailingProvider()

@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from openlist_ani.assistant.core.models import Message, ProviderResponse, ToolCall
+from openlist_ani.assistant.core.models import ProviderResponse, ToolCall
 from openlist_ani.assistant.core.subagent import (
     BUILTIN_AGENT_CONFIGS,
     SubAgentConfig,
@@ -33,9 +33,11 @@ class TestRunSubagent:
     @pytest.mark.asyncio
     async def test_pure_text_response(self):
         """Sub-agent returns text without tool calls."""
-        provider = MockProvider([
-            ProviderResponse(text="Task completed."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Task completed."),
+            ]
+        )
         registry = ToolRegistry()
         registry.register(ReadOnlyTool("search"))
 
@@ -50,12 +52,14 @@ class TestRunSubagent:
     @pytest.mark.asyncio
     async def test_tool_call_then_text(self):
         """Sub-agent calls a tool then responds."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="search", arguments={})],
-            ),
-            ProviderResponse(text="Found the answer."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="search", arguments={})],
+                ),
+                ProviderResponse(text="Found the answer."),
+            ]
+        )
         registry = ToolRegistry()
         registry.register(ReadOnlyTool("search", "search results"))
 
@@ -71,9 +75,11 @@ class TestRunSubagent:
     @pytest.mark.asyncio
     async def test_tool_filtering(self):
         """Sub-agent with allowed_tool_names only sees those tools."""
-        provider = MockProvider([
-            ProviderResponse(text="Done."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Done."),
+            ]
+        )
         registry = ToolRegistry()
         registry.register(ReadOnlyTool("allowed_tool"))
         registry.register(WriteTool("forbidden_tool"))
@@ -117,9 +123,11 @@ class TestRunSubagent:
     @pytest.mark.asyncio
     async def test_independent_message_list(self):
         """Sub-agent messages should not pollute parent."""
-        provider = MockProvider([
-            ProviderResponse(text="Done."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Done."),
+            ]
+        )
         registry = ToolRegistry()
 
         parent_messages = []  # Simulating parent's messages
@@ -142,7 +150,10 @@ class TestSubAgentOverallTimeout:
 
         class SlowProvider(MockProvider):
             async def chat_completion(
-                self, messages, tools=None, max_tokens_override=None,
+                self,
+                messages,
+                tools=None,
+                max_tokens_override=None,
                 temperature=None,
             ):
                 # Use a Future that never resolves — survives the _no_sleep
@@ -175,7 +186,10 @@ class TestSubAgentCancelledError:
 
         class HangingProvider(MockProvider):
             async def chat_completion(
-                self, messages, tools=None, max_tokens_override=None,
+                self,
+                messages,
+                tools=None,
+                max_tokens_override=None,
                 temperature=None,
             ):
                 # Block forever using a Future (survives _no_sleep fixture)
@@ -213,7 +227,10 @@ class TestSubAgentTransientRetry:
 
         class TransientThenOkProvider(MockProvider):
             async def chat_completion(
-                self, messages, tools=None, max_tokens_override=None,
+                self,
+                messages,
+                tools=None,
+                max_tokens_override=None,
                 temperature=None,
             ):
                 nonlocal call_count

@@ -32,18 +32,14 @@ from .conftest import MockProvider, ReadOnlyTool
 class TestToolResultTruncation:
     def test_truncate_result_under_limit(self):
         """Results under the limit should not be modified."""
-        result = ToolResult(
-            tool_call_id="1", name="test", content="short content"
-        )
+        result = ToolResult(tool_call_id="1", name="test", content="short content")
         truncated = _truncate_result(result, 1000)
         assert truncated.content == "short content"
 
     def test_truncate_result_over_limit(self):
         """Results over the limit should be truncated with a notice."""
         long_content = "x" * 100
-        result = ToolResult(
-            tool_call_id="1", name="test", content=long_content
-        )
+        result = ToolResult(tool_call_id="1", name="test", content=long_content)
         truncated = _truncate_result(result, 50)
         assert len(truncated.content) < len(long_content) + 100
         assert "truncated" in truncated.content.lower()
@@ -74,11 +70,13 @@ class TestPerMessageBudget:
         """Individual results exceeding per_result_max are truncated."""
         results = [
             ToolResult(
-                tool_call_id="1", name="big",
+                tool_call_id="1",
+                name="big",
                 content="x" * 200,
             ),
             ToolResult(
-                tool_call_id="2", name="small",
+                tool_call_id="2",
+                name="small",
                 content="ok",
             ),
         ]
@@ -92,15 +90,18 @@ class TestPerMessageBudget:
         """When aggregate exceeds budget, largest results are trimmed."""
         results = [
             ToolResult(
-                tool_call_id="1", name="big",
+                tool_call_id="1",
+                name="big",
                 content="x" * 5000,
             ),
             ToolResult(
-                tool_call_id="2", name="medium",
+                tool_call_id="2",
+                name="medium",
                 content="y" * 3000,
             ),
             ToolResult(
-                tool_call_id="3", name="small",
+                tool_call_id="3",
+                name="small",
                 content="z" * 100,
             ),
         ]
@@ -209,11 +210,13 @@ class TestAutoCompactor:
     @pytest.mark.asyncio
     async def test_compact_over_threshold(self):
         """Should compact when messages exceed threshold."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<analysis>Thinking</analysis><summary>1. Primary: test\n2. Concepts: none</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    text="<analysis>Thinking</analysis><summary>1. Primary: test\n2. Concepts: none</summary>"
+                ),
+            ]
+        )
         # Use a very small threshold to trigger compaction
         compactor = AutoCompactor(provider, max_context_chars=1000)
 
@@ -236,7 +239,9 @@ class TestAutoCompactor:
         """Should stop after MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES."""
 
         class FailingProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 raise RuntimeError("Provider error")
 
         provider = FailingProvider()
@@ -260,9 +265,11 @@ class TestAutoCompactor:
     @pytest.mark.asyncio
     async def test_system_message_preserved(self):
         """System message should be preserved after compaction."""
-        provider = MockProvider([
-            ProviderResponse(text="<summary>Summary here</summary>"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summary here</summary>"),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=500)
 
         system_content = "I am the system prompt with rules."
@@ -282,11 +289,11 @@ class TestForceCompact:
     @pytest.mark.asyncio
     async def test_force_compact_bypasses_threshold(self):
         """force_compact should work even when under threshold."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<summary>Forced summary</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Forced summary</summary>"),
+            ]
+        )
         # Large threshold = would never trigger automatically
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
 
@@ -307,7 +314,9 @@ class TestForceCompact:
         """force_compact should return None if LLM call fails."""
 
         class FailingProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 raise RuntimeError("Provider down")
 
         provider = FailingProvider()
@@ -323,9 +332,11 @@ class TestForceCompact:
     @pytest.mark.asyncio
     async def test_force_compact_resets_failure_count(self):
         """Successful force_compact should reset failure counter."""
-        provider = MockProvider([
-            ProviderResponse(text="<summary>Summary</summary>"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summary</summary>"),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
         compactor._consecutive_failures = 2  # Simulate prior failures
 
@@ -425,18 +436,16 @@ class TestPostCompactFileRestoration:
     @pytest.mark.asyncio
     async def test_compaction_with_file_tracker(self):
         """After compaction, tracked files should be re-injected."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<summary>Conversation summary</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Conversation summary</summary>"),
+            ]
+        )
         tracker = ReadFileTracker()
         tracker.track("/src/main.py", "def main():\n    pass")
         tracker.track("/src/utils.py", "def helper():\n    return 42")
 
-        compactor = AutoCompactor(
-            provider, max_context_chars=500, file_tracker=tracker
-        )
+        compactor = AutoCompactor(provider, max_context_chars=500, file_tracker=tracker)
 
         messages = [
             Message(role=Role.SYSTEM, content="System prompt"),
@@ -459,9 +468,11 @@ class TestPostCompactFileRestoration:
     @pytest.mark.asyncio
     async def test_compaction_without_file_tracker(self):
         """Without file tracker, compaction should work as before."""
-        provider = MockProvider([
-            ProviderResponse(text="<summary>Summary</summary>"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summary</summary>"),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=500)
 
         messages = [
@@ -476,14 +487,14 @@ class TestPostCompactFileRestoration:
     @pytest.mark.asyncio
     async def test_compaction_with_empty_tracker(self):
         """With empty file tracker, no file restoration message."""
-        provider = MockProvider([
-            ProviderResponse(text="<summary>Summary</summary>"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summary</summary>"),
+            ]
+        )
         tracker = ReadFileTracker()  # Empty
 
-        compactor = AutoCompactor(
-            provider, max_context_chars=500, file_tracker=tracker
-        )
+        compactor = AutoCompactor(provider, max_context_chars=500, file_tracker=tracker)
 
         messages = [
             Message(role=Role.SYSTEM, content="System prompt"),
@@ -501,11 +512,13 @@ class TestPartialCompactPreservesRecent:
     @pytest.mark.asyncio
     async def test_partial_compact_preserves_recent_messages(self):
         """Older messages should be compacted; recent tail should be intact."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<summary>Early discussion about architecture.</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    text="<summary>Early discussion about architecture.</summary>"
+                ),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
 
         messages = [
@@ -534,8 +547,7 @@ class TestPartialCompactPreservesRecent:
 
         # The summary user message should be present
         summary_msgs = [
-            m for m in result
-            if m.role == Role.USER and "continued from" in m.content
+            m for m in result if m.role == Role.USER and "continued from" in m.content
         ]
         assert len(summary_msgs) == 1
         assert "architecture" in summary_msgs[0].content
@@ -543,11 +555,11 @@ class TestPartialCompactPreservesRecent:
     @pytest.mark.asyncio
     async def test_partial_compact_with_explicit_pivot(self):
         """Explicit pivot_index should split at the given position."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<summary>Summarized old part.</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summarized old part.</summary>"),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
 
         messages = [
@@ -577,18 +589,18 @@ class TestReadFileTrackerPostCompactRestoration:
     @pytest.mark.asyncio
     async def test_tracked_files_restored_after_compact(self):
         """After compaction, tracked files should be re-injected."""
-        provider = MockProvider([
-            ProviderResponse(
-                text="<summary>Conversation about refactoring.</summary>"
-            ),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    text="<summary>Conversation about refactoring.</summary>"
+                ),
+            ]
+        )
         tracker = ReadFileTracker()
         tracker.track("/src/app.py", "class App:\n    pass")
         tracker.track("/src/config.py", "DEBUG = True")
 
-        compactor = AutoCompactor(
-            provider, max_context_chars=500, file_tracker=tracker
-        )
+        compactor = AutoCompactor(provider, max_context_chars=500, file_tracker=tracker)
 
         messages = [
             Message(role=Role.SYSTEM, content="System prompt"),
@@ -617,9 +629,11 @@ class TestReadFileTrackerPostCompactRestoration:
     @pytest.mark.asyncio
     async def test_no_restoration_without_tracker(self):
         """Without a file tracker, no restoration message is added."""
-        provider = MockProvider([
-            ProviderResponse(text="<summary>Summary</summary>"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summary</summary>"),
+            ]
+        )
         compactor = AutoCompactor(provider, max_context_chars=500)
 
         messages = [
@@ -634,13 +648,13 @@ class TestReadFileTrackerPostCompactRestoration:
     @pytest.mark.asyncio
     async def test_no_restoration_with_empty_tracker(self):
         """Empty tracker should not produce a restoration message."""
-        provider = MockProvider([
-            ProviderResponse(text="<summary>Summary</summary>"),
-        ])
-        tracker = ReadFileTracker()  # Empty — nothing tracked
-        compactor = AutoCompactor(
-            provider, max_context_chars=500, file_tracker=tracker
+        provider = MockProvider(
+            [
+                ProviderResponse(text="<summary>Summary</summary>"),
+            ]
         )
+        tracker = ReadFileTracker()  # Empty — nothing tracked
+        compactor = AutoCompactor(provider, max_context_chars=500, file_tracker=tracker)
 
         messages = [
             Message(role=Role.SYSTEM, content="System"),

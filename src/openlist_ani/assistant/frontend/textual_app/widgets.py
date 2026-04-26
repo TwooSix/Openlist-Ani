@@ -38,19 +38,28 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
 # ── Special characters ──
-_POINTER = "\u276f"       # ❯
+_POINTER = "\u276f"  # ❯
 _BLACK_CIRCLE = "\u25cf"  # ●
 _RESPONSE_PREFIX = "\u23bf"  # ⎿
-_TEARDROP = "\u273b"      # ✻
+_TEARDROP = "\u273b"  # ✻
 
 # Full-width horizontal rule character (same as Claude Code)
-_HRULE_CHAR = "\u2500"    # ─
+_HRULE_CHAR = "\u2500"  # ─
 
 # Spinner verbs
 _SPINNER_VERBS = [
-    "Thinking", "Reasoning", "Processing", "Analyzing",
-    "Pondering", "Considering", "Evaluating", "Computing",
-    "Generating", "Synthesizing", "Formulating", "Crafting",
+    "Thinking",
+    "Reasoning",
+    "Processing",
+    "Analyzing",
+    "Pondering",
+    "Considering",
+    "Evaluating",
+    "Computing",
+    "Generating",
+    "Synthesizing",
+    "Formulating",
+    "Crafting",
 ]
 
 _DOT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -209,7 +218,8 @@ class MessageBlock(Static):
 
     @staticmethod
     def command_result(
-        text: str | Text, style: str = "green",
+        text: str | Text,
+        style: str = "green",
     ) -> MessageBlock:
         """Create a command result message."""
         content = Text()
@@ -298,21 +308,25 @@ class InputSubmitted(TextualMessage):
 
 class TabCompleteRequested(TextualMessage):
     """Posted when user presses Tab — parent should fill selected completion."""
+
     pass
 
 
 class CompletionNavigateUp(TextualMessage):
     """Posted when user presses Up while completions are visible."""
+
     pass
 
 
 class CompletionNavigateDown(TextualMessage):
     """Posted when user presses Down while completions are visible."""
+
     pass
 
 
 class ClearInputRequested(TextualMessage):
     """Posted when Escape is pressed — parent InputBox handles tag clearing."""
+
     pass
 
 

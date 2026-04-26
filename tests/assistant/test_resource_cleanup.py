@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,7 +13,6 @@ from openlist_ani.assistant.provider.openai_provider import OpenAIProvider
 from openlist_ani.assistant.provider.anthropic_provider import AnthropicProvider
 
 from .conftest import MockProvider
-
 
 # ------------------------------------------------------------------ #
 # Provider.close()
@@ -33,7 +32,9 @@ class TestProviderClose:
     async def test_openai_provider_close_delegates(self):
         """OpenAIProvider.close() calls self._client.close()."""
         provider = OpenAIProvider(
-            api_key="test", base_url="https://test.example.com", model="gpt-4o",
+            api_key="test",
+            base_url="https://test.example.com",
+            model="gpt-4o",
         )
         provider._client = MagicMock()
         provider._client.close = AsyncMock()
@@ -46,7 +47,9 @@ class TestProviderClose:
     async def test_anthropic_provider_close_delegates(self):
         """AnthropicProvider.close() calls self._client.close()."""
         provider = AnthropicProvider(
-            api_key="test", base_url="https://test.example.com", model="claude-3-5-sonnet",
+            api_key="test",
+            base_url="https://test.example.com",
+            model="claude-3-5-sonnet",
         )
         provider._client = MagicMock()
         provider._client.close = AsyncMock()
@@ -59,7 +62,9 @@ class TestProviderClose:
     async def test_provider_close_is_idempotent(self):
         """Calling close() multiple times should not raise."""
         provider = OpenAIProvider(
-            api_key="test", base_url="https://test.example.com", model="gpt-4o",
+            api_key="test",
+            base_url="https://test.example.com",
+            model="gpt-4o",
         )
         provider._client = MagicMock()
         provider._client.close = AsyncMock()

@@ -28,9 +28,7 @@ async def run(
 
     client = BackendClient(config.backend_url)
     try:
-        data = await client.resolve_magnet(
-            magnet, metadata_timeout=metadata_timeout
-        )
+        data = await client.resolve_magnet(magnet, metadata_timeout=metadata_timeout)
     except Exception as e:
         return f"Error resolving magnet: {e}"
     finally:

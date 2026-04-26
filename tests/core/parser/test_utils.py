@@ -156,7 +156,7 @@ class TestParseJsonArrayFromMarkdown:
         assert result == '["Frieren", "葬送のフリーレン"]'
 
     def test_bare_array_with_nested_arrays(self):
-        text = '[[1, 2], [3, 4]]'
+        text = "[[1, 2], [3, 4]]"
         result = parse_json_array_from_markdown(text)
         assert result == "[[1, 2], [3, 4]]"
 

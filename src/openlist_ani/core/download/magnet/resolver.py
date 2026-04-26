@@ -295,9 +295,7 @@ def _fetch_metadata_blocking(
 # ── Public entry point ───────────────────────────────────────────────
 
 
-async def resolve_magnet(
-    magnet: str, metadata_timeout: float = 30.0
-) -> ResolveResult:
+async def resolve_magnet(magnet: str, metadata_timeout: float = 30.0) -> ResolveResult:
     """Resolve ``magnet`` to a real title and detect collection releases.
 
     Args:
@@ -332,8 +330,7 @@ async def resolve_magnet(
 
     # Step 2: libtorrent
     logger.info(
-        f"Fetching torrent metadata via libtorrent "
-        f"(budget={metadata_timeout}s)…"
+        f"Fetching torrent metadata via libtorrent (budget={metadata_timeout}s)…"
     )
     try:
         name, files = await asyncio.to_thread(
@@ -400,9 +397,7 @@ async def _download_torrent_bytes(url: str) -> tuple[bytes | None, str | None]:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as resp:
                 if resp.status >= 400:
-                    return None, (
-                        f"HTTP {resp.status} while fetching torrent file."
-                    )
+                    return None, (f"HTTP {resp.status} while fetching torrent file.")
                 # Stream read with size cap.
                 chunks: list[bytes] = []
                 total = 0
@@ -468,9 +463,7 @@ async def resolve_torrent(url: str) -> ResolveResult:
     if not _looks_like_torrent_url(url):
         return ResolveResult(
             success=False,
-            message=(
-                "Invalid torrent URL (expected 'http(s)://…/*.torrent')."
-            ),
+            message=("Invalid torrent URL (expected 'http(s)://…/*.torrent')."),
         )
 
     blob, err = await _download_torrent_bytes(url)

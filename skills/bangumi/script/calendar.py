@@ -17,9 +17,7 @@ _WEEKDAY_NAMES = {
 def _resolve_weekday_name(weekday) -> str:
     """Return the best available display name for a weekday."""
     return (
-        weekday.cn
-        or weekday.en
-        or _WEEKDAY_NAMES.get(weekday.id, f"Day {weekday.id}")
+        weekday.cn or weekday.en or _WEEKDAY_NAMES.get(weekday.id, f"Day {weekday.id}")
     )
 
 

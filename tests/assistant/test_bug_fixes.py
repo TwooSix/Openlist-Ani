@@ -12,17 +12,18 @@ Bug 3: Global asyncio.sleep patching in conftest — the _no_sleep fixture
 from __future__ import annotations
 
 import asyncio
-import subprocess
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from openlist_ani.assistant.core.models import Message, ProviderResponse, Role, ToolResult
+from openlist_ani.assistant.core.models import (
+    Message,
+    ProviderResponse,
+    Role,
+    ToolResult,
+)
 from openlist_ani.assistant.memory.compactor import AutoCompactor
 
 from .conftest import MockProvider
-
 
 # ------------------------------------------------------------------ #
 # Bug 1: Command injection in _dream_shell
@@ -223,7 +224,11 @@ class TestCompactionRoleAlternation:
         # Should be: SYSTEM, USER(Q1), ASSISTANT(A1), USER(Q2), ASSISTANT(A2)
         roles = [m.role for m in summary_msgs]
         assert roles == [
-            Role.SYSTEM, Role.USER, Role.ASSISTANT, Role.USER, Role.ASSISTANT
+            Role.SYSTEM,
+            Role.USER,
+            Role.ASSISTANT,
+            Role.USER,
+            Role.ASSISTANT,
         ]
 
 

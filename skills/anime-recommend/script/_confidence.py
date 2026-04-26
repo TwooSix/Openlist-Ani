@@ -16,10 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 # ------------------------------------------------------------------ #
 # Import CachedSubject from sibling _cache.py
 # ------------------------------------------------------------------ #
+
 
 def _load_cache_module():
     """Import _cache.py from the same script directory."""
@@ -42,18 +42,37 @@ CachedSubject = _cache.CachedSubject
 # ------------------------------------------------------------------ #
 
 # Tags that carry no genre/style signal — filter them out
-_TAG_BLACKLIST = frozenset({
-    # Media format
-    "TV", "OVA", "ONA", "WEB", "剧场版", "短片",
-    # Adaptation source
-    "漫画改", "漫改", "小说改", "轻小说改", "轻改", "GAL改", "游戏改", "原创",
-    # Status
-    "续篇", "续作", "完结", "连载中",
-    # Geography
-    "日本",
-    # Technical
-    "3D", "CG", "真人",
-})
+_TAG_BLACKLIST = frozenset(
+    {
+        # Media format
+        "TV",
+        "OVA",
+        "ONA",
+        "WEB",
+        "剧场版",
+        "短片",
+        # Adaptation source
+        "漫画改",
+        "漫改",
+        "小说改",
+        "轻小说改",
+        "轻改",
+        "GAL改",
+        "游戏改",
+        "原创",
+        # Status
+        "续篇",
+        "续作",
+        "完结",
+        "连载中",
+        # Geography
+        "日本",
+        # Technical
+        "3D",
+        "CG",
+        "真人",
+    }
+)
 
 # Minimum appearances required to count as a preference
 MIN_COUNT = 2
@@ -66,7 +85,7 @@ PRIOR_STRENGTH = 3
 # Frequency thresholds for tiered preference classification.
 # Applied uniformly to all dimensions (genres, studios, directors, writers).
 STRONG_THRESHOLD = 0.50  # ≥50% of liked titles → strong preference
-WEAK_THRESHOLD = 0.30    # 30-50% → weak preference
+WEAK_THRESHOLD = 0.30  # 30-50% → weak preference
 # <30% → ignored (not included in profile)
 
 # Maximum tags to inspect per subject (Bangumi sorts by popularity)
@@ -77,17 +96,42 @@ _MAX_TAG_NAME_LENGTH = 8
 
 # Known studio names that appear as Bangumi tags.
 # Anything matching these is reclassified from genre → studio.
-_KNOWN_STUDIO_TAGS = frozenset({
-    "A-1Pictures", "A-1 Pictures", "MADHOUSE", "MADHouse",
-    "MAPPA", "BONES", "ufotable", "CloverWorks",
-    "Passione", "Production I.G", "WIT STUDIO", "WIT",
-    "SHAFT", "P.A.WORKS", "TRIGGER", "京都アニメーション", "KyoAni",
-    "サンライズ", "SUNRISE", "动画工房", "動画工房",
-    "SILVER LINK.", "J.C.STAFF", "TOHO animation",
-    "东映动画", "東映アニメーション", "东映",
-    "CygamesPictures", "スタジオコロリド", "SANZIGEN",
-    "STUDIO CHROMATO", "Studio Outrigger",
-})
+_KNOWN_STUDIO_TAGS = frozenset(
+    {
+        "A-1Pictures",
+        "A-1 Pictures",
+        "MADHOUSE",
+        "MADHouse",
+        "MAPPA",
+        "BONES",
+        "ufotable",
+        "CloverWorks",
+        "Passione",
+        "Production I.G",
+        "WIT STUDIO",
+        "WIT",
+        "SHAFT",
+        "P.A.WORKS",
+        "TRIGGER",
+        "京都アニメーション",
+        "KyoAni",
+        "サンライズ",
+        "SUNRISE",
+        "动画工房",
+        "動画工房",
+        "SILVER LINK.",
+        "J.C.STAFF",
+        "TOHO animation",
+        "东映动画",
+        "東映アニメーション",
+        "东映",
+        "CygamesPictures",
+        "スタジオコロリド",
+        "SANZIGEN",
+        "STUDIO CHROMATO",
+        "Studio Outrigger",
+    }
+)
 
 # Alias map for studio name normalization (variant → canonical)
 _STUDIO_ALIASES: dict[str, str] = {
@@ -110,6 +154,7 @@ def _normalize_studio(name: str) -> str:
 # ------------------------------------------------------------------ #
 # Feature extraction from a single CachedSubject
 # ------------------------------------------------------------------ #
+
 
 def _is_date_tag(name: str) -> bool:
     """Check if a tag looks like a date (e.g. '2024年4月', '2024')."""
@@ -163,9 +208,7 @@ def _extract_infobox_values(
             continue
         if isinstance(value, list):
             names = [
-                v.get("v", "")
-                for v in value
-                if isinstance(v, dict) and v.get("v")
+                v.get("v", "") for v in value if isinstance(v, dict) and v.get("v")
             ]
         else:
             names = [str(value)] if value else []
@@ -187,8 +230,7 @@ def extract_features(cs: CachedSubject) -> SubjectFeatures:
     """Extract all feature dimensions from a CachedSubject."""
     # Studios: prefer infobox '动画制作', supplement with tag-based detection
     infobox_studios = [
-        _normalize_studio(s)
-        for s in _extract_infobox_values(cs.infobox, {"动画制作"})
+        _normalize_studio(s) for s in _extract_infobox_values(cs.infobox, {"动画制作"})
     ]
     tag_studios = _extract_studio_tags(cs.tags)
     # Deduplicate, prefer infobox
@@ -203,10 +245,12 @@ def extract_features(cs: CachedSubject) -> SubjectFeatures:
         genres=_extract_genres(cs.tags),
         studios=studios,
         directors=_extract_infobox_values(
-            cs.infobox, {"导演", "总导演"},
+            cs.infobox,
+            {"导演", "总导演"},
         ),
         writers=_extract_infobox_values(
-            cs.infobox, {"系列构成", "脚本"},
+            cs.infobox,
+            {"系列构成", "脚本"},
         ),
     )
 
@@ -214,6 +258,7 @@ def extract_features(cs: CachedSubject) -> SubjectFeatures:
 # ------------------------------------------------------------------ #
 # Confidence scoring
 # ------------------------------------------------------------------ #
+
 
 @dataclass
 class ConfidenceEntry:
@@ -235,11 +280,11 @@ class ConfidenceEntry:
     """
 
     name: str
-    count: int       # Raw appearances in liked/disliked set
-    total: int       # Total liked/disliked titles
+    count: int  # Raw appearances in liked/disliked set
+    total: int  # Total liked/disliked titles
     base_rate: float  # Average frequency across all tags in this dimension
     bayesian_score: float = 0.0  # Computed after init
-    tier: str = ""   # "strong", "weak", or "" (filtered out)
+    tier: str = ""  # "strong", "weak", or "" (filtered out)
 
     @property
     def raw_frequency(self) -> float:
@@ -314,14 +359,16 @@ def _build_entries(
             continue
         bayesian = (count * r + m * base_rate) / (count + m)
         tier = "strong" if r >= STRONG_THRESHOLD else "weak"
-        entries.append(ConfidenceEntry(
-            name=name,
-            count=count,
-            total=total,
-            base_rate=base_rate,
-            bayesian_score=bayesian,
-            tier=tier,
-        ))
+        entries.append(
+            ConfidenceEntry(
+                name=name,
+                count=count,
+                total=total,
+                base_rate=base_rate,
+                bayesian_score=bayesian,
+                tier=tier,
+            )
+        )
 
     entries.sort(key=lambda e: e.bayesian_score, reverse=True)
     return entries
@@ -354,14 +401,15 @@ def _resolve_genre_overlap(
     overlap = set(liked_set) & set(disliked_set)
 
     final_liked = [
-        e for e in raw_liked
+        e
+        for e in raw_liked
         if e.name not in overlap
         or e.bayesian_score >= disliked_set[e.name].bayesian_score
     ]
     final_disliked = [
-        e for e in raw_disliked
-        if e.name not in overlap
-        or e.bayesian_score > liked_set[e.name].bayesian_score
+        e
+        for e in raw_disliked
+        if e.name not in overlap or e.bayesian_score > liked_set[e.name].bayesian_score
     ]
     return final_liked, final_disliked
 
@@ -408,8 +456,8 @@ def compute_confidence(
     total_liked = len(liked_subjects)
     total_disliked = len(disliked_subjects)
 
-    liked_genres, liked_studios, liked_directors, liked_writers = (
-        _count_features(liked_subjects)
+    liked_genres, liked_studios, liked_directors, liked_writers = _count_features(
+        liked_subjects
     )
 
     disliked_genres = Counter[str]()
@@ -421,7 +469,8 @@ def compute_confidence(
     raw_liked = _build_entries(liked_genres, total_liked, min_count)
     raw_disliked = _build_entries(disliked_genres, total_disliked, min_count)
     final_liked_genres, final_disliked_genres = _resolve_genre_overlap(
-        raw_liked, raw_disliked,
+        raw_liked,
+        raw_disliked,
     )
     strong_genres, weak_genres = _split_by_tier(final_liked_genres)
 
@@ -454,6 +503,7 @@ def compute_confidence(
 # Formatting for LLM consumption
 # ------------------------------------------------------------------ #
 
+
 def format_confidence_report(report: ConfidenceReport) -> str:
     """Format a ConfidenceReport as human-readable text for the LLM.
 
@@ -463,8 +513,7 @@ def format_confidence_report(report: ConfidenceReport) -> str:
     """
     lines: list[str] = [
         "## Tag Confidence Analysis (Tiered, Bayesian Averaged)",
-        f"Total: {report.total_liked} liked, "
-        f"{report.total_disliked} disliked",
+        f"Total: {report.total_liked} liked, {report.total_disliked} disliked",
         f"Thresholds: strong ≥{STRONG_THRESHOLD:.0%}, "
         f"weak ≥{WEAK_THRESHOLD:.0%}, below = ignored\n",
     ]

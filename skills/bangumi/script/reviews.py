@@ -32,8 +32,7 @@ def _format_topics(topics: list, lines: list[str]) -> None:
     for t in topics[:10]:
         date_str = _format_date_suffix(t.timestamp)
         lines.append(
-            f"  - {t.title}  by {t.user_nickname}{date_str}"
-            f"  replies:{t.replies}",
+            f"  - {t.title}  by {t.user_nickname}{date_str}  replies:{t.replies}",
         )
     lines.append("")
 
@@ -43,12 +42,9 @@ def _format_blogs(blogs: list, lines: list[str]) -> None:
     lines.append(f"## Blog Reviews ({len(blogs)})")
     for b in blogs[:10]:
         date_str = _format_date_suffix(b.timestamp)
-        summary = (
-            b.summary[:150] + "..." if len(b.summary) > 150 else b.summary
-        )
+        summary = b.summary[:150] + "..." if len(b.summary) > 150 else b.summary
         lines.append(
-            f"  - {b.title}  by {b.user_nickname}{date_str}"
-            f"  replies:{b.replies}",
+            f"  - {b.title}  by {b.user_nickname}{date_str}  replies:{b.replies}",
         )
         if summary:
             lines.append(f"    {summary}")

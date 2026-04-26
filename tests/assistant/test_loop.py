@@ -52,9 +52,11 @@ class TestAgenticLoop:
     @pytest.mark.asyncio
     async def test_pure_text_response(self, memory, registry):
         """No tool calls -> yields events including TEXT_DONE."""
-        provider = MockProvider([
-            ProviderResponse(text="The answer is 42."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="The answer is 42."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -72,15 +74,17 @@ class TestAgenticLoop:
     @pytest.mark.asyncio
     async def test_single_tool_call_round(self, memory, registry):
         """One round of tool calls then text response."""
-        provider = MockProvider([
-            # Round 1: tool call
-            ProviderResponse(
-                text="",
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            # Round 2: final text
-            ProviderResponse(text="Found the results."),
-        ])
+        provider = MockProvider(
+            [
+                # Round 1: tool call
+                ProviderResponse(
+                    text="",
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                # Round 2: final text
+                ProviderResponse(text="Found the results."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -105,13 +109,15 @@ class TestAgenticLoop:
             "thinking": "I need to search first.",
             "signature": "sig_123",
         }
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-                thinking_blocks=[thinking_block],
-            ),
-            ProviderResponse(text="Found the results."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                    thinking_blocks=[thinking_block],
+                ),
+                ProviderResponse(text="Found the results."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -120,7 +126,8 @@ class TestAgenticLoop:
             results.append(event)
 
         assistant_tool_messages = [
-            msg for msg in loop._messages
+            msg
+            for msg in loop._messages
             if msg.role == Role.ASSISTANT and msg.tool_calls
         ]
         assert _collect_text(results) == "Found the results."
@@ -129,15 +136,17 @@ class TestAgenticLoop:
     @pytest.mark.asyncio
     async def test_multi_round_tool_calls(self, memory, registry):
         """Multiple rounds of tool calls before final text."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_2", name="edit", arguments={})],
-            ),
-            ProviderResponse(text="All done."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_2", name="edit", arguments={})],
+                ),
+                ProviderResponse(text="All done."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -173,12 +182,14 @@ class TestAgenticLoop:
     @pytest.mark.asyncio
     async def test_tool_results_injected(self, memory, registry):
         """Tool results should be injected back into the conversation."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(text="Based on the grep results..."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(text="Based on the grep results..."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -200,12 +211,17 @@ class TestAgenticLoop:
         session_storage = SessionStorage(tmp_path / "sessions")
         await session_storage.start_new_session()
 
-        provider = MockProvider([
-            ProviderResponse(text="Hello there!"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Hello there!"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(
-            provider, registry, context, memory,
+            provider,
+            registry,
+            context,
+            memory,
             session_storage=session_storage,
         )
 
@@ -227,15 +243,20 @@ class TestAgenticLoop:
         session_storage = SessionStorage(tmp_path / "sessions")
         await session_storage.start_new_session()
 
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(text="Found results."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(text="Found results."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(
-            provider, registry, context, memory,
+            provider,
+            registry,
+            context,
+            memory,
             session_storage=session_storage,
         )
 
@@ -259,9 +280,11 @@ class TestStreaming:
         The loop calls _collect_stream → provider.chat_completion_stream which
         yields partial chunks.  Each chunk with text triggers a TEXT_DELTA event.
         """
-        provider = MockProvider([
-            ProviderResponse(text="Streaming works!"),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Streaming works!"),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -272,9 +295,9 @@ class TestStreaming:
         types = [e.type for e in results]
         # The mock stream yields a text-only delta first, so we must see
         # at least one TEXT_DELTA before the final TEXT_DONE.
-        assert EventType.TEXT_DELTA in types, (
-            f"Expected TEXT_DELTA in events but got: {types}"
-        )
+        assert (
+            EventType.TEXT_DELTA in types
+        ), f"Expected TEXT_DELTA in events but got: {types}"
         assert EventType.TEXT_DONE in types
 
         # Collect all TEXT_DELTA payloads
@@ -289,12 +312,14 @@ class TestStreaming:
     async def test_no_text_delta_for_tool_only_response(self, memory, registry):
         """A tool-only response (no text) should not produce TEXT_DELTA events
         for the tool-call round."""
-        provider = MockProvider([
-            ProviderResponse(
-                tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
-            ),
-            ProviderResponse(text="Done after tool."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[ToolCall(id="tc_1", name="grep", arguments={})],
+                ),
+                ProviderResponse(text="Done after tool."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -307,8 +332,7 @@ class TestStreaming:
             i for i, e in enumerate(results) if e.type == EventType.TOOL_START
         )
         pre_tool_deltas = [
-            e for e in results[:first_tool_idx]
-            if e.type == EventType.TEXT_DELTA
+            e for e in results[:first_tool_idx] if e.type == EventType.TEXT_DELTA
         ]
         assert len(pre_tool_deltas) == 0
 
@@ -358,7 +382,9 @@ class TestErrorRecovery:
         call_count = 0
 
         class TransientErrorProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
@@ -383,7 +409,9 @@ class TestErrorRecovery:
         call_count = 0
 
         class PromptTooLongProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 # Call 1: main loop call → prompt too long
@@ -401,7 +429,10 @@ class TestErrorRecovery:
         provider = PromptTooLongProvider()
         context = ContextBuilder(memory)
         loop = AgenticLoop(
-            provider, registry, context, memory,
+            provider,
+            registry,
+            context,
+            memory,
             max_context_chars=1_000_000,
         )
 
@@ -418,7 +449,9 @@ class TestErrorRecovery:
         """Should yield graceful error message on unrecoverable errors."""
 
         class AlwaysFailProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 raise RuntimeError("Invalid API key")
 
         provider = AlwaysFailProvider()
@@ -439,7 +472,9 @@ class TestErrorRecovery:
         call_count = 0
 
         class PersistentErrorProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 raise RuntimeError("connection reset by peer")
@@ -463,7 +498,9 @@ class TestErrorRecovery:
         call_count = 0
 
         class RecoverableProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None, max_tokens_override=None, temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count <= 3:  # First turn: all 3 retries fail
@@ -503,10 +540,12 @@ class TestGeneratorCancellation:
         """
         import asyncio
 
-        provider = MockProvider([
-            ProviderResponse(text="First response."),
-            ProviderResponse(text="Second response."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="First response."),
+                ProviderResponse(text="Second response."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -521,7 +560,9 @@ class TestGeneratorCancellation:
                 async for event in loop.process("Hello again"):
                     results.append(event)
         except asyncio.TimeoutError:
-            pytest.fail("process() deadlocked — lock was not released after generator close")
+            pytest.fail(
+                "process() deadlocked — lock was not released after generator close"
+            )
 
         # Should have gotten a valid response
         text = _collect_text(results)
@@ -532,11 +573,13 @@ class TestGeneratorCancellation:
         """Multiple consecutive early breaks should not corrupt state."""
         import asyncio
 
-        provider = MockProvider([
-            ProviderResponse(text="Response 1."),
-            ProviderResponse(text="Response 2."),
-            ProviderResponse(text="Response 3."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Response 1."),
+                ProviderResponse(text="Response 2."),
+                ProviderResponse(text="Response 3."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -565,11 +608,15 @@ class TestTruncateIfNeeded:
     @pytest.mark.asyncio
     async def test_no_truncation_under_limit(self, memory, registry):
         """Messages under max_context_chars are not truncated."""
-        provider = MockProvider([
-            ProviderResponse(text="Response."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Response."),
+            ]
+        )
         context = ContextBuilder(memory)
-        loop = AgenticLoop(provider, registry, context, memory, max_context_chars=1_000_000)
+        loop = AgenticLoop(
+            provider, registry, context, memory, max_context_chars=1_000_000
+        )
 
         results = []
         async for event in loop.process("Short message"):
@@ -587,11 +634,13 @@ class TestTruncateIfNeeded:
     async def test_truncation_drops_old_messages(self, memory, registry):
         """When over limit, old messages are dropped, newest kept."""
         # Use a very small limit to force truncation
-        provider = MockProvider([
-            ProviderResponse(text="First response. " * 50),
-            ProviderResponse(text="Second response. " * 50),
-            ProviderResponse(text="Final."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="First response. " * 50),
+                ProviderResponse(text="Second response. " * 50),
+                ProviderResponse(text="Final."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, max_context_chars=500)
 
@@ -611,10 +660,12 @@ class TestTruncateIfNeeded:
     @pytest.mark.asyncio
     async def test_system_message_always_kept(self, memory, registry):
         """System message (index 0) is never dropped."""
-        provider = MockProvider([
-            ProviderResponse(text="R. " * 100),
-            ProviderResponse(text="Done."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="R. " * 100),
+                ProviderResponse(text="Done."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, max_context_chars=300)
 
@@ -629,11 +680,13 @@ class TestTruncateIfNeeded:
     @pytest.mark.asyncio
     async def test_truncation_notice_injected(self, memory, registry):
         """A truncation notice message is injected after system msg when messages are dropped."""
-        provider = MockProvider([
-            ProviderResponse(text="Very long response. " * 200),
-            ProviderResponse(text="Another. " * 200),
-            ProviderResponse(text="Final."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Very long response. " * 200),
+                ProviderResponse(text="Another. " * 200),
+                ProviderResponse(text="Final."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory, max_context_chars=500)
 
@@ -663,9 +716,11 @@ class TestCancellationToken:
     @pytest.mark.asyncio
     async def test_cancel_before_first_round(self, memory, registry):
         """Pre-cancelled token should yield (interrupted) immediately."""
-        provider = MockProvider([
-            ProviderResponse(text="Should not see this."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Should not see this."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -687,9 +742,9 @@ class TestCancellationToken:
         token = CancellationToken()
 
         class CancelMidStreamProvider(MockProvider):
-            async def chat_completion_stream(self, messages, tools=None,
-                                             max_tokens_override=None,
-                                             temperature=None):
+            async def chat_completion_stream(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 yield ProviderResponse(text="chunk1 ")
                 token.cancel()  # Cancel mid-stream
                 yield ProviderResponse(text="chunk2 ")
@@ -716,9 +771,9 @@ class TestCancellationToken:
         call_count = 0
 
         class CancelAfterFirstToolProvider(MockProvider):
-            async def chat_completion(self, messages, tools=None,
-                                      max_tokens_override=None,
-                                      temperature=None):
+            async def chat_completion(
+                self, messages, tools=None, max_tokens_override=None, temperature=None
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
@@ -748,9 +803,11 @@ class TestCancellationToken:
     @pytest.mark.asyncio
     async def test_cancel_token_none_is_backward_compatible(self, memory, registry):
         """Passing no cancel_token should work exactly as before."""
-        provider = MockProvider([
-            ProviderResponse(text="Normal response."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Normal response."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 
@@ -764,10 +821,12 @@ class TestCancellationToken:
     @pytest.mark.asyncio
     async def test_cancel_preserves_conversation_state(self, memory, registry):
         """After cancellation, the loop should still work for next turns."""
-        provider = MockProvider([
-            ProviderResponse(text="First."),
-            ProviderResponse(text="Second."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="First."),
+                ProviderResponse(text="Second."),
+            ]
+        )
         context = ContextBuilder(memory)
         loop = AgenticLoop(provider, registry, context, memory)
 

@@ -110,9 +110,9 @@ def session_storage(data_dir: Path) -> SessionStorage:
 @pytest.fixture
 def dream_runner(data_dir: Path) -> AutoDreamRunner:
     """AutoDreamRunner with a MockProvider (dream LLM calls are mocked)."""
-    provider = MockProvider([
-        ProviderResponse(text="Dream consolidation complete. No changes needed.")
-    ])
+    provider = MockProvider(
+        [ProviderResponse(text="Dream consolidation complete. No changes needed.")]
+    )
     return AutoDreamRunner(
         config=AutoDreamConfig(enabled=True, min_hours=0, min_sessions=1),
         provider=provider,
@@ -129,9 +129,12 @@ def _build_loop(
     responses: list[ProviderResponse] | None = None,
 ) -> tuple[AgenticLoop, MockProvider]:
     """Build a real AgenticLoop with all production components wired together."""
-    provider = MockProvider(responses or [
-        ProviderResponse(text="Hello! I'm your assistant."),
-    ])
+    provider = MockProvider(
+        responses
+        or [
+            ProviderResponse(text="Hello! I'm your assistant."),
+        ]
+    )
     registry = ToolRegistry()
     context = ContextBuilder(
         memory,
@@ -203,9 +206,7 @@ class TestE2EConversation:
     ):
         """Send a user message through the loop and verify JSONL records
         both the user message and the assistant response."""
-        session_id = await session_storage.start_new_session(
-            metadata={"model": "mock"}
-        )
+        session_id = await session_storage.start_new_session(metadata={"model": "mock"})
 
         loop, _provider = _build_loop(memory, session_storage, dream_runner)
 
@@ -224,10 +225,10 @@ class TestE2EConversation:
 
         # Verify JSONL has session_start + user + assistant entries
         jsonl_path = data_dir / "sessions" / f"{session_id}.jsonl"
-        lines = [l for l in jsonl_path.read_text().strip().split("\n") if l]
+        lines = [line for line in jsonl_path.read_text().strip().split("\n") if line]
         assert len(lines) == 3  # session_start, user, assistant
 
-        entries = [json.loads(l) for l in lines]
+        entries = [json.loads(line) for line in lines]
         assert entries[0]["type"] == "session_start"
         assert entries[1]["type"] == "user"
         assert entries[1]["message"]["content"] == "Hello, how are you?"
@@ -250,7 +251,9 @@ class TestE2EConversation:
         session_id = await session_storage.start_new_session()
 
         loop, _provider = _build_loop(
-            memory, session_storage, dream_runner,
+            memory,
+            session_storage,
+            dream_runner,
             responses=[
                 ProviderResponse(text="First response."),
                 ProviderResponse(text="Second response."),
@@ -264,23 +267,26 @@ class TestE2EConversation:
 
         # Verify JSONL: 1 session_start + 3 user + 3 assistant = 7
         jsonl_path = data_dir / "sessions" / f"{session_id}.jsonl"
-        lines = [l for l in jsonl_path.read_text().strip().split("\n") if l]
+        lines = [line for line in jsonl_path.read_text().strip().split("\n") if line]
         assert len(lines) == 7
 
-        entries = [json.loads(l) for l in lines]
+        entries = [json.loads(line) for line in lines]
         types = [e["type"] for e in entries]
         assert types == [
             "session_start",
-            "user", "assistant",
-            "user", "assistant",
-            "user", "assistant",
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+            "user",
+            "assistant",
         ]
 
         # Verify full UUID chain integrity
         for i in range(1, len(entries)):
-            assert entries[i]["parent_uuid"] == entries[i - 1]["uuid"], (
-                f"Chain broken at index {i}"
-            )
+            assert (
+                entries[i]["parent_uuid"] == entries[i - 1]["uuid"]
+            ), f"Chain broken at index {i}"
 
     @pytest.mark.asyncio
     async def test_session_resume_loads_messages(
@@ -295,14 +301,18 @@ class TestE2EConversation:
         session_id = await session_storage.start_new_session()
 
         loop1, _ = _build_loop(
-            memory, session_storage, dream_runner,
+            memory,
+            session_storage,
+            dream_runner,
             responses=[ProviderResponse(text="Hello from session 1.")],
         )
         await _collect_events(loop1, "First message")
 
         # Now create a new loop and resume the session
         loop2, _ = _build_loop(
-            memory, session_storage, dream_runner,
+            memory,
+            session_storage,
+            dream_runner,
             responses=[ProviderResponse(text="Continuing session 1.")],
         )
         await loop2.resume(session_id)
@@ -337,7 +347,9 @@ class TestE2EClearCommand:
         session_id_1 = await session_storage.start_new_session()
 
         loop, _ = _build_loop(
-            memory, session_storage, dream_runner,
+            memory,
+            session_storage,
+            dream_runner,
             responses=[
                 ProviderResponse(text="Before clear."),
                 ProviderResponse(text="After clear."),
@@ -360,7 +372,7 @@ class TestE2EClearCommand:
 
         # New session should have: session_start + user + assistant
         jsonl_path = data_dir / "sessions" / f"{session_id_2}.jsonl"
-        lines = [l for l in jsonl_path.read_text().strip().split("\n") if l]
+        lines = [line for line in jsonl_path.read_text().strip().split("\n") if line]
         assert len(lines) == 3
 
     @pytest.mark.asyncio
@@ -375,7 +387,9 @@ class TestE2EClearCommand:
         session_id_1 = await session_storage.start_new_session()
 
         loop, _ = _build_loop(
-            memory, session_storage, dream_runner,
+            memory,
+            session_storage,
+            dream_runner,
             responses=[ProviderResponse(text="Old response.")],
         )
         await _collect_events(loop, "Old message")
@@ -388,7 +402,9 @@ class TestE2EClearCommand:
         await session_storage.start_new_session()
 
         # Old session should be unchanged
-        assert (data_dir / "sessions" / f"{session_id_1}.jsonl").read_text() == old_content
+        assert (
+            data_dir / "sessions" / f"{session_id_1}.jsonl"
+        ).read_text() == old_content
 
 
 # ── Test: Memory directory operations ─────────────────────────────
@@ -398,9 +414,7 @@ class TestE2EMemory:
     """Test memory directory operations through the real MemoryManager."""
 
     @pytest.mark.asyncio
-    async def test_memory_prompt_in_system_message(
-        self, memory: MemoryManager
-    ):
+    async def test_memory_prompt_in_system_message(self, memory: MemoryManager):
         """The system prompt should include memory instructions."""
         prompt = memory.build_memory_prompt()
         assert "# Memory" in prompt
@@ -413,15 +427,18 @@ class TestE2EMemory:
         mem_dir = memory.memory_dir
 
         # Write a memory file
-        await mem_dir.write_memory("user_prefs.md", (
-            "---\n"
-            "name: User Preferences\n"
-            "type: user\n"
-            "description: Coding preferences\n"
-            "---\n"
-            "- Prefers Python\n"
-            "- Uses vim\n"
-        ))
+        await mem_dir.write_memory(
+            "user_prefs.md",
+            (
+                "---\n"
+                "name: User Preferences\n"
+                "type: user\n"
+                "description: Coding preferences\n"
+                "---\n"
+                "- Prefers Python\n"
+                "- Uses vim\n"
+            ),
+        )
 
         # Update the index
         await mem_dir.update_entrypoint(
@@ -439,14 +456,12 @@ class TestE2EMemory:
         assert "Uses vim" in content
 
     @pytest.mark.asyncio
-    async def test_memory_in_context_builder(
-        self, memory: MemoryManager
-    ):
+    async def test_memory_in_context_builder(self, memory: MemoryManager):
         """ContextBuilder should include memory prompt in the system message."""
         mem_dir = memory.memory_dir
-        await mem_dir.write_memory("test.md", (
-            "---\nname: Test\ntype: reference\n---\nTest content\n"
-        ))
+        await mem_dir.write_memory(
+            "test.md", ("---\nname: Test\ntype: reference\n---\nTest content\n")
+        )
         await mem_dir.update_entrypoint("- [Test](test.md) — test reference\n")
 
         context = ContextBuilder(
@@ -464,7 +479,9 @@ class TestE2EMemory:
     async def test_delete_memory(self, memory: MemoryManager):
         """Deleting a memory file should work."""
         mem_dir = memory.memory_dir
-        await mem_dir.write_memory("temp.md", "---\nname: Temp\ntype: user\n---\nTemp\n")
+        await mem_dir.write_memory(
+            "temp.md", "---\nname: Temp\ntype: user\n---\nTemp\n"
+        )
 
         assert "Temp" in mem_dir.read_memory("temp.md")
 
@@ -479,7 +496,9 @@ class TestE2EMemory:
         """scan_memory_files should list all memory files."""
         mem_dir = memory.memory_dir
         await mem_dir.write_memory("a.md", "---\nname: A\ntype: user\n---\ncontent A\n")
-        await mem_dir.write_memory("b.md", "---\nname: B\ntype: project\n---\ncontent B\n")
+        await mem_dir.write_memory(
+            "b.md", "---\nname: B\ntype: project\n---\ncontent B\n"
+        )
 
         headers = await mem_dir.scan_memory_files()
         names = {h.filename for h in headers}
@@ -533,9 +552,7 @@ class TestE2EDream:
     ):
         """After a successful dream run, the lock file should be updated."""
         await session_storage.start_new_session()
-        await session_storage.record_message(
-            Message(role=Role.USER, content="msg")
-        )
+        await session_storage.record_message(Message(role=Role.USER, content="msg"))
         session_storage.close()
 
         await dream_runner.force_run()
@@ -565,9 +582,7 @@ class TestE2ESessionManagement:
     """Test session listing and cleanup."""
 
     @pytest.mark.asyncio
-    async def test_list_sessions(
-        self, session_storage: SessionStorage, data_dir: Path
-    ):
+    async def test_list_sessions(self, session_storage: SessionStorage, data_dir: Path):
         """list_sessions should return all sessions sorted by mtime."""
         sid1 = await session_storage.start_new_session()
         await session_storage.record_message(
@@ -588,14 +603,10 @@ class TestE2ESessionManagement:
         assert sid1 in session_ids
 
     @pytest.mark.asyncio
-    async def test_load_session_chain(
-        self, session_storage: SessionStorage
-    ):
+    async def test_load_session_chain(self, session_storage: SessionStorage):
         """load_session should reconstruct the UUID chain as Messages."""
         sid = await session_storage.start_new_session()
-        await session_storage.record_message(
-            Message(role=Role.USER, content="Hello")
-        )
+        await session_storage.record_message(Message(role=Role.USER, content="Hello"))
         await session_storage.record_message(
             Message(role=Role.ASSISTANT, content="Hi there")
         )
@@ -635,9 +646,9 @@ class TestE2EContextBuilder:
 
         # Write some memory
         mem_dir = memory.memory_dir
-        await mem_dir.write_memory("prefs.md", (
-            "---\nname: Prefs\ntype: user\n---\n- Dark mode\n"
-        ))
+        await mem_dir.write_memory(
+            "prefs.md", ("---\nname: Prefs\ntype: user\n---\n- Dark mode\n")
+        )
         await mem_dir.update_entrypoint("- [Prefs](prefs.md) — user preferences\n")
 
         context = ContextBuilder(
@@ -709,7 +720,7 @@ class TestE2EMigration:
         mm = MemoryManager(data_dir=data_dir, project_root=project)
         await mm.migrate_if_needed()
 
-        migrated = (data_dir / "memory" / "user_profile.md")
+        migrated = data_dir / "memory" / "user_profile.md"
         assert migrated.exists()
         content = migrated.read_text()
         assert "Likes Python" in content

@@ -64,10 +64,12 @@ async def _apply_updates(
         # Ensure the subject is collected before updating episodes.
         if not has_metadata:
             await client.post_user_collection(
-                subject_id=sid, collection_type=3,
+                subject_id=sid,
+                collection_type=3,
             )
         await client.update_episode_progress(
-            subject_id=sid, watched_eps=ep,
+            subject_id=sid,
+            watched_eps=ep,
         )
 
 
