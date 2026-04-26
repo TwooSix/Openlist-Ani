@@ -361,6 +361,10 @@ class AgenticLoop:
     def _estimate_message_chars(msg: Message) -> int:
         """Estimate the character count of a message."""
         chars = len(msg.content)
+        if msg.reasoning_content:
+            chars += len(msg.reasoning_content)
+        for tb in msg.thinking_blocks:
+            chars += len(tb.get("thinking", "")) + 50
         for tc in msg.tool_calls:
             chars += len(tc.name) + len(str(tc.arguments)) + 50  # overhead
         for tr in msg.tool_results:
@@ -650,7 +654,12 @@ class AgenticLoop:
             )
             if response.text:
                 self._messages.append(
-                    Message(role=Role.ASSISTANT, content=response.text)
+                    Message(
+                        role=Role.ASSISTANT,
+                        content=response.text,
+                        reasoning_content=response.reasoning_content,
+                        thinking_blocks=response.thinking_blocks,
+                    )
                 )
             return True, ESCALATED_MAX_TOKENS, max_output_tokens_recovery_count
 
@@ -664,7 +673,12 @@ class AgenticLoop:
             )
             if response.text:
                 self._messages.append(
-                    Message(role=Role.ASSISTANT, content=response.text)
+                    Message(
+                        role=Role.ASSISTANT,
+                        content=response.text,
+                        reasoning_content=response.reasoning_content,
+                        thinking_blocks=response.thinking_blocks,
+                    )
                 )
             self._messages.append(
                 Message(
@@ -685,7 +699,12 @@ class AgenticLoop:
         if not response.text:
             return
         self._messages.append(
-            Message(role=Role.ASSISTANT, content=response.text)
+            Message(
+                role=Role.ASSISTANT,
+                content=response.text,
+                reasoning_content=response.reasoning_content,
+                thinking_blocks=response.thinking_blocks,
+            )
         )
         await queue.put(
             LoopEvent(type=EventType.TEXT_DONE, text=response.text)
@@ -693,7 +712,12 @@ class AgenticLoop:
         # Persist to JSONL session storage
         if self._session_storage:
             await self._session_storage.record_message(
-                Message(role=Role.ASSISTANT, content=response.text)
+                Message(
+                    role=Role.ASSISTANT,
+                    content=response.text,
+                    reasoning_content=response.reasoning_content,
+                    thinking_blocks=response.thinking_blocks,
+                )
             )
         # Fire-and-forget: check auto-dream gates (tracked for cleanup)
         if self._auto_dream_runner and self._session_storage:
@@ -767,6 +791,8 @@ class AgenticLoop:
                 role=Role.ASSISTANT,
                 content=response.text,
                 tool_calls=response.tool_calls,
+                reasoning_content=response.reasoning_content,
+                thinking_blocks=response.thinking_blocks,
             )
         )
 

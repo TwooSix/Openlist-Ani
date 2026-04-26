@@ -68,6 +68,9 @@ class Message:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
+    reasoning_content: str | None = None
+    # Anthropic-format thinking blocks (list of {"type": "thinking", "thinking": ..., "signature": ...})
+    thinking_blocks: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {"role": self.role.value, "content": self.content}
@@ -75,6 +78,10 @@ class Message:
             d["tool_calls"] = [tc.to_dict() for tc in self.tool_calls]
         if self.tool_results:
             d["tool_results"] = [tr.to_dict() for tr in self.tool_results]
+        if self.reasoning_content is not None:
+            d["reasoning_content"] = self.reasoning_content
+        if self.thinking_blocks:
+            d["thinking_blocks"] = self.thinking_blocks
         return d
 
     @classmethod
@@ -88,6 +95,8 @@ class Message:
             tool_results=[
                 ToolResult.from_dict(tr) for tr in data.get("tool_results", [])
             ],
+            reasoning_content=data.get("reasoning_content"),
+            thinking_blocks=data.get("thinking_blocks", []),
         )
 
 
@@ -99,6 +108,9 @@ class ProviderResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     stop_reason: str = ""
     usage: dict[str, int] = field(default_factory=dict)
+    reasoning_content: str | None = None
+    # Anthropic-format thinking blocks for pass-back
+    thinking_blocks: list[dict] = field(default_factory=list)
 
 
 class EventType(str, Enum):
