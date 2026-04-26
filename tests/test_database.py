@@ -58,9 +58,7 @@ class TestExecuteSqlQueryKeywordFilter:
         )
         assert result != [{"error": "Query contains dangerous keywords"}]
 
-    async def test_allows_value_containing_drop(
-        self, test_db: AniDatabase
-    ) -> None:
+    async def test_allows_value_containing_drop(self, test_db: AniDatabase) -> None:
         """Words like 'raindrop' or 'backdrop' must NOT be blocked."""
         result = await test_db.execute_sql_query(
             "SELECT * FROM resources WHERE title LIKE '%raindrop%'"
@@ -72,6 +70,8 @@ class TestExecuteSqlQueryKeywordFilter:
         assert result == [{"error": "Only SELECT queries are allowed"}]
 
     async def test_valid_select_works(self, test_db: AniDatabase) -> None:
-        result = await test_db.execute_sql_query("SELECT COUNT(*) as cnt FROM resources")
+        result = await test_db.execute_sql_query(
+            "SELECT COUNT(*) as cnt FROM resources"
+        )
         assert len(result) == 1
         assert result[0]["cnt"] == 0

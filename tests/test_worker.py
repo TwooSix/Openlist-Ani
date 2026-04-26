@@ -52,9 +52,7 @@ async def _run_dispatch_once(queue, mock_manager):
 
     active: set[asyncio.Task] = set()
 
-    with (
-        patch("openlist_ani.backend.worker.config") as mock_config,
-    ):
+    with (patch("openlist_ani.backend.worker.config") as mock_config,):
         mock_config.openlist.download_path = "/downloads"
 
         try:
@@ -107,10 +105,10 @@ async def _run_poll_once(rss_entries, parse_results):
         mock_config.rss.priority.languages = []
         mock_config.rss.priority.quality = []
         mock_config.rss.priority.field_order = []
-        mock_config.rss.priority.model_copy = lambda deep=False: mock_config.rss.priority
-        mock_config.openlist.rename_format = (
-            "{anime_name} S{season:02d}E{episode:02d}"
+        mock_config.rss.priority.model_copy = (
+            lambda deep=False: mock_config.rss.priority
         )
+        mock_config.openlist.rename_format = "{anime_name} S{season:02d}E{episode:02d}"
         mock_db.add_resource = AsyncMock()
 
         try:

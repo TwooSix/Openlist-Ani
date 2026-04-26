@@ -29,6 +29,7 @@ class TestResolveIncludePath:
 
     def test_home_path(self, tmp_path: Path):
         import os
+
         result = _resolve_include_path("~/test.md", tmp_path)
         assert result is not None
         assert str(result).startswith(os.path.expanduser("~"))
@@ -133,9 +134,7 @@ class TestResolveIncludes:
         for i in range(MAX_INCLUDE_DEPTH + 2):
             path = tmp_path / f"level{i}.md"
             if i < MAX_INCLUDE_DEPTH + 1:
-                path.write_text(
-                    f"Level {i} @./level{i + 1}.md", encoding="utf-8"
-                )
+                path.write_text(f"Level {i} @./level{i + 1}.md", encoding="utf-8")
             else:
                 path.write_text(f"Level {i} (leaf)", encoding="utf-8")
 

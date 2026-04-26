@@ -91,9 +91,7 @@ class TestResolveMagnet:
 
     @pytest.mark.asyncio
     async def test_dn_path_collection_flagged(self, monkeypatch):
-        monkeypatch.setattr(
-            r, "_fetch_metadata_blocking", lambda *a, **kw: (None, [])
-        )
+        monkeypatch.setattr(r, "_fetch_metadata_blocking", lambda *a, **kw: (None, []))
         m = (
             "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
             "&dn=Show%20Complete%20BDRip"
@@ -120,9 +118,7 @@ class TestResolveMagnet:
 
     @pytest.mark.asyncio
     async def test_metadata_timeout_no_dn(self, monkeypatch):
-        monkeypatch.setattr(
-            r, "_fetch_metadata_blocking", lambda *a, **kw: (None, [])
-        )
+        monkeypatch.setattr(r, "_fetch_metadata_blocking", lambda *a, **kw: (None, []))
         m = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
         out = await r.resolve_magnet(m, metadata_timeout=2)
         assert out.success is False

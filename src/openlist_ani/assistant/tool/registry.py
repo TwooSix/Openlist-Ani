@@ -182,15 +182,9 @@ class ToolRegistry:
             )
 
         try:
-            logger.debug(
-                f"Dispatching tool '{tool_call.name}' "
-                f"(id={tool_call.id})"
-            )
+            logger.debug(f"Dispatching tool '{tool_call.name}' (id={tool_call.id})")
             result = await tool.execute(**tool_call.arguments)
-            logger.debug(
-                f"Tool '{tool_call.name}' completed "
-                f"({len(result)} chars)"
-            )
+            logger.debug(f"Tool '{tool_call.name}' completed ({len(result)} chars)")
             return ToolResult(
                 tool_call_id=tool_call.id,
                 name=tool_call.name,

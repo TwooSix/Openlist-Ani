@@ -11,7 +11,6 @@ from openlist_ani.core.parser.model import (
     ParseResult,
     ResourceTitleParseResult,
     SeasonInfo,
-    TMDBCandidate,
     TMDBMatch,
 )
 from openlist_ani.core.parser.tmdb.episode_mapper import (

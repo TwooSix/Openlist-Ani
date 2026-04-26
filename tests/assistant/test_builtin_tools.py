@@ -100,9 +100,11 @@ class TestSkillTool:
 class TestAgentTool:
     @pytest.mark.asyncio
     async def test_execute_general_purpose(self):
-        provider = MockProvider([
-            ProviderResponse(text="Task done."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Task done."),
+            ]
+        )
         registry = ToolRegistry()
         registry.register(ReadOnlyTool("helper"))
 
@@ -113,9 +115,11 @@ class TestAgentTool:
 
     @pytest.mark.asyncio
     async def test_execute_explore_agent(self):
-        provider = MockProvider([
-            ProviderResponse(text="Found 3 files."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="Found 3 files."),
+            ]
+        )
         registry = ToolRegistry()
         registry.register(ReadOnlyTool("helper"))
 
@@ -126,9 +130,11 @@ class TestAgentTool:
 
     @pytest.mark.asyncio
     async def test_execute_unknown_type_falls_back(self):
-        provider = MockProvider([
-            ProviderResponse(text="General purpose response."),
-        ])
+        provider = MockProvider(
+            [
+                ProviderResponse(text="General purpose response."),
+            ]
+        )
         registry = ToolRegistry()
 
         tool = AgentTool(provider, registry)

@@ -90,12 +90,8 @@ class TestRecordMessage:
         """Each entry's parent_uuid should be the previous entry's uuid."""
         session_id = await storage.start_new_session()
 
-        await storage.record_message(
-            Message(role=Role.USER, content="Q1")
-        )
-        await storage.record_message(
-            Message(role=Role.ASSISTANT, content="A1")
-        )
+        await storage.record_message(Message(role=Role.USER, content="Q1"))
+        await storage.record_message(Message(role=Role.ASSISTANT, content="A1"))
 
         # Read file and verify chain
         entries = storage._load_entries_sync(session_id)
@@ -216,9 +212,7 @@ class TestListSessions:
         os.utime(s1_path, (old_time, old_time))
 
         s2 = await storage.start_new_session()
-        await storage.record_message(
-            Message(role=Role.USER, content="Another session")
-        )
+        await storage.record_message(Message(role=Role.USER, content="Another session"))
 
         sessions = await storage.list_sessions()
         assert len(sessions) == 2
@@ -247,6 +241,7 @@ class TestCleanup:
         # Set mtime to 60 days ago
         old_time = time.time() - (60 * 86_400)
         import os
+
         os.utime(path, (old_time, old_time))
 
         # Create a recent session (also with a real message)

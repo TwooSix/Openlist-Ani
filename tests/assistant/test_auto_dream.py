@@ -12,7 +12,6 @@ from openlist_ani.assistant.dream.lock import ConsolidationLock
 from openlist_ani.assistant.dream.prompt import build_consolidation_prompt
 from openlist_ani.assistant.dream.runner import AutoDreamRunner, DreamResult
 
-
 # ------------------------------------------------------------------ #
 # ConsolidationLock
 # ------------------------------------------------------------------ #
@@ -147,7 +146,9 @@ class TestAutoDreamRunnerGates:
         provider = AsyncMock()
         provider.chat_completion = AsyncMock(
             return_value=type(
-                "R", (), {"text": "Done", "tool_calls": [], "stop_reason": "stop", "usage": {}}
+                "R",
+                (),
+                {"text": "Done", "tool_calls": [], "stop_reason": "stop", "usage": {}},
             )()
         )
         provider.format_raw_tools = MagicMock(return_value=[])

@@ -13,27 +13,21 @@ def _make_resource(title: str = "test") -> AnimeResourceInfo:
 class _PassAllFilter:
     """Filter that passes everything through."""
 
-    def apply(
-        self, candidates: list[AnimeResourceInfo]
-    ) -> list[AnimeResourceInfo]:
+    def apply(self, candidates: list[AnimeResourceInfo]) -> list[AnimeResourceInfo]:
         return candidates
 
 
 class _DropAllFilter:
     """Filter that drops everything."""
 
-    def apply(
-        self, candidates: list[AnimeResourceInfo]
-    ) -> list[AnimeResourceInfo]:
+    def apply(self, candidates: list[AnimeResourceInfo]) -> list[AnimeResourceInfo]:
         return []
 
 
 class _KeepFirstFilter:
     """Filter that keeps only the first candidate."""
 
-    def apply(
-        self, candidates: list[AnimeResourceInfo]
-    ) -> list[AnimeResourceInfo]:
+    def apply(self, candidates: list[AnimeResourceInfo]) -> list[AnimeResourceInfo]:
         return candidates[:1] if candidates else []
 
 

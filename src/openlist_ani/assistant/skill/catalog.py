@@ -35,28 +35,71 @@ from loguru import logger
 
 MAX_INCLUDE_DEPTH = 5
 
-TEXT_FILE_EXTENSIONS = frozenset({
-    # Markdown and text
-    ".md", ".txt", ".text",
-    # Data formats
-    ".json", ".yaml", ".yml", ".toml", ".xml", ".csv",
-    # Web
-    ".html", ".htm", ".css", ".scss",
-    # JavaScript/TypeScript
-    ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs",
-    # Python
-    ".py", ".pyi",
-    # Other languages
-    ".go", ".rs", ".java", ".kt", ".c", ".cpp", ".h", ".hpp",
-    ".cs", ".swift", ".rb", ".php", ".lua", ".r",
-    # Shell
-    ".sh", ".bash", ".zsh",
-    # Config
-    ".env", ".ini", ".cfg", ".conf", ".config",
-    # Build/misc
-    ".sql", ".graphql", ".proto", ".cmake", ".make",
-    ".rst", ".adoc", ".org", ".tex",
-})
+TEXT_FILE_EXTENSIONS = frozenset(
+    {
+        # Markdown and text
+        ".md",
+        ".txt",
+        ".text",
+        # Data formats
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".xml",
+        ".csv",
+        # Web
+        ".html",
+        ".htm",
+        ".css",
+        ".scss",
+        # JavaScript/TypeScript
+        ".js",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        # Python
+        ".py",
+        ".pyi",
+        # Other languages
+        ".go",
+        ".rs",
+        ".java",
+        ".kt",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".swift",
+        ".rb",
+        ".php",
+        ".lua",
+        ".r",
+        # Shell
+        ".sh",
+        ".bash",
+        ".zsh",
+        # Config
+        ".env",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".config",
+        # Build/misc
+        ".sql",
+        ".graphql",
+        ".proto",
+        ".cmake",
+        ".make",
+        ".rst",
+        ".adoc",
+        ".org",
+        ".tex",
+    }
+)
 
 
 def _resolve_include_path(raw_path: str, base_dir: Path) -> Path | None:
@@ -110,7 +153,8 @@ _PATH_START_RE = re.compile(r"^[a-zA-Z0-9._~/-]")
 
 
 def _resolve_matches_from_line(
-    cleaned: str, base_dir: Path,
+    cleaned: str,
+    base_dir: Path,
 ) -> list[Path]:
     """Extract and resolve all @include paths from a single cleaned line."""
     paths: list[Path] = []
@@ -288,7 +332,9 @@ class SkillEntry:
     base_dir: Path
     actions: list[SkillAction] = field(default_factory=list)
     included_content: str = ""  # Content from @include directives
-    body_content: str = ""  # Full SKILL.md body (after frontmatter), with @includes resolved
+    body_content: str = (
+        ""  # Full SKILL.md body (after frontmatter), with @includes resolved
+    )
 
 
 class SkillCatalog:
@@ -322,7 +368,9 @@ class SkillCatalog:
                 entry = self._parse_skill(skill_md, skill_dir)
                 if entry:
                     self._skills[entry.name] = entry
-                    logger.debug(f"Discovered skill: {entry.name} ({len(entry.actions)} actions)")
+                    logger.debug(
+                        f"Discovered skill: {entry.name} ({len(entry.actions)} actions)"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to parse skill at {skill_dir}: {e}")
 
@@ -383,9 +431,7 @@ class SkillCatalog:
 
         # Over budget — try truncating descriptions to fit
         # Calculate overhead per entry (name line + action names without descriptions)
-        name_overhead = sum(
-            len(f"- {skill.name}") for skill, _ in entries
-        )
+        name_overhead = sum(len(f"- {skill.name}") for skill, _ in entries)
         newline_overhead = len(entries) - 1  # join produces N-1 newlines
         available_for_descs = budget - name_overhead - newline_overhead
         max_desc_len = max(0, available_for_descs // len(entries))
@@ -455,11 +501,12 @@ class SkillCatalog:
         desc_part = f" — {action.description}" if action.description else ""
         lines.append(f"  - **{action.name}**{desc_part}")
         for p in action.params:
-            req = " (required)" if p.default == "_REQUIRED_" else f" (default: {p.default})"
-            lines.append(
-                f"    - `{p.name}`: "
-                f"{p.description or p.type_hint}{req}"
+            req = (
+                " (required)"
+                if p.default == "_REQUIRED_"
+                else f" (default: {p.default})"
             )
+            lines.append(f"    - `{p.name}`: {p.description or p.type_hint}{req}")
 
     async def run_action(
         self,
@@ -518,8 +565,7 @@ class SkillCatalog:
             result = await load_and_run(skill_action.script_path, safe_params)
 
         logger.debug(
-            f"Skill action '{skill_name}/{action}' returned "
-            f"{len(result)} chars"
+            f"Skill action '{skill_name}/{action}' returned {len(result)} chars"
         )
 
         # Paging
@@ -539,8 +585,7 @@ class SkillCatalog:
         elif offset > 0:
             result = (
                 f"--- Continued from offset {offset} "
-                f"({offset + 1}~{total_len} of {total_len} chars) ---\n\n"
-                + result
+                f"({offset + 1}~{total_len} of {total_len} chars) ---\n\n" + result
             )
 
         return result
@@ -649,7 +694,8 @@ def _load_run_function(script_path: Path, action_name: str):
 
 
 def _extract_action_params(
-    run_fn, param_docs: dict[str, str],
+    run_fn,
+    param_docs: dict[str, str],
 ) -> list[ActionParam]:
     """Extract ActionParam entries from a run() function's signature."""
     params: list[ActionParam] = []

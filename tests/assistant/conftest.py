@@ -28,7 +28,9 @@ def _no_sleep():
     """
     with (
         patch("openlist_ani.assistant.core.loop._async_sleep", new_callable=AsyncMock),
-        patch("openlist_ani.assistant.core.subagent._async_sleep", new_callable=AsyncMock),
+        patch(
+            "openlist_ani.assistant.core.subagent._async_sleep", new_callable=AsyncMock
+        ),
     ):
         yield
 

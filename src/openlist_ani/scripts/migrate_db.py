@@ -67,8 +67,7 @@ def migrate():
         new_cursor = new_conn.cursor()
 
         # Initialize new table if not exists (schema from openlist_ani.database)
-        new_cursor.execute(
-            """
+        new_cursor.execute("""
             CREATE TABLE IF NOT EXISTS resources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL,
@@ -82,8 +81,7 @@ def migrate():
                 version INTEGER,
                 downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+            """)
         new_cursor.execute("CREATE INDEX IF NOT EXISTS idx_title ON resources(title)")
         new_conn.commit()
 

@@ -64,14 +64,14 @@ def whitelist_roots() -> list[Path]:
 # the read regardless of whitelist status.
 _SENSITIVE_NAME_RE = re.compile(
     r"(?i)("
-    r"^\.env(\..*)?$"               # .env, .env.local, .env.production
-    r"|^.*secrets?(\..*)?$"         # secret(s).*
-    r"|^.*tokens?(\..*)?$"          # token(s).*
-    r"|^.*credentials?(\..*)?$"     # credential(s).*
-    r"|^.*api[_-]?keys?(\..*)?$"    # api_key(s).*
-    r"|^.*passwords?(\..*)?$"       # password(s).*
+    r"^\.env(\..*)?$"  # .env, .env.local, .env.production
+    r"|^.*secrets?(\..*)?$"  # secret(s).*
+    r"|^.*tokens?(\..*)?$"  # token(s).*
+    r"|^.*credentials?(\..*)?$"  # credential(s).*
+    r"|^.*api[_-]?keys?(\..*)?$"  # api_key(s).*
+    r"|^.*passwords?(\..*)?$"  # password(s).*
     r"|^.*private[_-]?keys?(\..*)?$"  # private_key(s).*
-    r"|^cookies?\.txt$"             # cookies.txt
+    r"|^cookies?\.txt$"  # cookies.txt
     r"|.*\.pem$"
     r"|.*\.key$"
     r"|.*\.pfx$"
@@ -93,6 +93,7 @@ class FileAccessDenied(PermissionError):
 
 
 # ── Path resolution ──────────────────────────────────────────────────
+
 
 def resolve_safe_path(user_path: str) -> Path:
     """Resolve ``user_path`` to an absolute real path inside the whitelist.
@@ -215,6 +216,7 @@ def redact_secrets(text: str) -> tuple[str, int]:
 
 
 # ── Helpers used by tool layer ───────────────────────────────────────
+
 
 def short_path(path: Path) -> str:
     """Render ``path`` relative to the project root if possible."""

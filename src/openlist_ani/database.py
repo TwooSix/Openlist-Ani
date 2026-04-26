@@ -23,8 +23,7 @@ class AniDatabase:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                """
+            await db.execute("""
                 CREATE TABLE IF NOT EXISTS resources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     url TEXT NOT NULL,
@@ -38,8 +37,7 @@ class AniDatabase:
                     version INTEGER,
                     downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-                """
-            )
+                """)
             await db.execute("CREATE INDEX IF NOT EXISTS idx_title ON resources(title)")
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_anime_episode "

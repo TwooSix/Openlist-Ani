@@ -29,8 +29,9 @@ async def run(
     urls = data.get("urls", [])
 
     if success:
-        return f"RSS URL added successfully.\n{msg}\nCurrent feeds ({len(urls)}):\n" + "\n".join(
-            f"  - {u}" for u in urls
+        return (
+            f"RSS URL added successfully.\n{msg}\nCurrent feeds ({len(urls)}):\n"
+            + "\n".join(f"  - {u}" for u in urls)
         )
     else:
         return f"Failed to add RSS URL: {msg}"

@@ -233,13 +233,11 @@ class MemoryManager:
         index_content = self.load_memory()
         if index_content.strip():
             parts.append(
-                "## Current Memory Index (MEMORY.md)\n\n"
-                f"{index_content.strip()}"
+                f"## Current Memory Index (MEMORY.md)\n\n{index_content.strip()}"
             )
         else:
             parts.append(
-                "## Current Memory Index (MEMORY.md)\n\n"
-                "(No memories stored yet)"
+                "## Current Memory Index (MEMORY.md)\n\n(No memories stored yet)"
             )
 
         return "\n\n".join(parts)
@@ -259,31 +257,37 @@ class MemoryManager:
         project_md = self._project_root / "CLAUDE.md"
         content = self._read_file(project_md)
         if content.strip():
-            files.append({
-                "path": str(project_md),
-                "type": "Project",
-                "content": content,
-            })
+            files.append(
+                {
+                    "path": str(project_md),
+                    "type": "Project",
+                    "content": content,
+                }
+            )
 
         # .openlist-ani/CLAUDE.md in project root
         dot_md = self._project_root / ".openlist-ani" / "CLAUDE.md"
         content = self._read_file(dot_md)
         if content.strip():
-            files.append({
-                "path": str(dot_md),
-                "type": "Project",
-                "content": content,
-            })
+            files.append(
+                {
+                    "path": str(dot_md),
+                    "type": "Project",
+                    "content": content,
+                }
+            )
 
         # CLAUDE.local.md in project root
         local_md = self._project_root / "CLAUDE.local.md"
         content = self._read_file(local_md)
         if content.strip():
-            files.append({
-                "path": str(local_md),
-                "type": "Local",
-                "content": content,
-            })
+            files.append(
+                {
+                    "path": str(local_md),
+                    "type": "Local",
+                    "content": content,
+                }
+            )
 
         return files
 

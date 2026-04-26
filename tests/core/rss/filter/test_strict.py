@@ -18,9 +18,7 @@ from openlist_ani.core.website.model import (
 
 # ── helpers ──────────────────────────────────────────────────────────
 
-_DEFAULT_FMT = (
-    "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
-)
+_DEFAULT_FMT = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
 _DB_FIND = "openlist_ani.core.rss.filter.strict.db.find_resources_by_episode"
 _CFG = "openlist_ani.core.rss.filter.strict.config"
@@ -188,9 +186,7 @@ class TestStrictRenameFilter:
                 version=2,
             ),
         ]
-        db_records = [
-            _make_db_record(fansub="Fansub_A", quality="1080p", version=1)
-        ]
+        db_records = [_make_db_record(fansub="Fansub_A", quality="1080p", version=1)]
 
         with (
             patch(_DB_FIND, new_callable=AsyncMock, return_value=db_records),
@@ -211,9 +207,7 @@ class TestStrictRenameFilter:
                 version=1,
             ),
         ]
-        db_records = [
-            _make_db_record(fansub="Fansub_A", quality="1080p", version=1)
-        ]
+        db_records = [_make_db_record(fansub="Fansub_A", quality="1080p", version=1)]
 
         with (
             patch(_DB_FIND, new_callable=AsyncMock, return_value=db_records),

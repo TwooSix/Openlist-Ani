@@ -19,7 +19,9 @@ from .conftest import ReadOnlyTool, WriteTool
 
 class TestOpenAIProvider:
     def test_format_tool_definitions(self):
-        provider = OpenAIProvider(api_key="test", base_url="https://test.example.com", model="gpt-4o")
+        provider = OpenAIProvider(
+            api_key="test", base_url="https://test.example.com", model="gpt-4o"
+        )
         tools = [ReadOnlyTool("grep"), WriteTool("edit")]
         defs = provider.format_tool_definitions(tools)
 
@@ -29,7 +31,9 @@ class TestOpenAIProvider:
         assert defs[1]["function"]["name"] == "edit"
 
     def test_convert_messages_system(self):
-        provider = OpenAIProvider(api_key="test", base_url="https://test.example.com", model="gpt-4o")
+        provider = OpenAIProvider(
+            api_key="test", base_url="https://test.example.com", model="gpt-4o"
+        )
         messages = [Message(role=Role.SYSTEM, content="You are helpful.")]
         result = provider._convert_messages(messages)
 
@@ -38,7 +42,9 @@ class TestOpenAIProvider:
         assert result[0]["content"] == "You are helpful."
 
     def test_convert_messages_user(self):
-        provider = OpenAIProvider(api_key="test", base_url="https://test.example.com", model="gpt-4o")
+        provider = OpenAIProvider(
+            api_key="test", base_url="https://test.example.com", model="gpt-4o"
+        )
         messages = [Message(role=Role.USER, content="Hello")]
         result = provider._convert_messages(messages)
 
@@ -46,7 +52,9 @@ class TestOpenAIProvider:
         assert result[0]["content"] == "Hello"
 
     def test_convert_messages_assistant_with_tool_calls(self):
-        provider = OpenAIProvider(api_key="test", base_url="https://test.example.com", model="gpt-4o")
+        provider = OpenAIProvider(
+            api_key="test", base_url="https://test.example.com", model="gpt-4o"
+        )
         tc = ToolCall(id="tc_1", name="grep", arguments={"pattern": "foo"})
         messages = [Message(role=Role.ASSISTANT, tool_calls=[tc])]
         result = provider._convert_messages(messages)
@@ -58,7 +66,9 @@ class TestOpenAIProvider:
         assert args["pattern"] == "foo"
 
     def test_convert_messages_tool_results(self):
-        provider = OpenAIProvider(api_key="test", base_url="https://test.example.com", model="gpt-4o")
+        provider = OpenAIProvider(
+            api_key="test", base_url="https://test.example.com", model="gpt-4o"
+        )
         tr = ToolResult(tool_call_id="tc_1", name="grep", content="3 matches")
         messages = [Message(role=Role.TOOL, tool_results=[tr])]
         result = provider._convert_messages(messages)
@@ -70,7 +80,9 @@ class TestOpenAIProvider:
 
 class TestAnthropicProvider:
     def test_format_tool_definitions(self):
-        provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
+        provider = AnthropicProvider(
+            api_key="test", base_url="https://test.example.com", model="claude"
+        )
         tools = [ReadOnlyTool("search")]
         defs = provider.format_tool_definitions(tools)
 
@@ -79,7 +91,9 @@ class TestAnthropicProvider:
         assert "input_schema" in defs[0]
 
     def test_convert_messages_system_separated(self):
-        provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
+        provider = AnthropicProvider(
+            api_key="test", base_url="https://test.example.com", model="claude"
+        )
         messages = [
             Message(role=Role.SYSTEM, content="You are helpful."),
             Message(role=Role.USER, content="Hi"),
@@ -91,9 +105,13 @@ class TestAnthropicProvider:
         assert api_messages[0]["role"] == "user"
 
     def test_convert_messages_assistant_with_tool_use(self):
-        provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
+        provider = AnthropicProvider(
+            api_key="test", base_url="https://test.example.com", model="claude"
+        )
         tc = ToolCall(id="tc_1", name="read", arguments={"path": "/home/user/data"})
-        messages = [Message(role=Role.ASSISTANT, tool_calls=[tc], content="Let me read that.")]
+        messages = [
+            Message(role=Role.ASSISTANT, tool_calls=[tc], content="Let me read that.")
+        ]
         _, api_messages = provider._convert_messages(messages)
 
         assert api_messages[0]["role"] == "assistant"
@@ -105,7 +123,9 @@ class TestAnthropicProvider:
         assert content[1]["name"] == "read"
 
     def test_convert_messages_assistant_passes_back_thinking_before_tool_use(self):
-        provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
+        provider = AnthropicProvider(
+            api_key="test", base_url="https://test.example.com", model="claude"
+        )
         thinking_block = {
             "type": "thinking",
             "thinking": "I should inspect the file.",
@@ -128,7 +148,9 @@ class TestAnthropicProvider:
         assert content[2]["type"] == "tool_use"
 
     def test_convert_messages_tool_results_as_user(self):
-        provider = AnthropicProvider(api_key="test", base_url="https://test.example.com", model="claude")
+        provider = AnthropicProvider(
+            api_key="test", base_url="https://test.example.com", model="claude"
+        )
         tr = ToolResult(tool_call_id="tc_1", name="read", content="file data")
         messages = [Message(role=Role.TOOL, tool_results=[tr])]
         _, api_messages = provider._convert_messages(messages)
@@ -146,7 +168,9 @@ class TestProviderFactory:
         assert isinstance(provider, OpenAIProvider)
 
     def test_create_anthropic_provider(self):
-        provider = create_provider("anthropic", "key", "https://api.example.com", "claude")
+        provider = create_provider(
+            "anthropic", "key", "https://api.example.com", "claude"
+        )
         assert isinstance(provider, AnthropicProvider)
 
     def test_create_unknown_provider_raises(self):

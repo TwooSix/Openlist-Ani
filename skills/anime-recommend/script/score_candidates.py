@@ -49,13 +49,15 @@ def _parse_calendar_items(raw: str) -> list[dict]:
         if sid in seen:
             continue
         seen.add(sid)
-        items.append({
-            "id": sid,
-            "name": m.group(2).strip(),
-            "score": float(m.group(3)) if m.group(3) else 0.0,
-            "votes": int(m.group(4)) if m.group(4) else 0,
-            "rank": int(m.group(5)) if m.group(5) else 0,
-        })
+        items.append(
+            {
+                "id": sid,
+                "name": m.group(2).strip(),
+                "score": float(m.group(3)) if m.group(3) else 0.0,
+                "votes": int(m.group(4)) if m.group(4) else 0,
+                "rank": int(m.group(5)) if m.group(5) else 0,
+            }
+        )
     return items
 
 
@@ -114,10 +116,7 @@ def _format_results(candidates: list[dict]) -> str:
             line += "  (few votes, pulled toward avg)"
         lines.append(line)
 
-    lines.append(
-        "\n---\n"
-        "Rank by weighted score for selection; show raw score to user."
-    )
+    lines.append("\n---\nRank by weighted score for selection; show raw score to user.")
     return "\n".join(lines)
 
 

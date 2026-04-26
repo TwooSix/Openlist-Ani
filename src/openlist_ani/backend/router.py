@@ -32,7 +32,9 @@ router = APIRouter(prefix="/api")
 async def restart_service() -> RestartResponse:
     """Restart the application by sending SIGHUP to self."""
     logger.info("Backend: Restart requested via API")
-    os.kill(os.getpid(), signal.SIGHUP)  # noqa: S603 – intentional self-signal for graceful restart
+    os.kill(
+        os.getpid(), signal.SIGHUP
+    )  # noqa: S603 – intentional self-signal for graceful restart
     return RestartResponse(success=True, message="Restart signal sent")
 
 

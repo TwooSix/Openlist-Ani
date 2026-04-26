@@ -26,7 +26,6 @@ from openlist_ani.assistant.core.message_queue import PendingMessage
 from openlist_ani.assistant.core.models import EventType, LoopEvent
 from openlist_ani.assistant.frontend.textual_app.events import LoopEventMessage
 from openlist_ani.assistant.frontend.textual_app.styles import (
-    ACCENT_PRIMARY,
     APP_CSS,
     STATUS_SUCCESS,
     SUGGESTION,
@@ -48,6 +47,7 @@ if TYPE_CHECKING:
 
 
 # ── Helpers ──
+
 
 def _format_relative_time(mtime: float) -> str:
     """Convert a Unix timestamp to a human-readable relative time string."""
@@ -85,12 +85,13 @@ def _clean_prompt_text(raw: str) -> str:
     # Pattern: everything up to </skill> + optional trailing newlines
     skill_end = text.find(_SKILL_END_TAG)
     if skill_end != -1:
-        text = text[skill_end + len(_SKILL_END_TAG):].strip()
+        text = text[skill_end + len(_SKILL_END_TAG) :].strip()
     elif text.startswith("<command-name>"):
         # The first_prompt was truncated at 100 chars, so </skill> is not
         # present. Extract the command name for display instead.
         cmd_match = re.search(
-            r"<command-name>(/\w+)</command-name>", text,
+            r"<command-name>(/\w+)</command-name>",
+            text,
         )
         if cmd_match:
             text = cmd_match.group(1)
@@ -103,7 +104,10 @@ def _clean_prompt_text(raw: str) -> str:
         # Try to at least strip the command-name tag
         text = re.sub(r"<command-name>.*?</command-name>\s*", "", text)
         text = re.sub(
-            r"<skill[^>]*>.*?</skill>\s*", "", text, flags=re.DOTALL,
+            r"<skill[^>]*>.*?</skill>\s*",
+            "",
+            text,
+            flags=re.DOTALL,
         )
         text = text.strip() or "(empty session)"
 
@@ -263,7 +267,8 @@ class SessionPickerApp(App):
         header.append(_RESUME_SESSION_LABEL, style=f"bold {SUGGESTION}")
         if count > 1:
             header.append(
-                f" (1 of {count})", style=TEXT_DIM_LIGHT,
+                f" (1 of {count})",
+                style=TEXT_DIM_LIGHT,
             )
         yield Static(header, id="picker-header")
         yield Container(id="picker-list")
@@ -350,9 +355,7 @@ class SessionPickerApp(App):
 
     def action_select_session(self) -> None:
         if self._sessions:
-            self.selected_session_id = self._sessions[
-                self._focused_index
-            ].session_id
+            self.selected_session_id = self._sessions[self._focused_index].session_id
             self.exit()
 
     def action_cancel(self) -> None:
@@ -397,7 +400,8 @@ class SessionPickerScreen(ModalScreen[str | None]):
             header.append(_RESUME_SESSION_LABEL, style=f"bold {SUGGESTION}")
             if count > 1:
                 header.append(
-                    f" (1 of {count})", style=TEXT_DIM_LIGHT,
+                    f" (1 of {count})",
+                    style=TEXT_DIM_LIGHT,
                 )
             yield Static(header, id="session-picker-header")
             yield VerticalScroll(id="session-picker-list")
@@ -414,7 +418,8 @@ class SessionPickerScreen(ModalScreen[str | None]):
 
     async def _render_list(self) -> None:
         container = self.query_one(
-            "#session-picker-list", VerticalScroll,
+            "#session-picker-list",
+            VerticalScroll,
         )
         await container.remove_children()
 
@@ -600,10 +605,7 @@ class TextualFrontend(App):
             return
 
         # If currently processing, enqueue as mid-turn injection
-        if (
-            self._processing_task is not None
-            and not self._processing_task.done()
-        ):
+        if self._processing_task is not None and not self._processing_task.done():
             self._agentic_loop.message_queue.enqueue(
                 PendingMessage(content=text),
             )
@@ -624,14 +626,12 @@ class TextualFrontend(App):
         self._exiting = True
         if self._cancel_token:
             self._cancel_token.cancel()
-        if (
-            self._processing_task is not None
-            and not self._processing_task.done()
-        ):
+        if self._processing_task is not None and not self._processing_task.done():
             self._processing_task.cancel()
             try:
                 await asyncio.wait_for(
-                    self._processing_task, timeout=1.0,
+                    self._processing_task,
+                    timeout=1.0,
                 )
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
@@ -639,7 +639,8 @@ class TextualFrontend(App):
                 logger.debug("Task cleanup during /quit", exc_info=True)
         chat = self.query_one(_CHAT_VIEW, VerticalScroll)
         goodbye = MessageBlock.command_result(
-            "Goodbye!", style="dim",
+            "Goodbye!",
+            style="dim",
         )
         await chat.mount(goodbye)
         self.exit()
@@ -679,15 +680,14 @@ class TextualFrontend(App):
 
         # Process in background
         self._cancel_token = CancellationToken()
-        self._processing_task = asyncio.create_task(
-            self._process_turn(user_input)
-        )
+        self._processing_task = asyncio.create_task(self._process_turn(user_input))
 
     async def _process_turn(self, user_input: str) -> None:
         """Background task: consume loop events and post to UI."""
         try:
             async for event in self._agentic_loop.process(
-                user_input, cancel_token=self._cancel_token,
+                user_input,
+                cancel_token=self._cancel_token,
             ):
                 if event.type == EventType.TOOL_START:
                     self._turn_tool_count += 1
@@ -698,19 +698,19 @@ class TextualFrontend(App):
         except Exception as e:
             logger.opt(exception=True).error(f"Turn error: {e}")
             self.post_message(
-                LoopEventMessage(
-                    LoopEvent(type=EventType.ERROR, text=str(e))
-                )
+                LoopEventMessage(LoopEvent(type=EventType.ERROR, text=str(e)))
             )
         finally:
             self._cancel_token = None
             # Post a sentinel to finalize the turn footer
-            self.post_message(LoopEventMessage(
-                LoopEvent(
-                    type=EventType.TEXT_DONE,
-                    text="__TURN_COMPLETE__",
+            self.post_message(
+                LoopEventMessage(
+                    LoopEvent(
+                        type=EventType.TEXT_DONE,
+                        text="__TURN_COMPLETE__",
+                    )
                 )
-            ))
+            )
 
     # ── Event dispatch ──
 
@@ -802,7 +802,8 @@ class TextualFrontend(App):
         # Show interruption indicator with distinct styling
         if event.text == "(interrupted)":
             block = MessageBlock.command_result(
-                "⏎ Interrupted", style="dim italic",
+                "⏎ Interrupted",
+                style="dim italic",
             )
             await chat.mount(block)
             self._scroll_to_bottom()
@@ -911,16 +912,12 @@ class TextualFrontend(App):
             skill_names=skill_names,
         )
         await chat.mount(banner)
-        result = MessageBlock.command_result(
-            "New session started.", style="green"
-        )
+        result = MessageBlock.command_result("New session started.", style="green")
         await chat.mount(result)
 
     async def _cmd_compact(self, chat: VerticalScroll) -> None:
         """Run conversation compaction."""
-        indicator = MessageBlock.command_result(
-            "compacting...", style="dim"
-        )
+        indicator = MessageBlock.command_result("compacting...", style="dim")
         await chat.mount(indicator)
         compacted = await self._agentic_loop._autocompactor.force_compact(
             self._agentic_loop._messages
@@ -931,9 +928,7 @@ class TextualFrontend(App):
                 "Conversation compacted.", style="green"
             )
         else:
-            result = MessageBlock.command_result(
-                "Compaction not needed.", style="dim"
-            )
+            result = MessageBlock.command_result("Compaction not needed.", style="dim")
         await chat.mount(result)
 
     async def _cmd_dream(self, chat: VerticalScroll) -> None:
@@ -942,7 +937,7 @@ class TextualFrontend(App):
             "Running memory consolidation...", style="dim"
         )
         await chat.mount(indicator)
-        runner = getattr(self._agentic_loop, '_auto_dream_runner', None)
+        runner = getattr(self._agentic_loop, "_auto_dream_runner", None)
         if runner is None:
             result = MessageBlock.command_result(
                 "Auto-dream is not configured.", style="dim"
@@ -958,13 +953,9 @@ class TextualFrontend(App):
                     )
                 else:
                     summary = dream_result.summary if dream_result else "No changes."
-                    result = MessageBlock.command_result(
-                        f"{summary}", style="dim"
-                    )
+                    result = MessageBlock.command_result(f"{summary}", style="dim")
             except Exception as e:
-                result = MessageBlock.command_result(
-                    f"Dream failed: {e}", style="red"
-                )
+                result = MessageBlock.command_result(f"Dream failed: {e}", style="red")
         await chat.mount(result)
 
     async def _cmd_resume(self, chat: VerticalScroll) -> None:
@@ -981,9 +972,7 @@ class TextualFrontend(App):
         sessions = await storage.list_sessions()
         if not sessions:
             await chat.mount(
-                MessageBlock.command_result(
-                    "No previous sessions found.", style="dim"
-                )
+                MessageBlock.command_result("No previous sessions found.", style="dim")
             )
             return
 
@@ -994,15 +983,11 @@ class TextualFrontend(App):
             result.session_id = session_id
             result.event.set()
 
-        self.push_screen(
-            SessionPickerScreen(sessions), callback=_on_dismiss
-        )
+        self.push_screen(SessionPickerScreen(sessions), callback=_on_dismiss)
         await result.event.wait()
 
         if result.session_id is None:
-            await chat.mount(
-                MessageBlock.command_result("Cancelled.", style="dim")
-            )
+            await chat.mount(MessageBlock.command_result("Cancelled.", style="dim"))
             return
 
         try:
@@ -1036,9 +1021,7 @@ class TextualFrontend(App):
             await chat.mount(MessageBlock.command_result(content))
         except Exception:
             logger.opt(exception=True).error("Failed to resume session")
-            await chat.mount(
-                MessageBlock.error("Failed to resume session.")
-            )
+            await chat.mount(MessageBlock.error("Failed to resume session."))
 
     async def _try_skill_command(self, command: str, chat: VerticalScroll) -> None:
         """Try to execute a skill command; show 'Unknown command' if not a skill."""
@@ -1148,10 +1131,7 @@ class TextualFrontend(App):
     def action_quit_app(self) -> None:
         """Handle Ctrl+D — exit the app, cancelling any active task."""
         self._exiting = True
-        if (
-            self._processing_task is not None
-            and not self._processing_task.done()
-        ):
+        if self._processing_task is not None and not self._processing_task.done():
             if self._cancel_token:
                 self._cancel_token.cancel()
             self._processing_task.cancel()
@@ -1165,16 +1145,14 @@ class TextualFrontend(App):
         A fallback timer force-cancels the task if the cooperative
         path doesn't finish within 3 seconds.
         """
-        if (
-            self._processing_task is not None
-            and not self._processing_task.done()
-        ):
+        if self._processing_task is not None and not self._processing_task.done():
             if self._cancel_token:
                 self._cancel_token.cancel()
             # Schedule a fallback force-cancel in case cooperative
             # cancellation doesn't resolve quickly enough.
             self.set_timer(
-                3.0, self._force_cancel_task,
+                3.0,
+                self._force_cancel_task,
             )
             logger.info("User cancelled current turn")
 
@@ -1183,11 +1161,6 @@ class TextualFrontend(App):
 
         Called by a timer after cooperative cancellation was requested.
         """
-        if (
-            self._processing_task is not None
-            and not self._processing_task.done()
-        ):
+        if self._processing_task is not None and not self._processing_task.done():
             self._processing_task.cancel()
-            logger.warning(
-                "Cooperative cancellation timed out — force-cancelling task"
-            )
+            logger.warning("Cooperative cancellation timed out — force-cancelling task")

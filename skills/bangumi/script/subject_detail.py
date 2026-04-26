@@ -55,8 +55,14 @@ def _resolve_infobox_value(value: Any) -> str:
 def _format_staff_and_cast(infobox: list[dict[str, Any]]) -> list[str]:
     """Format staff and cast lines from subject infobox."""
     staff_keys = {
-        "导演", "原作", "脚本", "音乐", "制作",
-        "动画制作", "总导演", "系列构成",
+        "导演",
+        "原作",
+        "脚本",
+        "音乐",
+        "制作",
+        "动画制作",
+        "总导演",
+        "系列构成",
     }
     cast_key = "声优"
     staff_lines: list[str] = []

@@ -42,7 +42,7 @@ def parse_frontmatter(text: str) -> tuple[Frontmatter, str]:
         return Frontmatter(), text
 
     yaml_block = match.group(1)
-    body = text[match.end():]
+    body = text[match.end() :]
 
     raw: dict[str, str] = {}
     for line in yaml_block.splitlines():

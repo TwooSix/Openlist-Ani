@@ -112,10 +112,7 @@ class TestCommonRSSWebsite:
         session = MagicMock()
         result = await common_parser.parse_entry(entry, session)
         assert result is not None
-        assert (
-            result.download_url
-            == "https://tracker.example.com/download/12345"
-        )
+        assert result.download_url == "https://tracker.example.com/download/12345"
 
     async def test_torrent_url_with_query_params_enclosure(self, common_parser):
         """Torrent URL with query parameters (e.g. passkey) must be accepted.
@@ -134,15 +131,11 @@ class TestCommonRSSWebsite:
         assert result is not None
         assert result.download_url == torrent_url
 
-    async def test_torrent_url_with_query_params_link_fallback(
-        self, common_parser
-    ):
+    async def test_torrent_url_with_query_params_link_fallback(self, common_parser):
         """Link fallback with .torrent?query must also be accepted."""
         torrent_url = "https://tracker.example.com/dl.torrent?id=99&passkey=x"
         entry = SimpleNamespace(title="Anime - 06", link=torrent_url)
-        entry.get = (
-            lambda key, default=None: [] if key == "enclosures" else default
-        )
+        entry.get = lambda key, default=None: [] if key == "enclosures" else default
         session = MagicMock()
         result = await common_parser.parse_entry(entry, session)
         assert result is not None
@@ -157,17 +150,11 @@ class TestIsTorrentUrl:
 
     def test_torrent_url_with_query_params(self):
         assert (
-            _is_torrent_url(
-                "https://example.com/file.torrent?passkey=abc123"
-            )
-            is True
+            _is_torrent_url("https://example.com/file.torrent?passkey=abc123") is True
         )
 
     def test_torrent_url_with_fragment(self):
-        assert (
-            _is_torrent_url("https://example.com/file.torrent#section")
-            is True
-        )
+        assert _is_torrent_url("https://example.com/file.torrent#section") is True
 
     def test_non_torrent_url(self):
         assert _is_torrent_url("https://example.com/page.html") is False

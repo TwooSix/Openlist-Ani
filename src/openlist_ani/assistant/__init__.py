@@ -135,7 +135,8 @@ async def run() -> None:
         registry.register(GrepTool())
 
         context = ContextBuilder(
-            memory, catalog,
+            memory,
+            catalog,
             model_name=llm_cfg.openai_model,
             provider_type=llm_cfg.provider_type,
             tools=registry.all_tools(),
@@ -145,7 +146,10 @@ async def run() -> None:
         # when multiple Telegram chats are active concurrently.
         loop_session_storage = SessionStorage(sessions_dir)
         return AgenticLoop(
-            provider, registry, context, memory,
+            provider,
+            registry,
+            context,
+            memory,
             session_storage=loop_session_storage,
             auto_dream_runner=auto_dream_runner,
         )
@@ -165,19 +169,13 @@ async def run() -> None:
             selected = await _pick_session(loop.session_storage)
             if selected is not None:
                 await loop.resume(selected)
-                logger.info(
-                    f"CLI resumed session {selected}"
-                )
+                logger.info(f"CLI resumed session {selected}")
             else:
                 # User cancelled or no sessions — start fresh
-                await loop.session_storage.start_new_session(
-                    metadata=session_meta
-                )
+                await loop.session_storage.start_new_session(metadata=session_meta)
         else:
             # CLI mode: always start a fresh session
-            await loop.session_storage.start_new_session(
-                metadata=session_meta
-            )
+            await loop.session_storage.start_new_session(metadata=session_meta)
         frontend = TextualFrontend(
             loop,
             model_name=llm_cfg.openai_model,

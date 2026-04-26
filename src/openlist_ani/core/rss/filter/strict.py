@@ -59,9 +59,7 @@ def compute_rename_stem(
         return f"{name} S{s:02d}E{e:02d}"
 
 
-def _stem_from_resource(
-    rename_format: str, resource: AnimeResourceInfo
-) -> str:
+def _stem_from_resource(rename_format: str, resource: AnimeResourceInfo) -> str:
     """Build a rename stem from an ``AnimeResourceInfo`` instance."""
     quality_str = str(resource.quality) if resource.quality else ""
     languages_str = "".join(str(lang) for lang in resource.languages)
@@ -141,9 +139,7 @@ class StrictRenameFilter:
 
         skipped = len(candidates) - len(accepted)
         if skipped:
-            logger.info(
-                f"Strict filter: {len(accepted)} accepted, {skipped} skipped"
-            )
+            logger.info(f"Strict filter: {len(accepted)} accepted, {skipped} skipped")
         return accepted
 
     # ── per-group filtering ──────────────────────────────────────────
@@ -157,14 +153,10 @@ class StrictRenameFilter:
         """Filter a single episode group against DB stems + intra-batch dedup."""
         anime_name, season, episode = key
 
-        db_records = await db.find_resources_by_episode(
-            anime_name, season, episode
-        )
+        db_records = await db.find_resources_by_episode(anime_name, season, episode)
         db_stems: list[tuple[str, int]] = [
             (
-                _stem_from_db_record(
-                    rename_format, anime_name, season, episode, rec
-                ),
+                _stem_from_db_record(rename_format, anime_name, season, episode, rec),
                 rec.get("version") or 1,
             )
             for rec in db_records

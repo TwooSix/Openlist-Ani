@@ -30,7 +30,9 @@ class ToolCall:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ToolCall":
-        return cls(id=data["id"], name=data["name"], arguments=data.get("arguments", {}))
+        return cls(
+            id=data["id"], name=data["name"], arguments=data.get("arguments", {})
+        )
 
 
 @dataclass
@@ -89,9 +91,7 @@ class Message:
         return cls(
             role=Role(data["role"]),
             content=data.get("content", ""),
-            tool_calls=[
-                ToolCall.from_dict(tc) for tc in data.get("tool_calls", [])
-            ],
+            tool_calls=[ToolCall.from_dict(tc) for tc in data.get("tool_calls", [])],
             tool_results=[
                 ToolResult.from_dict(tr) for tr in data.get("tool_results", [])
             ],

@@ -250,4 +250,6 @@ class TestGetActivityDescription:
         """Custom tools can provide meaningful activity descriptions."""
         tool = ProgressTrackingTool("grep")
         assert tool.get_activity_description(None) == "Searching"
-        assert tool.get_activity_description({"pattern": "TODO"}) == "Searching for TODO"
+        assert (
+            tool.get_activity_description({"pattern": "TODO"}) == "Searching for TODO"
+        )

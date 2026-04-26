@@ -39,11 +39,7 @@ def _make_mikan_entry(
     """Build a feedparser-like entry for Mikan with enclosure and web link."""
     entry = SimpleNamespace(title=title, link=link)
     enclosures = [{"href": magnet, "type": "application/x-bittorrent"}]
-    entry.get = (
-        lambda key, default=None: enclosures
-        if key == "enclosures"
-        else default
-    )
+    entry.get = lambda key, default=None: enclosures if key == "enclosures" else default
     return entry
 
 
@@ -179,9 +175,7 @@ class TestMikanWebsite:
         ctx_manager.__aexit__.return_value = False
         mock_session.get.return_value = ctx_manager
 
-        metadata = await mikan._fetch_metadata(
-            mock_session, "https://mikanani.me/slow"
-        )
+        metadata = await mikan._fetch_metadata(mock_session, "https://mikanani.me/slow")
         assert metadata["anime_name"] is None
         assert metadata["season"] is None
         assert metadata["fansub"] is None

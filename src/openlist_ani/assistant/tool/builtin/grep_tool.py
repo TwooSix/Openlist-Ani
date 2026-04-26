@@ -63,22 +63,16 @@ class GrepTool(BaseTool):
                 },
                 "glob": {
                     "type": "string",
-                    "description": (
-                        "Glob filter, e.g. '**/*.py' (rg --glob)."
-                    ),
+                    "description": ("Glob filter, e.g. '**/*.py' (rg --glob)."),
                 },
                 "type": {
                     "type": "string",
-                    "description": (
-                        "rg --type filter, e.g. 'py', 'md', 'json'."
-                    ),
+                    "description": ("rg --type filter, e.g. 'py', 'md', 'json'."),
                 },
                 "output_mode": {
                     "type": "string",
                     "enum": list(_OUTPUT_MODES),
-                    "description": (
-                        "files_with_matches (default) | content | count."
-                    ),
+                    "description": ("files_with_matches (default) | content | count."),
                 },
                 "case_insensitive": {
                     "type": "boolean",
@@ -120,9 +114,7 @@ class GrepTool(BaseTool):
     def is_concurrency_safe(self, tool_input: dict | None = None) -> bool:
         return True
 
-    def get_activity_description(
-        self, tool_input: dict | None = None
-    ) -> str | None:
+    def get_activity_description(self, tool_input: dict | None = None) -> str | None:
         if tool_input and (p := tool_input.get("pattern")):
             preview = p if len(p) <= 40 else p[:37] + "…"
             return f"Searching for /{preview}/"
@@ -145,9 +137,7 @@ class GrepTool(BaseTool):
     # ── Implementation ────────────────────────────────────────────
 
     @staticmethod
-    def _build_argv(
-        rg: str, pattern: str, output_mode: str, kwargs: dict
-    ) -> list[str]:
+    def _build_argv(rg: str, pattern: str, output_mode: str, kwargs: dict) -> list[str]:
         """Translate tool kwargs into a ripgrep argv (excluding paths)."""
         argv = [rg, "--no-follow", "--no-config"]
 
@@ -168,9 +158,7 @@ class GrepTool(BaseTool):
         elif output_mode == "count":
             argv.append("--count")
         else:  # content
-            argv.extend(
-                ["--line-number", "--no-heading", "--color", "never"]
-            )
+            argv.extend(["--line-number", "--no-heading", "--color", "never"])
             cb = int(kwargs.get("context_before") or 0)
             ca = int(kwargs.get("context_after") or 0)
             if cb > 0:
@@ -221,10 +209,7 @@ class GrepTool(BaseTool):
 
         scrubbed, hits = redact_secrets("\n".join(lines))
         if hits:
-            logger.info(
-                f"GrepTool: redacted {hits} secret-like fragment(s) "
-                "in result"
-            )
+            logger.info(f"GrepTool: redacted {hits} secret-like fragment(s) in result")
 
         footer_parts: list[str] = []
         if truncated:
@@ -233,12 +218,8 @@ class GrepTool(BaseTool):
                 f"narrow the query for more."
             )
         if hits:
-            footer_parts.append(
-                f"⚠ {hits} secret-like fragment(s) redacted."
-            )
-        footer = (
-            ("\n\n" + "\n".join(footer_parts)) if footer_parts else ""
-        )
+            footer_parts.append(f"⚠ {hits} secret-like fragment(s) redacted.")
+        footer = ("\n\n" + "\n".join(footer_parts)) if footer_parts else ""
         return scrubbed + footer
 
     async def execute(self, **kwargs: object) -> str:  # noqa: D401
@@ -255,10 +236,7 @@ class GrepTool(BaseTool):
 
         output_mode = kwargs.get("output_mode") or "files_with_matches"
         if output_mode not in _OUTPUT_MODES:
-            return (
-                f"Error: 'output_mode' must be one of "
-                f"{', '.join(_OUTPUT_MODES)}."
-            )
+            return f"Error: 'output_mode' must be one of {', '.join(_OUTPUT_MODES)}."
 
         head_limit = int(kwargs.get("head_limit") or _DEFAULT_HEAD_LIMIT)
         head_limit = max(1, min(head_limit, _MAX_HEAD_LIMIT))

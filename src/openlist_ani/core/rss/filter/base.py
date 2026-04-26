@@ -46,9 +46,7 @@ class FilterChain:
     empty, remaining filters are skipped (short-circuit).
     """
 
-    def __init__(
-        self, filters: list[ResourceFilter] | None = None
-    ) -> None:
+    def __init__(self, filters: list[ResourceFilter] | None = None) -> None:
         self._filters: list[ResourceFilter] = list(filters or [])
 
     def add_filter(self, resource_filter: ResourceFilter) -> None:
@@ -70,8 +68,9 @@ class FilterChain:
         result = candidates
         for resource_filter in self._filters:
             # Handle both sync and async filters
-            if hasattr(resource_filter.apply, '__call__'):
+            if hasattr(resource_filter.apply, "__call__"):
                 import inspect
+
                 if inspect.iscoroutinefunction(resource_filter.apply):
                     result = await resource_filter.apply(result)
                 else:

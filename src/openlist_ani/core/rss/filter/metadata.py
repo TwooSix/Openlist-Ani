@@ -68,10 +68,7 @@ class MetadataFilter:
     ) -> bool:
         """Return True if *candidate* matches any exclusion rule."""
         # Fansub: exact match
-        if (
-            filter_cfg.exclude_fansub
-            and candidate.fansub in filter_cfg.exclude_fansub
-        ):
+        if filter_cfg.exclude_fansub and candidate.fansub in filter_cfg.exclude_fansub:
             return True
 
         # Quality: match against .value string

@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 import aiohttp
 from bs4 import BeautifulSoup, NavigableString, Tag
 from cachetools import TTLCache
-from loguru import logger
 
 # ── Constants ──────────────────────────────────────────────────────
 
@@ -32,10 +31,20 @@ USER_AGENT = "OpenlistAni-WebFetch/1.0"
 ACCEPT_HEADER = "text/markdown, text/html, */*"
 
 # Tags to remove entirely (noise)
-_NOISE_TAGS = frozenset({
-    "script", "style", "nav", "footer", "header",
-    "aside", "iframe", "noscript", "svg", "form",
-})
+_NOISE_TAGS = frozenset(
+    {
+        "script",
+        "style",
+        "nav",
+        "footer",
+        "header",
+        "aside",
+        "iframe",
+        "noscript",
+        "svg",
+        "form",
+    }
+)
 
 # ── Data Classes ───────────────────────────────────────────────────
 
@@ -124,7 +133,10 @@ def validate_url(url: str) -> tuple[bool, str]:
         return False, "URL could not be parsed."
 
     if parsed.scheme not in ("http", "https"):
-        return False, f"Invalid protocol '{parsed.scheme}'. Only http and https are supported."
+        return (
+            False,
+            f"Invalid protocol '{parsed.scheme}'. Only http and https are supported.",
+        )
 
     if not parsed.hostname:
         return False, "URL has no hostname."
@@ -462,10 +474,7 @@ def _convert_table(table: Tag, lines: list[str]) -> None:
     """Convert an HTML table to a simple Markdown table."""
     rows: list[list[str]] = []
     for tr in table.find_all("tr"):
-        cells = [
-            cell.get_text(strip=True)
-            for cell in tr.find_all(["th", "td"])
-        ]
+        cells = [cell.get_text(strip=True) for cell in tr.find_all(["th", "td"])]
         if cells:
             rows.append(cells)
 

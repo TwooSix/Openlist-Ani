@@ -73,8 +73,12 @@ class SkillTool(BaseTool):
         # subscribe, update_collection, etc. are not.
         action = str(tool_input.get("action", "default"))
         _READ_ONLY_ACTIONS = {
-            "search", "calendar", "query", "subgroups",
-            "releases", "default",
+            "search",
+            "calendar",
+            "query",
+            "subgroups",
+            "releases",
+            "default",
         }
         return action in _READ_ONLY_ACTIONS
 
@@ -185,20 +189,15 @@ class SkillTool(BaseTool):
                         "This is a guide-only skill. Follow the instructions "
                         "above and call the referenced API skills to proceed."
                     )
-                return (
-                    f"Skill '{skill_name}' has no actions and no guide content."
-                )
+                return f"Skill '{skill_name}' has no actions and no guide content."
 
             # Skill with actions — execute the requested action
             result = await self._catalog.run_action(skill_name, action, params)
             logger.debug(
-                f"Skill '{skill_name}/{action}' completed "
-                f"({len(result)} chars)"
+                f"Skill '{skill_name}/{action}' completed ({len(result)} chars)"
             )
             if body:
-                return (
-                    f"<skill-guide>\n{body}\n</skill-guide>\n\n{result}"
-                )
+                return f"<skill-guide>\n{body}\n</skill-guide>\n\n{result}"
             return result
         except (ValueError, FileNotFoundError, AttributeError) as e:
             logger.warning(f"Skill '{skill_name}/{action}' error: {e}")

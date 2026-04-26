@@ -167,9 +167,7 @@ class BackendService:
         assistant decides what to download.
         """
         if not url:
-            return ParseRSSResponse(
-                success=False, message="'url' is required."
-            )
+            return ParseRSSResponse(success=False, message="'url' is required.")
 
         try:
             website = WebsiteFactory().create(url)
@@ -182,9 +180,7 @@ class BackendService:
             entries: list[AnimeResourceInfo] = await website.fetch_feed(url)
         except Exception as e:  # noqa: BLE001 — surface upstream HTTP errors
             logger.warning(f"parse_rss: feed fetch failed for {url}: {e}")
-            return ParseRSSResponse(
-                success=False, message=f"Failed to fetch RSS: {e}"
-            )
+            return ParseRSSResponse(success=False, message=f"Failed to fetch RSS: {e}")
 
         total = len(entries)
         if limit is not None and limit > 0:
@@ -232,19 +228,14 @@ class BackendService:
         ``metadata_timeout`` bounds the libtorrent fetch budget; it is
         ignored when the magnet's ``dn=`` parameter is already usable.
         """
-        result = await _resolve_magnet(
-            magnet, metadata_timeout=metadata_timeout
-        )
+        result = await _resolve_magnet(magnet, metadata_timeout=metadata_timeout)
         return ResolveMagnetResponse(
             success=result.success,
             message=result.message,
             title=result.title,
             source=result.source,
             file_count=result.file_count,
-            files=[
-                ResolveMagnetFile(name=f.name, size=f.size)
-                for f in result.files
-            ],
+            files=[ResolveMagnetFile(name=f.name, size=f.size) for f in result.files],
             is_collection=result.is_collection,
             collection_reason=result.collection_reason,
         )
@@ -267,10 +258,7 @@ class BackendService:
             title=result.title,
             source=result.source,
             file_count=result.file_count,
-            files=[
-                ResolveMagnetFile(name=f.name, size=f.size)
-                for f in result.files
-            ],
+            files=[ResolveMagnetFile(name=f.name, size=f.size) for f in result.files],
             is_collection=result.is_collection,
             collection_reason=result.collection_reason,
         )

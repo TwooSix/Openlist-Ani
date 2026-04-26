@@ -20,10 +20,10 @@ from openlist_ani.config import config
 from openlist_ani.core.bangumi.client import BangumiClient
 from openlist_ani.core.bangumi.model import UserCollectionEntry
 
-
 # ------------------------------------------------------------------ #
 # Sibling module loader (skill loader doesn't support relative imports)
 # ------------------------------------------------------------------ #
+
 
 def _load_sibling_module(filename: str, module_name: str):
     """Import a sibling .py from the same script directory."""
@@ -48,13 +48,15 @@ save_subject_cache = _cache.save_subject_cache
 subject_to_cached = _cache.subject_to_cached
 
 _confidence = _load_sibling_module(
-    "_confidence.py", "_anime_recommend_confidence",
+    "_confidence.py",
+    "_anime_recommend_confidence",
 )
 compute_confidence = _confidence.compute_confidence
 format_confidence_report = _confidence.format_confidence_report
 
 _score = _load_sibling_module(
-    "score_candidates.py", "_anime_recommend_score",
+    "score_candidates.py",
+    "_anime_recommend_score",
 )
 _parse_calendar_items = _score._parse_calendar_items
 _compute_bayesian_scores = _score._compute_bayesian_scores
@@ -64,6 +66,7 @@ _format_results = _score._format_results
 # ------------------------------------------------------------------ #
 # Path helpers
 # ------------------------------------------------------------------ #
+
 
 def _resolve_memory_dir() -> Path:
     """Resolve the memory directory path."""
@@ -89,6 +92,7 @@ def _display_name(name_cn: str | None, name: str | None) -> str:
 # Full-range selection (no top-N sampling)
 # ------------------------------------------------------------------ #
 
+
 def _select_entries_by_rating(
     all_entries: list[UserCollectionEntry],
 ) -> tuple[
@@ -111,10 +115,9 @@ def _select_entries_by_rating(
     low_ids = {e.subject_id for e in low_rated}
     liked_ids = {e.subject_id for e in liked}
     dropped = [
-        e for e in all_entries
-        if e.type == 5
-        and e.subject_id not in low_ids
-        and e.subject_id not in liked_ids
+        e
+        for e in all_entries
+        if e.type == 5 and e.subject_id not in low_ids and e.subject_id not in liked_ids
     ]
     disliked = low_rated + dropped
     return liked, disliked
@@ -123,6 +126,7 @@ def _select_entries_by_rating(
 # ------------------------------------------------------------------ #
 # Titles list formatter (compact, for LLM context)
 # ------------------------------------------------------------------ #
+
 
 def _format_liked_entry(
     entry: UserCollectionEntry,
@@ -135,7 +139,7 @@ def _format_liked_entry(
     name = _display_name(cs.name_cn, cs.name)
     line = f"- {name} — {entry.rate}/10"
     if entry.comment:
-        line += f" | \"{entry.comment}\""
+        line += f' | "{entry.comment}"'
     if entry.tags:
         line += f" | tags: {', '.join(entry.tags)}"
     return line
@@ -162,7 +166,7 @@ def _format_disliked_entry(
     label = _format_disliked_label(entry)
     line = f"- {name} — {label}"
     if entry.comment:
-        line += f" | \"{entry.comment}\""
+        line += f' | "{entry.comment}"'
     return line
 
 
@@ -215,6 +219,7 @@ def _collect_unique_ids(
 # Core: incremental fetch + confidence report
 # ------------------------------------------------------------------ #
 
+
 async def _fetch_all_collections(
     client: BangumiClient,
 ) -> list[UserCollectionEntry]:
@@ -222,7 +227,8 @@ async def _fetch_all_collections(
     all_entries: list[UserCollectionEntry] = []
     for ct in (2, 3, 5):  # done, doing, dropped
         entries = await client.fetch_user_collections(
-            subject_type=2, collection_type=ct,
+            subject_type=2,
+            collection_type=ct,
         )
         all_entries.extend(entries)
     return all_entries
@@ -303,7 +309,9 @@ async def _incremental_fetch_and_build(
     # 5. Load subject cache, fetch only missing details
     subject_cache = load_subject_cache()
     fetch_count = await _ensure_subjects_cached(
-        client, all_needed_ids, subject_cache,
+        client,
+        all_needed_ids,
+        subject_cache,
     )
     if fetch_count > 0:
         save_subject_cache(subject_cache)
@@ -318,14 +326,10 @@ async def _incremental_fetch_and_build(
 
     # 7. Compute Bayesian confidence report
     liked_subjects = [
-        subject_cache[e.subject_id]
-        for e in liked
-        if e.subject_id in subject_cache
+        subject_cache[e.subject_id] for e in liked if e.subject_id in subject_cache
     ]
     disliked_subjects = [
-        subject_cache[e.subject_id]
-        for e in disliked
-        if e.subject_id in subject_cache
+        subject_cache[e.subject_id] for e in disliked if e.subject_id in subject_cache
     ]
     report = compute_confidence(liked_subjects, disliked_subjects)
     confidence_text = format_confidence_report(report)
@@ -351,6 +355,7 @@ async def _incremental_fetch_and_build(
 # ------------------------------------------------------------------ #
 # Calendar fetch + Bayesian scoring (inline, zero extra API overhead)
 # ------------------------------------------------------------------ #
+
 
 def _format_calendar_item(item) -> str:
     """Format a calendar item matching ``calendar.py._format_item``."""
@@ -420,6 +425,7 @@ async def _fetch_and_score_calendar(
 # Entry point
 # ------------------------------------------------------------------ #
 
+
 async def run(**kwargs) -> str:
     """Build taste profile and score calendar candidates in one call.
 
@@ -451,7 +457,8 @@ async def run(**kwargs) -> str:
 
         # Fetch calendar + score candidates in the same client session
         calendar_scored = await _fetch_and_score_calendar(
-            client, collection_ids,
+            client,
+            collection_ids,
         )
     except Exception as e:
         logger.error(f"Error building taste profile: {e}")
@@ -468,10 +475,7 @@ async def run(**kwargs) -> str:
 
     # Part 1: Taste profile
     if not has_changes and existing_profile:
-        parts.append(
-            "## Taste Profile (up-to-date)\n\n"
-            f"{existing_profile}"
-        )
+        parts.append(f"## Taste Profile (up-to-date)\n\n{existing_profile}")
     elif analysis_data:
         parts.append(
             "**ACTION REQUIRED — do this BEFORE reading Part 2.**\n\n"
@@ -479,7 +483,7 @@ async def run(**kwargs) -> str:
             f"{analysis_data}\n\n"
             "---\n"
             "**STOP.** Call "
-            "`memory(action=\"write\", filename=\"anime_taste.md\")` "
+            '`memory(action="write", filename="anime_taste.md")` '
             "now to save the profile above.\n\n"
             "**Rules:**\n"
             "- ONLY transcribe genres/studios/directors from the "
@@ -500,12 +504,10 @@ async def run(**kwargs) -> str:
 
     # Part 2: Calendar + scored candidates
     if calendar_scored:
-        parts.append(f"\n{'=' * 60}\n\n## Part 2: Scored Candidates\n\n"
-                      f"{calendar_scored}")
-    else:
         parts.append(
-            "\n---\n\nCalendar fetch failed. "
-            "Call bangumi/calendar manually."
+            f"\n{'=' * 60}\n\n## Part 2: Scored Candidates\n\n{calendar_scored}"
         )
+    else:
+        parts.append("\n---\n\nCalendar fetch failed. Call bangumi/calendar manually.")
 
     return "\n".join(parts)

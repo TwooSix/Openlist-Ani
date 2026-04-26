@@ -20,10 +20,10 @@ from loguru import logger
 from openlist_ani.config import config
 from openlist_ani.core.bangumi.model import BangumiSubject, UserCollectionEntry
 
-
 # ------------------------------------------------------------------ #
 # Cache directory
 # ------------------------------------------------------------------ #
+
 
 def _cache_dir() -> Path:
     """Resolve the cache directory, creating it if needed."""
@@ -35,6 +35,7 @@ def _cache_dir() -> Path:
 # ------------------------------------------------------------------ #
 # Collection snapshot
 # ------------------------------------------------------------------ #
+
 
 @dataclass
 class CollectionSnapshot:
@@ -68,14 +69,18 @@ def _snapshot_from_entry(entry: UserCollectionEntry) -> CollectionSnapshot:
 def _snapshot_key(snap: CollectionSnapshot) -> tuple:
     """Return the comparison tuple for change detection."""
     return (
-        snap.rate, snap.collection_type, snap.comment,
-        tuple(snap.tags), snap.updated_at,
+        snap.rate,
+        snap.collection_type,
+        snap.comment,
+        tuple(snap.tags),
+        snap.updated_at,
     )
 
 
 # ------------------------------------------------------------------ #
 # Subject detail cache
 # ------------------------------------------------------------------ #
+
 
 @dataclass
 class CachedSubject:
@@ -111,6 +116,7 @@ def subject_to_cached(subj: BangumiSubject) -> CachedSubject:
 # JSON I/O
 # ------------------------------------------------------------------ #
 
+
 def load_collection_cache() -> dict[int, CollectionSnapshot]:
     """Load the collection snapshot cache from disk."""
     path = _cache_dir() / "collections_cache.json"
@@ -136,7 +142,9 @@ def save_collection_cache(snapshots: dict[int, CollectionSnapshot]) -> None:
     path = _cache_dir() / "collections_cache.json"
     data = [asdict(s) for s in snapshots.values()]
     try:
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         logger.debug(f"Saved collection cache: {len(data)} entries")
     except Exception as e:
         logger.warning(f"Failed to save collection cache: {e}")
@@ -166,7 +174,9 @@ def save_subject_cache(cache: dict[int, CachedSubject]) -> None:
     path = _cache_dir() / "subjects_cache.json"
     data = [asdict(s) for s in cache.values()]
     try:
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         logger.debug(f"Saved subject cache: {len(data)} entries")
     except Exception as e:
         logger.warning(f"Failed to save subject cache: {e}")
@@ -175,6 +185,7 @@ def save_subject_cache(cache: dict[int, CachedSubject]) -> None:
 # ------------------------------------------------------------------ #
 # Diff logic
 # ------------------------------------------------------------------ #
+
 
 def diff_collections(
     old: dict[int, CollectionSnapshot],
@@ -209,7 +220,9 @@ def diff_collections(
     return changed, removed
 
 
-def build_collection_cache(entries: list[UserCollectionEntry]) -> dict[int, CollectionSnapshot]:
+def build_collection_cache(
+    entries: list[UserCollectionEntry],
+) -> dict[int, CollectionSnapshot]:
     """Build a fresh collection cache from API entries."""
     return {
         entry.subject_id: _snapshot_from_entry(entry)
