@@ -8,9 +8,9 @@ COPY docker/entrypoint.sh /entrypoint.sh
 
 WORKDIR /
 
-RUN apk add --no-cache gcc musl-dev linux-headers rust cargo && \
+RUN apk add --no-cache gcc musl-dev linux-headers rust cargo make && \
     uv sync --frozen --no-cache && \
-    apk del gcc musl-dev linux-headers rust cargo && \
+    apk del gcc musl-dev linux-headers rust cargo make && \
     uv cache clean && \
     rm -rf \
         /var/cache/apk/* \
