@@ -35,7 +35,14 @@ WORKDIR /
 COPY --from=builder /.venv /.venv
 COPY --from=builder /entrypoint.sh /entrypoint.sh
 
+RUN addgroup -S -g 1000 openlistani && \
+    adduser -S -D -H -u 1000 -G openlistani openlistani && \
+    touch /config.toml && \
+    chown -R openlistani:openlistani /.venv /entrypoint.sh /config.toml
+
 ENV CONFIG_PATH=/config.toml
 ENV ENABLE_ASSISTANT=false
+
+USER openlistani
 
 CMD ["/entrypoint.sh"]
