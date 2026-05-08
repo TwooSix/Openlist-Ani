@@ -1,25 +1,24 @@
 """Create a new download task by magnet/torrent URL."""
 
-from openlist_ani.backend.client import BackendClient
-from openlist_ani.config import config
-from openlist_ani.database import db
+from openlist_ani.adapters.inbound.http.client import BackendClient
+from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.outbound.persistence import SqliteAnimeLibraryQueryAdapter
 
 
 async def _url_already_in_library(download_url: str) -> dict | None:
     """Return the existing library row for ``download_url`` if any.
 
-    The ``resources`` table uses ``url`` as the primary key, so inserting
-    a duplicate corrupts subsequent lookups.  We refuse the download
-    here as a hard guard rather than relying on the LLM to remember the
-    skill rules.
+    The ``anime_library_entries`` table treats ``url`` as a unique source
+    identity. We refuse duplicates here as a hard guard rather than relying
+    on the LLM to remember the skill rules.
     """
-    await db.init()
+    query_adapter = SqliteAnimeLibraryQueryAdapter()
     escaped = download_url.replace("'", "''")
     sql = (
         "SELECT title, anime_name, season, episode, downloaded_at "
-        f"FROM resources WHERE url = '{escaped}' LIMIT 1"
+        f"FROM anime_library_entries WHERE url = '{escaped}' LIMIT 1"
     )
-    rows = await db.execute_sql_query(sql)
+    rows = await query_adapter.execute_sql_query(sql)
     if not rows:
         return None
     first = rows[0]
@@ -52,14 +51,13 @@ async def run(
     if existing is not None:
         return (
             "Refusing to create download: this download_url is already "
-            "in the library and `url` is the primary key — re-inserting "
-            "would corrupt subsequent queries.\n"
+            "in the library.\n"
             f"Existing row: title={existing.get('title')!r}, "
             f"anime_name={existing.get('anime_name')!r}, "
             f"season={existing.get('season')}, "
             f"episode={existing.get('episode')}, "
             f"downloaded_at={existing.get('downloaded_at')}.\n"
-            "If the user really wants to re-download this resource, "
+            "If the user really wants to re-download this release, "
             "delete the existing row first or pick a different source URL."
         )
 

@@ -214,8 +214,7 @@ class GrepTool(BaseTool):
         footer_parts: list[str] = []
         if truncated:
             footer_parts.append(
-                f"… truncated to head_limit={head_limit}; "
-                f"narrow the query for more."
+                f"… truncated to head_limit={head_limit}; narrow the query for more."
             )
         if hits:
             footer_parts.append(f"⚠ {hits} secret-like fragment(s) redacted.")

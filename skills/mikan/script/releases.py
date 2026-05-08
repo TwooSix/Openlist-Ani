@@ -1,7 +1,7 @@
 """Fetch releases for a specific fansub group."""
 
-from openlist_ani.config import config
-from openlist_ani.core.mikan.client import MikanClient
+from openlist_ani.adapters.outbound.configuration import config
+from skills.mikan.lib.client import MikanClient
 
 
 async def run(
@@ -57,8 +57,7 @@ async def run(
         return f"No releases found for group {group_name} (GroupID:{group_id})."
 
     lines = [
-        f"Releases from {group_name} (GroupID:{group_id}) "
-        f"for bangumi {bangumi_id}:",
+        f"Releases from {group_name} (GroupID:{group_id}) for bangumi {bangumi_id}:",
         f"Total: {len(releases)} releases "
         f"(NOTE: multiple releases may be different language/quality "
         f"versions of the SAME episode — count unique episodes by "

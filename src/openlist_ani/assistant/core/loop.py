@@ -650,8 +650,7 @@ class AgenticLoop:
         # First hit: escalate token limit
         if max_tokens_override is None and max_output_tokens_recovery_count == 0:
             logger.info(
-                f"Max output tokens hit — escalating to "
-                f"{ESCALATED_MAX_TOKENS} tokens"
+                f"Max output tokens hit — escalating to {ESCALATED_MAX_TOKENS} tokens"
             )
             if response.text:
                 self._messages.append(
@@ -789,12 +788,14 @@ class AgenticLoop:
         await self._emit_tool_start_events(response, tool_names_used, queue)
 
         # Execute tools, collecting results until completion or interruption
-        completed_results, executed_tool_ids, interrupted = (
-            await self._execute_tools_until_interrupt(
-                response,
-                queue,
-                cancel_token,
-            )
+        (
+            completed_results,
+            executed_tool_ids,
+            interrupted,
+        ) = await self._execute_tools_until_interrupt(
+            response,
+            queue,
+            cancel_token,
         )
 
         # Handle tombstone injection based on interruption state

@@ -31,9 +31,8 @@ dependencies = [
 ]
 
 [project.scripts]
-openlist-ani = "openlist_ani.backend.main:main"
+openlist-ani = "openlist_ani.bootstrap.backend:main"
 openlist-ani-assistant = "openlist_ani.assistant:main"
-migrate-db = "openlist_ani.scripts.migrate_db:migrate"
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]

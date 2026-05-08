@@ -17,8 +17,8 @@ from typing import Any
 
 from loguru import logger
 
-from openlist_ani.config import config
-from openlist_ani.core.bangumi.model import BangumiSubject, UserCollectionEntry
+from openlist_ani.adapters.outbound.configuration import config
+from skills.bangumi.lib.model import BangumiSubject, UserCollectionEntry
 
 # ------------------------------------------------------------------ #
 # Cache directory

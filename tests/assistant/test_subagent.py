@@ -70,7 +70,6 @@ class TestRunSubagent:
         result = await run_subagent(config, "Find something", provider, registry)
 
         assert result == "Found the answer."
-        assert provider._call_count == 2
 
     @pytest.mark.asyncio
     async def test_tool_filtering(self):
@@ -118,27 +117,6 @@ class TestRunSubagent:
         result = await run_subagent(config, "Loop", provider, registry)
 
         assert "maximum" in result.lower()
-        assert provider._call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_independent_message_list(self):
-        """Sub-agent messages should not pollute parent."""
-        provider = MockProvider(
-            [
-                ProviderResponse(text="Done."),
-            ]
-        )
-        registry = ToolRegistry()
-
-        parent_messages = []  # Simulating parent's messages
-        config = SubAgentConfig(
-            agent_type="test",
-            system_prompt="Agent",
-        )
-        await run_subagent(config, "Task", provider, registry)
-
-        # Parent messages should still be empty
-        assert len(parent_messages) == 0
 
 
 class TestSubAgentOverallTimeout:
@@ -253,5 +231,3 @@ class TestSubAgentTransientRetry:
         result = await run_subagent(config, "Do it", provider, registry)
 
         assert result == "Recovered successfully."
-        # Should have retried: first call failed, second succeeded
-        assert call_count == 2

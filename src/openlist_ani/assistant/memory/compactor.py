@@ -290,8 +290,7 @@ class AutoCompactor:
             return None
 
         logger.info(
-            f"Autocompact triggered: {total_chars} chars > "
-            f"threshold {self._threshold}"
+            f"Autocompact triggered: {total_chars} chars > threshold {self._threshold}"
         )
 
         try:
@@ -407,8 +406,7 @@ class AutoCompactor:
             result = compacted_head + tail
             self._consecutive_failures = 0
             logger.info(
-                f"Partial compact complete: "
-                f"{len(messages)} → {len(result)} messages"
+                f"Partial compact complete: {len(messages)} → {len(result)} messages"
             )
             return result
         except Exception as e:

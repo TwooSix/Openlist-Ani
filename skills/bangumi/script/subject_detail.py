@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from openlist_ani.config import config
-from openlist_ani.core.bangumi.client import BangumiClient
+from openlist_ani.adapters.outbound.configuration import config
+from skills.bangumi.lib.client import BangumiClient
 
 
 def _format_basic_info(subject) -> list[str]:

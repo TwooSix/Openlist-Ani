@@ -193,8 +193,7 @@ Fetches web content and processes it with a focused sub-agent.
         assert isinstance(result, FetchResult)
         if result.status_code >= 400 or result.status_code == 0:
             return (
-                f"Error fetching {url}: "
-                f"HTTP {result.status_code} {result.status_text}"
+                f"Error fetching {url}: HTTP {result.status_code} {result.status_text}"
             )
 
         # 6. Convert HTML → Markdown

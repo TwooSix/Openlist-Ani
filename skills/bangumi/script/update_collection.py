@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from openlist_ani.config import config
-from openlist_ani.core.bangumi.client import BangumiClient
+from openlist_ani.adapters.outbound.configuration import config
+from skills.bangumi.lib.client import BangumiClient
 
 _STATUS_NAMES = {1: "wish", 2: "done", 3: "doing", 4: "on_hold", 5: "dropped"}
 

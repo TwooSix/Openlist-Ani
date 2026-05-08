@@ -1,7 +1,7 @@
 """List all active/recent download tasks."""
 
-from openlist_ani.backend.client import BackendClient
-from openlist_ani.config import config
+from openlist_ani.adapters.inbound.http.client import BackendClient
+from openlist_ani.adapters.outbound.configuration import config
 
 
 async def run(**kwargs) -> str:

@@ -16,9 +16,9 @@ from pathlib import Path
 
 from loguru import logger
 
-from openlist_ani.config import config
-from openlist_ani.core.bangumi.client import BangumiClient
-from openlist_ani.core.bangumi.model import UserCollectionEntry
+from openlist_ani.adapters.outbound.configuration import config
+from skills.bangumi.lib.client import BangumiClient
+from skills.bangumi.lib.model import UserCollectionEntry
 
 # ------------------------------------------------------------------ #
 # Sibling module loader (skill loader doesn't support relative imports)
@@ -447,9 +447,11 @@ async def run(**kwargs) -> str:
 
     client = BangumiClient(access_token=token)
     try:
-        existing_profile, analysis_data, has_changes = (
-            await _incremental_fetch_and_build(client)
-        )
+        (
+            existing_profile,
+            analysis_data,
+            has_changes,
+        ) = await _incremental_fetch_and_build(client)
 
         # Collect user's collection IDs for duplicate flagging
         all_entries = await _fetch_all_collections(client)
@@ -463,8 +465,7 @@ async def run(**kwargs) -> str:
     except Exception as e:
         logger.error(f"Error building taste profile: {e}")
         return (
-            f"Error fetching Bangumi data: {e}\n"
-            "Fall back to objective recommendations."
+            f"Error fetching Bangumi data: {e}\nFall back to objective recommendations."
         )
     finally:
         await client.close()

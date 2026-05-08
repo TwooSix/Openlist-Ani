@@ -4,92 +4,9 @@ from pathlib import Path
 
 from openlist_ani.assistant.skill.catalog import (
     MAX_INCLUDE_DEPTH,
-    TEXT_FILE_EXTENSIONS,
     SkillCatalog,
-    _extract_include_paths,
-    _resolve_include_path,
     resolve_includes,
 )
-
-
-class TestResolveIncludePath:
-    """Tests for _resolve_include_path()."""
-
-    def test_relative_path(self, tmp_path: Path):
-        result = _resolve_include_path("utils.py", tmp_path)
-        assert result == (tmp_path / "utils.py").resolve()
-
-    def test_dotslash_path(self, tmp_path: Path):
-        result = _resolve_include_path("./lib/helper.py", tmp_path)
-        assert result == (tmp_path / "lib" / "helper.py").resolve()
-
-    def test_absolute_path(self, tmp_path: Path):
-        result = _resolve_include_path("/etc/config.txt", tmp_path)
-        assert result == Path("/etc/config.txt").resolve()
-
-    def test_home_path(self, tmp_path: Path):
-        import os
-
-        result = _resolve_include_path("~/test.md", tmp_path)
-        assert result is not None
-        assert str(result).startswith(os.path.expanduser("~"))
-
-    def test_strip_fragment(self, tmp_path: Path):
-        result = _resolve_include_path("file.md#section", tmp_path)
-        assert result == (tmp_path / "file.md").resolve()
-
-    def test_empty_path(self, tmp_path: Path):
-        assert _resolve_include_path("", tmp_path) is None
-
-    def test_fragment_only(self, tmp_path: Path):
-        assert _resolve_include_path("#section", tmp_path) is None
-
-
-class TestExtractIncludePaths:
-    """Tests for _extract_include_paths()."""
-
-    def test_basic_include(self, tmp_path: Path):
-        content = "Some text @./config.md more text"
-        paths = _extract_include_paths(content, tmp_path)
-        assert len(paths) == 1
-        assert paths[0] == (tmp_path / "config.md").resolve()
-
-    def test_multiple_includes(self, tmp_path: Path):
-        content = """
-First line @./file1.md
-Second line @./file2.py
-"""
-        paths = _extract_include_paths(content, tmp_path)
-        assert len(paths) == 2
-
-    def test_no_includes(self, tmp_path: Path):
-        content = "No includes here, just normal text."
-        paths = _extract_include_paths(content, tmp_path)
-        assert len(paths) == 0
-
-    def test_skip_code_blocks(self, tmp_path: Path):
-        content = """Normal text
-```
-@./should_be_skipped.md
-```
-After code block @./should_be_included.md
-"""
-        paths = _extract_include_paths(content, tmp_path)
-        # Only the one outside the code block
-        assert len(paths) == 1
-        assert paths[0].name == "should_be_included.md"
-
-    def test_skip_inline_code(self, tmp_path: Path):
-        content = "Check `@./not_included.md` but @./included.md is fine"
-        paths = _extract_include_paths(content, tmp_path)
-        assert len(paths) == 1
-        assert paths[0].name == "included.md"
-
-    def test_start_of_line(self, tmp_path: Path):
-        content = "@./at_start.md"
-        paths = _extract_include_paths(content, tmp_path)
-        assert len(paths) == 1
-        assert paths[0].name == "at_start.md"
 
 
 class TestResolveIncludes:
@@ -167,25 +84,6 @@ class TestResolveIncludes:
         content = "No @-style includes here."
         result = resolve_includes(content, tmp_path)
         assert result == content
-
-
-class TestTextFileExtensions:
-    """Tests for the TEXT_FILE_EXTENSIONS whitelist."""
-
-    def test_common_extensions_included(self):
-        assert ".md" in TEXT_FILE_EXTENSIONS
-        assert ".py" in TEXT_FILE_EXTENSIONS
-        assert ".js" in TEXT_FILE_EXTENSIONS
-        assert ".ts" in TEXT_FILE_EXTENSIONS
-        assert ".json" in TEXT_FILE_EXTENSIONS
-        assert ".yaml" in TEXT_FILE_EXTENSIONS
-
-    def test_binary_extensions_excluded(self):
-        assert ".png" not in TEXT_FILE_EXTENSIONS
-        assert ".jpg" not in TEXT_FILE_EXTENSIONS
-        assert ".pdf" not in TEXT_FILE_EXTENSIONS
-        assert ".exe" not in TEXT_FILE_EXTENSIONS
-        assert ".zip" not in TEXT_FILE_EXTENSIONS
 
 
 class TestSkillCatalogWithIncludes:

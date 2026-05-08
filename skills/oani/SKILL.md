@@ -14,7 +14,7 @@ Openlist-Ani backend API reference.
 ## Actions
 
 - **query_library**: Execute SELECT queries against the anime resource database.
-  Table schema: `resources(id, url, title, anime_name, season, episode, fansub, quality, languages, version, downloaded_at)`
+  Table schema: `anime_library_entries(id, url, title, anime_name, season, episode, fansub, quality, languages, version, downloaded_at)`
 - **list_downloads**: List active/recent download tasks with status.
 - **create_download**: Submit a download task by magnet/torrent URL. Requires the
   resource's *real* `title` — never fabricate one (the backend parses it for

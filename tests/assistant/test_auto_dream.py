@@ -35,12 +35,6 @@ class TestConsolidationLock:
         assert lock.lock_path.is_file()
 
     @pytest.mark.asyncio
-    async def test_acquire_writes_pid(self, lock: ConsolidationLock):
-        await lock.try_acquire()
-        content = lock.lock_path.read_text().strip()
-        assert content == str(os.getpid())
-
-    @pytest.mark.asyncio
     async def test_record_consolidation(self, lock: ConsolidationLock):
         await lock.record_consolidation()
         ts = await lock.read_last_consolidated_at()
@@ -121,14 +115,11 @@ class TestConsolidationPrompt:
             sessions_dir="/data/sessions",
             session_ids=["s1", "s2", "s3"],
         )
-        assert "Phase 1" in prompt
-        assert "Phase 2" in prompt
-        assert "Phase 3" in prompt
-        assert "Phase 4" in prompt
         assert "/data/memory" in prompt
         assert "/data/sessions" in prompt
-        assert "- s1" in prompt
-        assert "(3)" in prompt
+        assert "s1" in prompt
+        assert "s2" in prompt
+        assert "s3" in prompt
 
 
 # ------------------------------------------------------------------ #

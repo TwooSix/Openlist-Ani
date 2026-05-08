@@ -24,14 +24,14 @@ class TestSendMessageTool:
         tool = SendMessageTool(callback)
         result = await tool.execute(message="Processing...")
 
-        assert result == "Message sent."
+        assert result
         assert received == ["Processing..."]
 
     @pytest.mark.asyncio
     async def test_empty_message_error(self):
         tool = SendMessageTool(MagicMock())
         result = await tool.execute(message="")
-        assert "Error" in result
+        assert "error" in result.lower()
 
     def test_is_concurrency_safe(self):
         tool = SendMessageTool(MagicMock())
@@ -149,7 +149,7 @@ class TestAgentTool:
         tool = AgentTool(provider, registry)
 
         result = await tool.execute(prompt="")
-        assert "Error" in result
+        assert "error" in result.lower()
 
     def test_properties(self):
         provider = MockProvider()

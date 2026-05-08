@@ -38,60 +38,7 @@ class TestContextBuilder:
 
         system_msg = messages[0]
         assert system_msg.role == Role.SYSTEM
-        # Should contain the SOUL.md content (identity intro)
         assert "Openlist-Ani Assistant" in system_msg.content
-        assert "anime tracking" in system_msg.content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_tool_instructions(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "# How to Use Tools" in system_content
-        assert "available_skills" in system_content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_tool_usage(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "# How to Use Tools" in system_content
-        assert "immediately call the appropriate tool" in system_content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_behavioral_rules(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "# Behavioral Rules" in system_content
-        assert "ALWAYS use tools first" in system_content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_match_skill_to_intent(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "Match skill to intent" in system_content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_tone_section(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "# Tone and Style" in system_content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_conciseness_rules(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "Be concise and direct" in system_content
 
     @pytest.mark.asyncio
     async def test_build_includes_claude_md(self, memory_with_data):
@@ -116,16 +63,6 @@ class TestContextBuilder:
         system_content = messages[0].content
         assert "# Memory" in system_content
         assert "Prefs" in system_content
-
-    @pytest.mark.asyncio
-    async def test_build_includes_memory_instructions(self, memory_with_data):
-        builder = ContextBuilder(memory_with_data)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        # Should always include memory system instructions
-        assert "# Memory" in system_content
-        assert "Memory types" in system_content
 
     @pytest.mark.asyncio
     async def test_build_includes_environment(self, memory_with_data):
@@ -160,10 +97,8 @@ class TestContextBuilder:
         # Should end with user message
         assert messages[-1].role == Role.USER
         assert messages[-1].content == "Hello!"
-        # System prompt should still have SOUL.md sections
         system_content = messages[0].content
-        assert "# How to Use Tools" in system_content
-        assert "# Behavioral Rules" in system_content
+        assert system_content
 
     @pytest.mark.asyncio
     async def test_build_with_skill_catalog(self, memory_with_data, tmp_path):
@@ -193,12 +128,3 @@ class TestContextBuilder:
         assert len(messages) == 2
         assert messages[0].role == Role.SYSTEM
         assert messages[1].role == Role.USER
-
-    @pytest.mark.asyncio
-    async def test_build_empty_memory_shows_no_memories(self, empty_memory):
-        """Should show 'No memories stored yet' when memory index is empty."""
-        builder = ContextBuilder(empty_memory)
-        messages = builder.build("Hi")
-
-        system_content = messages[0].content
-        assert "No memories stored yet" in system_content

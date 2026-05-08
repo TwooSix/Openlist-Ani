@@ -26,13 +26,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-import openlist_ani.core.parser.parser as parser_module  # noqa: E402
-from openlist_ani.config import config  # noqa: E402
-from openlist_ani.core.parser.llm.client import OpenAILLMClient  # noqa: E402
-from openlist_ani.core.parser.model import ParseResult  # noqa: E402
-from openlist_ani.core.parser.parser import parse_metadata  # noqa: E402
-from openlist_ani.core.website.model import (  # noqa: E402
-    AnimeResourceInfo,
+import openlist_ani.adapters.outbound.metadata_parser.parser as parser_module  # noqa: E402
+from openlist_ani.adapters.outbound.configuration import config  # noqa: E402
+from openlist_ani.adapters.outbound.metadata_parser.llm.client import OpenAILLMClient  # noqa: E402
+from openlist_ani.application.anime_library_ingestion.models import ParseResult  # noqa: E402
+from openlist_ani.adapters.outbound.metadata_parser.parser import parse_metadata  # noqa: E402
+from openlist_ani.domain.anime_release import (  # noqa: E402
+    AnimeRelease,
     LanguageType,
     VideoQuality,
 )
@@ -220,8 +220,8 @@ BUILT_IN_VALIDATION_CASES: list[ParserValidationCase] = [
 ]
 
 
-def make_entry(title: str) -> AnimeResourceInfo:
-    return AnimeResourceInfo(title=title, download_url="magnet:?xt=test")
+def make_entry(title: str) -> AnimeRelease:
+    return AnimeRelease(title=title, download_url="magnet:?xt=test")
 
 
 def _check_field(
@@ -389,7 +389,7 @@ async def main() -> None:
         _logger.add(
             _sys.stderr,
             level="DEBUG",
-            filter="openlist_ani.core.parser",
+            filter="openlist_ani.adapters.outbound.metadata_parser",
             format="<level>{level: <8}</level> | {message}",
         )
 
