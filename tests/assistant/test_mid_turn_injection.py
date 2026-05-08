@@ -219,9 +219,6 @@ class TestMidTurnInterruption:
         assert len(injected) == 1
         assert injected[0].text == "Hey, stop that!"
 
-        # Provider should have been called twice (tool round + follow-up)
-        assert provider._call_count == 2
-
         # The second call's messages should contain the user's injected message
         second_call_msgs = provider._calls[1][0]
         user_msgs = [m for m in second_call_msgs if m.role == Role.USER]

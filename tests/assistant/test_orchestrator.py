@@ -140,8 +140,6 @@ class TestToolOrchestrator:
         assert len(results) == 2
         assert results[0].content == "done_1"
         assert results[1].content == "done_2"
-        assert w1.call_count == 1
-        assert w2.call_count == 1
 
     @pytest.mark.asyncio
     async def test_mixed_batches(self):

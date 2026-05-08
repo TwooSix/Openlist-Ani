@@ -32,8 +32,7 @@ def _get_environment_section(
     cwd = str(__import__("pathlib").Path.cwd())
     os_info = f"{platform.system()} {platform.release()}"
     py_version = (
-        f"{sys.version_info.major}.{sys.version_info.minor}"
-        f".{sys.version_info.micro}"
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     )
     date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -51,8 +50,7 @@ def _get_environment_section(
 
     bullets = "\n".join(f" - {item}" for item in items)
     return (
-        f"# Environment\nYou have been invoked in the following environment:\n"
-        f"{bullets}"
+        f"# Environment\nYou have been invoked in the following environment:\n{bullets}"
     )
 
 

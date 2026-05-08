@@ -129,7 +129,7 @@ When refusing, quote the resolver's `collection_reason` verbatim (or
 the matched marker for RSS / Mikan) and tell the user:
 
 > OpenList-Ani does not currently support downloading collection
-> resources (matched: `<reason>`). Please supply a single-episode link
+> anime_library_entries (matched: `<reason>`). Please supply a single-episode link
 > or pick a non-collection source.
 
 Drop that candidate (or stop, if it was the only one).
@@ -147,7 +147,7 @@ Build a single `oani/query_library` call covering every candidate:
 
 ```
 SELECT title, anime_name, season, episode, downloaded_at
-FROM resources
+FROM anime_library_entries
 WHERE title IN ('<candidate1.title>', '<candidate2.title>', ...)
 ```
 

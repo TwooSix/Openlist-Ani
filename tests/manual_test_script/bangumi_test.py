@@ -20,7 +20,7 @@ import sys
 # Ensure project root is on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from openlist_ani.core.bangumi.client import BangumiClient
+from skills.bangumi.lib.client import BangumiClient
 
 # ---- Helper utilities ----
 
@@ -102,22 +102,18 @@ async def _test_llm_e2e() -> None:
     """Test 6: Full LLM E2E test (optional, requires OpenAI API key)."""
     _print_header("Test 6: Full LLM E2E test (optional)")
 
-    from openlist_ani.config import config as app_config
+    from openlist_ani.adapters.outbound.configuration import config as app_config
 
     if not app_config.llm.openai_api_key:
         print("  \u26a0\ufe0f  Skipped: OpenAI API key not configured\n")
         return
 
-    from unittest.mock import MagicMock
-
     import openlist_ani.assistant.skills as skills_mod
     from openlist_ani.assistant.assistant import AniAssistant
-    from openlist_ani.core.download import DownloadManager
 
     skills_mod._default_registry = None
 
-    dm = MagicMock(spec=DownloadManager)
-    assistant = AniAssistant(download_manager=dm)
+    assistant = AniAssistant()
     response = await assistant.process_message("推荐一部新番")
 
     assert response, "LLM returned empty response"

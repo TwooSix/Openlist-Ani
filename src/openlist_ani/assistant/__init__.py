@@ -46,7 +46,7 @@ async def _pick_session(storage) -> str | None:
 
 async def run() -> None:
     """Build the component chain and start the assistant."""
-    from openlist_ani.config import config
+    from openlist_ani.adapters.outbound.configuration import config
 
     from .core.context import ContextBuilder
     from .core.loop import AgenticLoop

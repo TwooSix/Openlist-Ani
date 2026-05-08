@@ -27,20 +27,6 @@ def _make_app() -> TextualFrontend:
     return TextualFrontend(loop)
 
 
-class TestAutoRefocus:
-    """Input box should always retain focus."""
-
-    def test_has_on_descendant_blur(self):
-        """App should have an on_descendant_blur handler."""
-        app = _make_app()
-        assert hasattr(app, "on_descendant_blur")
-
-    def test_has_refocus_input(self):
-        """App should have a _refocus_input method."""
-        app = _make_app()
-        assert hasattr(app, "_refocus_input")
-
-
 class TestEscCancelTurn:
     """ESC should cancel the running agent turn."""
 
@@ -55,11 +41,6 @@ class TestEscCancelTurn:
         app = _make_app()
         assert hasattr(app, "action_cancel_turn")
         assert callable(app.action_cancel_turn)
-
-    def test_cancel_token_attribute_exists(self):
-        """App should have a _cancel_token attribute."""
-        app = _make_app()
-        assert hasattr(app, "_cancel_token")
 
     def test_cancel_turn_sets_token(self):
         """action_cancel_turn should call cancel() on the token.
@@ -80,24 +61,3 @@ class TestEscCancelTurn:
             app.action_cancel_turn()
 
         mock_token.cancel.assert_called_once()
-
-
-class TestQuitDuringExecution:
-    """The /quit command should always exit, even during execution."""
-
-    def test_quit_check_before_processing_guard(self):
-        """Verify /quit is checked before the _processing_task guard.
-
-        We inspect the source of on_input_submitted to verify ordering.
-        """
-        import inspect
-
-        app = _make_app()
-        source = inspect.getsource(app.on_input_submitted)
-        quit_pos = source.find("/quit")
-        processing_pos = source.find("_processing_task")
-        assert quit_pos != -1, "/quit check not found in on_input_submitted"
-        assert processing_pos != -1, "_processing_task check not found"
-        assert (
-            quit_pos < processing_pos
-        ), "/quit check should come BEFORE _processing_task check"

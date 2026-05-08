@@ -1,12 +1,12 @@
 """Parse an RSS feed and return its resource entries.
 
 Calls the backend ``/api/parse_rss`` endpoint, which reuses the same
-website parsers used by the RSS monitor.  The assistant should pick the
+feed sources used by the RSS monitor.  The assistant should pick the
 desired entries and submit each via ``oani/create_download``.
 """
 
-from openlist_ani.backend.client import BackendClient
-from openlist_ani.config import config
+from openlist_ani.adapters.inbound.http.client import BackendClient
+from openlist_ani.adapters.outbound.configuration import config
 
 
 async def run(

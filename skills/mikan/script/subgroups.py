@@ -1,7 +1,7 @@
 """List available fansub groups for a bangumi."""
 
-from openlist_ani.config import config
-from openlist_ani.core.mikan.client import MikanClient
+from openlist_ani.adapters.outbound.configuration import config
+from skills.mikan.lib.client import MikanClient
 
 
 async def run(

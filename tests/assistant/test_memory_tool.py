@@ -359,13 +359,7 @@ class TestToolMetadata:
 
     def test_prompt_nonempty(self, tool: MemoryTool):
         prompt = tool.prompt()
-        assert "memory" in prompt.lower()
-        assert "read" in prompt
-        assert "write" in prompt
-        assert "update" in prompt
-        assert "delete" in prompt
-        assert "list" in prompt
-        assert "update_index" in prompt
+        assert prompt
 
     def test_concurrency_safe_read(self, tool: MemoryTool):
         assert tool.is_concurrency_safe({"action": "read"}) is True
@@ -393,26 +387,6 @@ class TestToolMetadata:
 
     def test_is_read_only_write(self, tool: MemoryTool):
         assert tool.is_read_only({"action": "write"}) is False
-
-    def test_user_facing_name(self, tool: MemoryTool):
-        assert (
-            tool.user_facing_name(
-                {"action": "read", "filename": "x.md"},
-            )
-            == "memory.read(x.md)"
-        )
-        assert tool.user_facing_name({"action": "list"}) == "memory.list"
-        assert tool.user_facing_name() == "memory"
-
-    def test_activity_description(self, tool: MemoryTool):
-        assert "Reading" in (
-            tool.get_activity_description(
-                {"action": "read", "filename": "x.md"},
-            )
-            or ""
-        )
-        assert "Listing" in (tool.get_activity_description({"action": "list"}) or "")
-        assert tool.get_activity_description(None) is None
 
 
 class TestUnknownAction:

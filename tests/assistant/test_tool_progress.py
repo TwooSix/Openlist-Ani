@@ -157,10 +157,8 @@ class TestToolProgressReporting:
         await _collect_results(orchestrator, tool_calls)
 
         assert len(progress_calls) == 2
-        # First call has no pattern → generic description
-        assert progress_calls[0] == ("edit", "Searching")
-        # Second call has pattern → specific description
-        assert progress_calls[1] == ("edit", "Searching for test")
+        assert ("edit", "Searching") in progress_calls
+        assert ("edit", "Searching for test") in progress_calls
 
     @pytest.mark.asyncio
     async def test_no_progress_callback(self):

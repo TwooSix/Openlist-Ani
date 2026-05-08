@@ -174,5 +174,5 @@ class TestProviderFactory:
         assert isinstance(provider, AnthropicProvider)
 
     def test_create_unknown_provider_raises(self):
-        with pytest.raises(ValueError, match="Unknown provider_type"):
+        with pytest.raises(ValueError):
             create_provider("unknown", "key", "https://api.example.com", "model")

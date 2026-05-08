@@ -208,8 +208,7 @@ def redact_secrets(text: str) -> tuple[str, int]:
 
     if hits:
         logger.warning(
-            f"redact_secrets: redacted {hits} secret-like fragment(s) "
-            f"from tool output"
+            f"redact_secrets: redacted {hits} secret-like fragment(s) from tool output"
         )
 
     return scrubbed, hits

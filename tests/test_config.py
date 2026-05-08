@@ -1,24 +1,29 @@
 """Tests for ConfigManager and Pydantic config models."""
 
 import os
+import subprocess
+import sys
 
 import pytest
 from pydantic import ValidationError
 
-from openlist_ani.config import (
+from openlist_ani.adapters.outbound.configuration import (
     AssistantConfig,
     BotConfig,
     ConfigManager,
+    ConfigValidator,
+    DownloaderConfig,
+    FileRenamerConfig,
     LLMConfig,
     LogConfig,
     MetadataFilterConfig,
+    MetadataParserConfig,
     NotificationConfig,
     OpenListConfig,
     ProxyConfig,
     RSSConfig,
     UserConfig,
 )
-from openlist_ani.core.download.api.model import OfflineDownloadTool
 
 # ===========================================================================
 # Pydantic model defaults & validation
@@ -43,15 +48,19 @@ class TestOpenListConfig:
         assert cfg.url == "http://localhost:5244"
         assert cfg.token == ""
         assert cfg.download_path == "/"
-        assert cfg.offline_download_tool == OfflineDownloadTool.QBITTORRENT
+        assert cfg.offline_download_tool == "qBittorrent"
 
-    def test_offline_tool_enum(self):
-        cfg = OpenListConfig(offline_download_tool="aria2")
-        assert cfg.offline_download_tool == OfflineDownloadTool.ARIA2
+    def test_offline_tool_strips_whitespace(self):
+        cfg = OpenListConfig(offline_download_tool=" aria2 ")
+        assert cfg.offline_download_tool == "aria2"
 
-    def test_invalid_offline_tool_raises(self):
+    def test_offline_tool_normalizes_known_tool_case(self):
+        cfg = OpenListConfig(offline_download_tool=" QBittorrent ")
+        assert cfg.offline_download_tool == "qBittorrent"
+
+    def test_empty_offline_tool_raises(self):
         with pytest.raises(ValidationError):
-            OpenListConfig(offline_download_tool="invalid_tool")
+            OpenListConfig(offline_download_tool="")
 
 
 class TestLLMConfig:
@@ -113,6 +122,9 @@ class TestUserConfig:
     def test_defaults(self):
         """UserConfig should be constructable with no arguments."""
         cfg = UserConfig()
+        assert isinstance(cfg.downloader, DownloaderConfig)
+        assert isinstance(cfg.file_renamer, FileRenamerConfig)
+        assert isinstance(cfg.metadata_parser, MetadataParserConfig)
         assert isinstance(cfg.rss, RSSConfig)
         assert isinstance(cfg.openlist, OpenListConfig)
         assert isinstance(cfg.llm, LLMConfig)
@@ -144,16 +156,6 @@ class TestUserConfig:
         assert cfg.notification.enabled is True
         assert len(cfg.notification.bots) == 1
 
-    def test_extra_fields_ignored_or_error(self):
-        """Extra unknown sections should either be ignored or raise — not crash."""
-        data = {"unknown_section": {"key": "value"}}
-        try:
-            UserConfig.model_validate(data)
-            # If it succeeds, that's fine (extra fields ignored)
-        except ValidationError:
-            # If Pydantic forbids extra fields, that's also acceptable
-            pass
-
 
 # ===========================================================================
 # ConfigManager
@@ -161,6 +163,25 @@ class TestUserConfig:
 
 
 class TestConfigManager:
+    def test_package_import_has_no_file_side_effect(self, tmp_path):
+        """Importing configuration symbols should not create config.toml."""
+        script = "\n".join(
+            [
+                "from pathlib import Path",
+                "from openlist_ani.adapters.outbound.configuration import ConfigManager",
+                "raise SystemExit(1 if Path('config.toml').exists() else 0)",
+            ]
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr or result.stdout
+
     def test_creates_file_if_missing(self, tmp_path, monkeypatch):
         """ConfigManager should create config.toml if it doesn't exist."""
         monkeypatch.chdir(tmp_path)
@@ -182,7 +203,7 @@ class TestConfigManager:
         assert mgr.rss.urls == ["http://test.rss"]
         assert mgr.rss.interval_time == 60
 
-    def test_reload_on_file_change(self, tmp_path, monkeypatch):
+    def test_new_manager_loads_file_change(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         assert mgr.rss.urls == []
@@ -190,12 +211,13 @@ class TestConfigManager:
         # Modify the file
         from tomlkit import dumps as toml_dumps
 
-        data = UserConfig(rss=RSSConfig(urls=["http://new.rss"])).model_dump()
+        data = UserConfig(rss=RSSConfig(urls=["https://new.rss"])).model_dump()
         (tmp_path / "config.toml").write_text(toml_dumps(data), encoding="utf-8")
 
-        # Force reload (touch mtime)
-        mgr.reload()
-        assert "http://new.rss" in mgr.rss.urls
+        assert mgr.rss.urls == []
+
+        mgr2 = ConfigManager("config.toml")
+        assert "https://new.rss" in mgr2.rss.urls
 
     def test_corrupt_toml_no_crash(self, tmp_path, monkeypatch):
         """Corrupt TOML should log error but not crash."""
@@ -208,7 +230,7 @@ class TestConfigManager:
         # Default config remains
         assert mgr.rss.urls == []
 
-    def test_save_and_reload(self, tmp_path, monkeypatch):
+    def test_save_and_new_manager_loads(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         mgr._config.rss.urls.append("http://saved.rss")
@@ -232,6 +254,8 @@ class TestConfigManager:
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         assert isinstance(mgr.rss, RSSConfig)
+        assert isinstance(mgr.downloader, DownloaderConfig)
+        assert isinstance(mgr.file_renamer, FileRenamerConfig)
         assert isinstance(mgr.openlist, OpenListConfig)
         assert isinstance(mgr.llm, LLMConfig)
         assert isinstance(mgr.notification, NotificationConfig)
@@ -239,20 +263,44 @@ class TestConfigManager:
         assert isinstance(mgr.assistant, AssistantConfig)
         assert isinstance(mgr.proxy, ProxyConfig)
 
+    def test_package_import_loads_config_without_environment_cycle(self, tmp_path):
+        """Fresh process import should not trip a settings/environment cycle."""
+        from tomlkit import dumps as toml_dumps
+
+        config_file = tmp_path / "config.toml"
+        data = UserConfig(proxy=ProxyConfig(http="http://127.0.0.1:7890")).model_dump()
+        config_file.write_text(toml_dumps(data), encoding="utf-8")
+
+        script = "\n".join(
+            [
+                "from openlist_ani.adapters.outbound.configuration import config",
+                "raise SystemExit(1 if config.load_failed else 0)",
+            ]
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr or result.stdout
+
 
 class TestConfigValidation:
     def test_validate_no_rss_urls(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         # No RSS URLs → should fail
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_no_openlist_url(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         mgr._config.rss.urls = ["http://feed"]
         mgr._config.openlist.url = ""
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_no_openlist_token(self, tmp_path, monkeypatch):
         """Missing token should now be an error (required for auth)."""
@@ -262,7 +310,7 @@ class TestConfigValidation:
         mgr._config.openlist.url = "http://localhost"
         mgr._config.openlist.token = ""
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_pass_minimal(self, tmp_path, monkeypatch):
         """Minimal valid config: rss.urls + openlist.url + openlist.token + llm key."""
@@ -273,17 +321,7 @@ class TestConfigValidation:
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr.save()
-        assert mgr.validate() is True
-
-    def test_validate_pass(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
-        mgr._config.openlist.token = "tok"
-        mgr._config.llm.openai_api_key = "key"
-        mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     # -- Notification dependency checks --
 
@@ -297,7 +335,7 @@ class TestConfigValidation:
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = []
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_notification_telegram_missing_bot_token(
         self, tmp_path, monkeypatch
@@ -313,7 +351,7 @@ class TestConfigValidation:
             BotConfig(type="telegram", config={"user_id": 123})
         ]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_notification_telegram_missing_user_id(
         self, tmp_path, monkeypatch
@@ -329,7 +367,7 @@ class TestConfigValidation:
             BotConfig(type="telegram", config={"bot_token": "abc"})
         ]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_notification_telegram_valid(self, tmp_path, monkeypatch):
         """Telegram bot with valid config → pass."""
@@ -344,7 +382,7 @@ class TestConfigValidation:
             BotConfig(type="telegram", config={"bot_token": "abc", "user_id": 123})
         ]
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_validate_notification_pushplus_missing_user_token(
         self, tmp_path, monkeypatch
@@ -358,7 +396,7 @@ class TestConfigValidation:
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = [BotConfig(type="pushplus", config={})]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_notification_pushplus_valid(self, tmp_path, monkeypatch):
         """PushPlus bot with valid config → pass."""
@@ -373,7 +411,7 @@ class TestConfigValidation:
             BotConfig(type="pushplus", config={"user_token": "tok123"})
         ]
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_validate_notification_disabled_skips_bot_checks(
         self, tmp_path, monkeypatch
@@ -390,7 +428,7 @@ class TestConfigValidation:
             BotConfig(type="telegram", config={})  # Invalid but disabled
         ]
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_validate_notification_disabled_bot_skipped(self, tmp_path, monkeypatch):
         """Enabled notification with a disabled bot should skip that bot's check."""
@@ -408,7 +446,7 @@ class TestConfigValidation:
             BotConfig(type="pushplus", config={"user_token": "tok123"}),
         ]
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     # -- Assistant dependency checks --
 
@@ -424,7 +462,7 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = ""
         mgr._config.assistant.telegram.allowed_users = [123]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_assistant_enabled_no_allowed_users(self, tmp_path, monkeypatch):
         """Assistant enabled without allowed_users → warning (not error)."""
@@ -439,7 +477,7 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.allowed_users = []
         mgr.save()
         # Empty allowed_users is allowed (= allow all) but produces a warning
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_validate_assistant_enabled_no_llm_key(self, tmp_path, monkeypatch):
         """Assistant enabled without LLM key → error (assistant depends on LLM)."""
@@ -453,7 +491,7 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = [123]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_assistant_enabled_valid(self, tmp_path, monkeypatch):
         """Assistant with all dependencies → pass."""
@@ -467,7 +505,7 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = [123]
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_validate_assistant_disabled_skips_checks(self, tmp_path, monkeypatch):
         """Disabled assistant should not trigger its dependency errors."""
@@ -481,7 +519,7 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = ""
         mgr._config.assistant.telegram.allowed_users = []
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
 
 class TestProxyEnvVars:
@@ -515,18 +553,25 @@ class TestProxyEnvVars:
         assert os.environ.get("HTTP_PROXY") is None
         assert os.environ.get("HTTPS_PROXY") is None
 
-    def test_data_property_triggers_reload(self, tmp_path, monkeypatch):
-        """Accessing .data should check mtime and reload if changed."""
+    def test_data_property_returns_snapshot(self, tmp_path, monkeypatch):
+        """Accessing .data should not implicitly reload changed files."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
 
-        # Access data — should not crash
-        d = mgr.data
-        assert isinstance(d, UserConfig)
+        from tomlkit import dumps as toml_dumps
+
+        data = UserConfig(rss=RSSConfig(urls=["https://new.rss"])).model_dump()
+        (tmp_path / "config.toml").write_text(toml_dumps(data), encoding="utf-8")
+
+        assert isinstance(mgr.data, UserConfig)
+        assert mgr.data.rss.urls == []
+
+        mgr2 = ConfigManager("config.toml")
+        assert mgr2.data.rss.urls == ["https://new.rss"]
 
 
 class TestRenameFormatValidation:
-    """Tests for rename_format field validation in ConfigManager.validate()."""
+    """Tests for rename_format field validation in ConfigValidator."""
 
     def test_valid_default_format_passes(self, tmp_path, monkeypatch):
         """Default rename_format should pass validation."""
@@ -537,7 +582,7 @@ class TestRenameFormatValidation:
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_valid_custom_format_passes(self, tmp_path, monkeypatch):
         """Custom format with only supported fields should pass."""
@@ -549,7 +594,7 @@ class TestRenameFormatValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.openlist.rename_format = "{anime_name} E{episode:02d}"
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_unsupported_field_fails(self, tmp_path, monkeypatch):
         """Format with unsupported field name should fail validation."""
@@ -561,7 +606,7 @@ class TestRenameFormatValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.openlist.rename_format = "{anime_name} {nonexistent_field}"
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_empty_format_no_error(self, tmp_path, monkeypatch):
         """Empty format string should not cause validation error."""
@@ -573,7 +618,7 @@ class TestRenameFormatValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.openlist.rename_format = ""
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_all_supported_fields_pass(self, tmp_path, monkeypatch):
         """Format using all supported fields should pass."""
@@ -587,7 +632,7 @@ class TestRenameFormatValidation:
             "{anime_name} S{season}E{episode} {fansub} {quality} {languages}"
         )
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
 
 class TestRSSConfigStrict:
@@ -641,7 +686,7 @@ class TestMetadataFilterConfig:
 
 
 class TestExcludePatternsValidation:
-    """Tests for exclude_patterns regex validation in ConfigManager.validate()."""
+    """Tests for exclude_patterns regex validation in ConfigValidator."""
 
     def test_valid_patterns_pass(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -652,7 +697,7 @@ class TestExcludePatternsValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.rss.filter.exclude_patterns = ["合集", "SP\\d+", "HEVC"]
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_invalid_regex_fails(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -663,7 +708,7 @@ class TestExcludePatternsValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.rss.filter.exclude_patterns = ["[invalid"]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_empty_patterns_pass(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -674,7 +719,7 @@ class TestExcludePatternsValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.rss.filter.exclude_patterns = []
         mgr.save()
-        assert mgr.validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_mixed_valid_invalid_fails(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -685,4 +730,4 @@ class TestExcludePatternsValidation:
         mgr._config.llm.openai_api_key = "key"
         mgr._config.rss.filter.exclude_patterns = ["valid_regex", "(unclosed"]
         mgr.save()
-        assert mgr.validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False

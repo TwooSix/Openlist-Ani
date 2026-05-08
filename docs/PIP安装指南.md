@@ -25,7 +25,6 @@ pip install openlist-ani
 |------|------|
 | `openlist-ani` | 主程序（RSS 监控 + 自动下载 + 重命名） |
 | `openlist-ani-assistant` | AI 智能助理（Telegram Bot 或本地 CLI） |
-| `migrate-db` | 数据库迁移工具 |
 
 ## 第二步：创建配置文件
 

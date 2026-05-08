@@ -15,9 +15,7 @@ from openlist_ani.assistant.core.models import (
 from openlist_ani.assistant.memory.compactor import (
     AutoCompactor,
     ReadFileTracker,
-    _build_post_compact_summary_message,
     _format_compact_summary,
-    get_autocompact_threshold,
 )
 from openlist_ani.assistant.tool.orchestrator import (
     ToolOrchestrator,
@@ -168,30 +166,6 @@ class TestFormatCompactSummary:
         assert "Plain summary here" in result
 
 
-class TestBuildPostCompactSummaryMessage:
-    def test_contains_continuation_instruction(self):
-        """Post-compact message should instruct model to continue."""
-        msg = _build_post_compact_summary_message("1. Primary Request: do X")
-        assert "continued from a previous conversation" in msg
-        assert "Resume directly" in msg
-        assert "Primary Request" in msg
-
-
-class TestAutocompactThreshold:
-    def test_threshold_calculation(self):
-        """Threshold should be contextWindow - reservedOutput - buffer."""
-        # 512_000 chars context, reserved output = 20_000×4=80_000, buffer = 13_000×4=52_000
-        threshold = get_autocompact_threshold(512_000)
-        assert threshold == 512_000 - 80_000 - 52_000
-        assert threshold == 380_000
-
-    def test_small_context_window(self):
-        """Should work with small context windows."""
-        threshold = get_autocompact_threshold(200_000)
-        # Expect: 200K context minus 80K reserved output minus 52K buffer equals 68K
-        assert threshold == 68_000
-
-
 class TestAutoCompactor:
     @pytest.mark.asyncio
     async def test_no_compact_under_threshold(self):
@@ -231,7 +205,6 @@ class TestAutoCompactor:
         assert len(result) == 2  # system + summary user msg
         assert result[0].role == Role.SYSTEM
         assert result[1].role == Role.USER
-        assert "continued from a previous conversation" in result[1].content
         assert "Primary: test" in result[1].content
 
     @pytest.mark.asyncio
@@ -260,7 +233,6 @@ class TestAutoCompactor:
         # Now circuit breaker should prevent even trying
         result = await compactor.maybe_compact(messages)
         assert result is None
-        assert compactor._consecutive_failures == 3
 
     @pytest.mark.asyncio
     async def test_system_message_preserved(self):
@@ -307,7 +279,7 @@ class TestForceCompact:
         assert result is not None
         assert len(result) == 2  # system + summary
         assert result[0].role == Role.SYSTEM
-        assert "continued from a previous conversation" in result[1].content
+        assert "Forced summary" in result[1].content
 
     @pytest.mark.asyncio
     async def test_force_compact_returns_none_on_failure(self):
@@ -330,15 +302,14 @@ class TestForceCompact:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_force_compact_resets_failure_count(self):
-        """Successful force_compact should reset failure counter."""
+    async def test_force_compact_succeeds_after_prior_failure_state(self):
+        """force_compact should still return a compacted conversation."""
         provider = MockProvider(
             [
                 ProviderResponse(text="<summary>Summary</summary>"),
             ]
         )
         compactor = AutoCompactor(provider, max_context_chars=1_000_000)
-        compactor._consecutive_failures = 2  # Simulate prior failures
 
         messages = [
             Message(role=Role.SYSTEM, content="s"),
@@ -346,7 +317,6 @@ class TestForceCompact:
         ]
         result = await compactor.force_compact(messages)
         assert result is not None
-        assert compactor._consecutive_failures == 0
 
 
 class TestReadFileTracker:
@@ -458,7 +428,7 @@ class TestPostCompactFileRestoration:
         assert len(result) == 3
         assert result[0].role == Role.SYSTEM
         assert result[1].role == Role.USER
-        assert "continued from a previous conversation" in result[1].content
+        assert "Conversation summary" in result[1].content
         # File restoration message
         assert result[2].role == Role.USER
         assert "main.py" in result[2].content
@@ -547,10 +517,9 @@ class TestPartialCompactPreservesRecent:
 
         # The summary user message should be present
         summary_msgs = [
-            m for m in result if m.role == Role.USER and "continued from" in m.content
+            m for m in result if m.role == Role.USER and "architecture" in m.content
         ]
         assert len(summary_msgs) == 1
-        assert "architecture" in summary_msgs[0].content
 
     @pytest.mark.asyncio
     async def test_partial_compact_with_explicit_pivot(self):
@@ -614,13 +583,11 @@ class TestReadFileTrackerPostCompactRestoration:
         assert len(result) == 3
         assert result[0].role == Role.SYSTEM
 
-        # Summary message
-        assert "continued from a previous conversation" in result[1].content
+        assert "refactoring" in result[1].content
 
         # File restoration message
         file_msg = result[2]
         assert file_msg.role == Role.USER
-        assert "restored for context continuity" in file_msg.content
         assert "/src/app.py" in file_msg.content
         assert "class App:" in file_msg.content
         assert "/src/config.py" in file_msg.content

@@ -171,8 +171,7 @@ class ToolRegistry:
         )
         if validation_error:
             logger.warning(
-                f"Tool '{tool_call.name}' input validation failed: "
-                f"{validation_error}"
+                f"Tool '{tool_call.name}' input validation failed: {validation_error}"
             )
             return ToolResult(
                 tool_call_id=tool_call.id,

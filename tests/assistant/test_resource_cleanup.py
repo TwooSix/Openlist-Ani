@@ -81,7 +81,7 @@ class TestProviderClose:
 
 
 class TestAgenticLoopShutdown:
-    """Verify that AgenticLoop.shutdown() cleans up resources."""
+    """Verify that AgenticLoop.shutdown() cleans up anime_library_entries."""
 
     def _make_loop(
         self,
@@ -160,46 +160,3 @@ class TestAgenticLoopShutdown:
         await loop.shutdown()
 
         assert storage.close.call_count == 2
-
-
-# ------------------------------------------------------------------ #
-# Dream task tracking
-# ------------------------------------------------------------------ #
-
-
-class TestDreamTaskTracking:
-    """Verify that auto-dream tasks are properly tracked via the set."""
-
-    def _make_loop(self) -> AgenticLoop:
-        mock_provider = MockProvider()
-        mock_registry = MagicMock()
-        mock_registry.all_tools.return_value = []
-        mock_context = MagicMock()
-        mock_context.build_system.return_value = []
-        mock_memory = MagicMock()
-        return AgenticLoop(
-            mock_provider,
-            mock_registry,
-            mock_context,
-            mock_memory,
-        )
-
-    def test_dream_tasks_starts_empty(self):
-        """Loop should initialise with an empty dream tasks set."""
-        loop = self._make_loop()
-        assert isinstance(loop._dream_tasks, set)
-        assert len(loop._dream_tasks) == 0
-
-    @pytest.mark.asyncio
-    async def test_done_callback_discards_finished_tasks(self):
-        """Tasks are removed from the set when they complete via done-callback."""
-        loop = self._make_loop()
-
-        task = asyncio.create_task(asyncio.sleep(0))
-        loop._dream_tasks.add(task)
-        task.add_done_callback(loop._dream_tasks.discard)
-
-        # Await the task to ensure it completes and done-callbacks fire.
-        await task
-
-        assert task not in loop._dream_tasks

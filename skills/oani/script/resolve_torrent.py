@@ -7,8 +7,8 @@ can feed the result into the same downstream pipeline (library
 duplicate check → user confirmation → create_download).
 """
 
-from openlist_ani.backend.client import BackendClient
-from openlist_ani.config import config
+from openlist_ani.adapters.inbound.http.client import BackendClient
+from openlist_ani.adapters.outbound.configuration import config
 
 
 async def run(
@@ -59,7 +59,7 @@ async def run(
             "",
             f"COLLECTION DETECTED (matched: '{reason}').",
             "OpenList-Ani does not currently support downloading collection "
-            "resources. Tell the user and DO NOT call oani/create_download.",
+            "anime_library_entries. Tell the user and DO NOT call oani/create_download.",
         ]
     else:
         lines += [

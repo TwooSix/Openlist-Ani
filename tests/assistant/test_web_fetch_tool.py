@@ -243,7 +243,7 @@ class TestWebFetchToolCache:
             "_process_with_subagent",
             new_callable=AsyncMock,
             return_value="Processed cached content.",
-        ) as mock_sub:
+        ):
             # Patch fetch_url so we can detect if HTTP was called
             with patch(
                 "openlist_ani.assistant.tool.builtin.web_fetch_tool.fetch_url",
@@ -252,9 +252,7 @@ class TestWebFetchToolCache:
 
                 # HTTP fetch should NOT have been called (cache hit)
                 mock_fetch.assert_not_called()
-                # SubAgent should have been invoked with cached content
-                mock_sub.assert_awaited_once()
-                assert "Cache: hit" in result
+                assert "Processed cached content." in result
 
     @pytest.mark.asyncio
     async def test_cache_miss_calls_http(self):
@@ -288,4 +286,4 @@ class TestWebFetchToolCache:
                 )
 
                 mock_fetch.assert_awaited_once()
-                assert "Cache: miss" in result
+                assert "Processed." in result

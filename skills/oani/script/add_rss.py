@@ -1,7 +1,7 @@
 """Add a new RSS feed URL for monitoring."""
 
-from openlist_ani.backend.client import BackendClient
-from openlist_ani.config import config
+from openlist_ani.adapters.inbound.http.client import BackendClient
+from openlist_ani.adapters.outbound.configuration import config
 
 
 async def run(
