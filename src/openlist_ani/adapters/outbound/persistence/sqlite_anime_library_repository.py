@@ -18,9 +18,9 @@ class SqliteAnimeLibraryRepository:
 
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                CREATE TABLE IF NOT EXISTS anime_library_entries (
+                CREATE TABLE IF NOT EXISTS resources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    url TEXT UNIQUE NOT NULL,
+                    url TEXT NOT NULL,
                     title TEXT UNIQUE NOT NULL,
                     anime_name TEXT,
                     season INTEGER,
@@ -32,12 +32,10 @@ class SqliteAnimeLibraryRepository:
                     downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """)
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_title ON anime_library_entries(title)"
-            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_title ON resources(title)")
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_anime_episode "
-                "ON anime_library_entries(anime_name, season, episode)"
+                "ON resources(anime_name, season, episode)"
             )
             await db.commit()
 
@@ -45,7 +43,7 @@ class SqliteAnimeLibraryRepository:
         """Check if a release has already been ingested based on title."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM anime_library_entries WHERE title = ?", (title,)
+                "SELECT 1 FROM resources WHERE title = ?", (title,)
             )
             row = await cursor.fetchone()
             return row is not None
@@ -70,7 +68,7 @@ class SqliteAnimeLibraryRepository:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT fansub, quality, languages, version "
-                "FROM anime_library_entries "
+                "FROM resources "
                 "WHERE anime_name = ? AND season = ? AND episode = ?",
                 (anime_name, season, episode),
             )
@@ -81,7 +79,7 @@ class SqliteAnimeLibraryRepository:
         """Remove a library entry by title."""
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
-                "DELETE FROM anime_library_entries WHERE title = ?",
+                "DELETE FROM resources WHERE title = ?",
                 (title,),
             )
             await conn.commit()
@@ -99,7 +97,7 @@ class SqliteAnimeLibraryRepository:
 
                 await db.execute(
                     """
-                    INSERT OR IGNORE INTO anime_library_entries
+                    INSERT OR IGNORE INTO resources
                     (
                         url,
                         title,
