@@ -1,5 +1,7 @@
 """Tests for SqliteAnimeLibraryQueryAdapter SQL keyword filtering."""
 
+import sqlite3
+
 import pytest
 
 from openlist_ani.adapters.outbound.persistence import (
@@ -24,10 +26,10 @@ class TestExecuteSqlQueryKeywordFilter:
     @pytest.mark.parametrize(
         "sql",
         [
-            "SELECT 1; DROP TABLE anime_library_entries",
-            "SELECT 1 FROM anime_library_entries; DELETE FROM anime_library_entries",
-            "SELECT 1; INSERT INTO anime_library_entries(url, title) VALUES('a', 'b')",
-            "SELECT 1; UPDATE anime_library_entries SET title='x'",
+            "SELECT 1; DROP TABLE resources",
+            "SELECT 1 FROM resources; DELETE FROM resources",
+            "SELECT 1; INSERT INTO resources(url, title) VALUES('a', 'b')",
+            "SELECT 1; UPDATE resources SET title='x'",
         ],
     )
     async def test_blocks_dangerous_write_keywords(
@@ -41,7 +43,7 @@ class TestExecuteSqlQueryKeywordFilter:
     ) -> None:
         """'created_at' contains 'create' as a substring — must NOT be blocked."""
         result = await test_db.execute_sql_query(
-            "SELECT 1 AS created_at FROM anime_library_entries"
+            "SELECT 1 AS created_at FROM resources"
         )
         # Should succeed (not trigger false positive)
         assert result != [{"error": "Query contains dangerous keywords"}]
@@ -51,7 +53,7 @@ class TestExecuteSqlQueryKeywordFilter:
     ) -> None:
         """'updated_at' contains 'update' as a substring — must NOT be blocked."""
         result = await test_db.execute_sql_query(
-            "SELECT 1 AS updated_at FROM anime_library_entries"
+            "SELECT 1 AS updated_at FROM resources"
         )
         assert result != [{"error": "Query contains dangerous keywords"}]
 
@@ -60,23 +62,61 @@ class TestExecuteSqlQueryKeywordFilter:
     ) -> None:
         """Words like 'raindrop' or 'backdrop' must NOT be blocked."""
         result = await test_db.execute_sql_query(
-            "SELECT * FROM anime_library_entries WHERE title LIKE '%raindrop%'"
+            "SELECT * FROM resources WHERE title LIKE '%raindrop%'"
         )
         assert result != [{"error": "Query contains dangerous keywords"}]
 
     async def test_rejects_non_select(
         self, test_db: SqliteAnimeLibraryQueryAdapter
     ) -> None:
-        result = await test_db.execute_sql_query(
-            "INSERT INTO anime_library_entries VALUES(1)"
-        )
+        result = await test_db.execute_sql_query("INSERT INTO resources VALUES(1)")
         assert result == [{"error": "Only SELECT queries are allowed"}]
 
     async def test_valid_select_works(
         self, test_db: SqliteAnimeLibraryQueryAdapter
     ) -> None:
         result = await test_db.execute_sql_query(
-            "SELECT COUNT(*) as cnt FROM anime_library_entries"
+            "SELECT COUNT(*) as cnt FROM resources"
         )
         assert len(result) == 1
         assert result[0]["cnt"] == 0
+
+
+async def test_repository_reuses_existing_resources_table(tmp_path):
+    db_path = tmp_path / "data.db"
+    title = "[ANi] Already Downloaded - 01 [1080P]"
+    with sqlite3.connect(db_path) as db:
+        db.execute("""
+            CREATE TABLE resources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                title TEXT UNIQUE NOT NULL,
+                anime_name TEXT,
+                season INTEGER,
+                episode INTEGER,
+                fansub TEXT,
+                quality TEXT,
+                languages TEXT,
+                version INTEGER,
+                downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute(
+            "INSERT INTO resources (url, title) VALUES (?, ?)",
+            ("magnet:?xt=urn:btih:test", title),
+        )
+        db.commit()
+
+    repository = SqliteAnimeLibraryRepository(db_path=db_path)
+    await repository.init()
+
+    assert await repository.is_downloaded(title)
+    with sqlite3.connect(db_path) as db:
+        tables = {
+            row[0]
+            for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    assert "resources" in tables
+    assert "anime_library_entries" not in tables

@@ -81,7 +81,7 @@ class TestProviderClose:
 
 
 class TestAgenticLoopShutdown:
-    """Verify that AgenticLoop.shutdown() cleans up anime_library_entries."""
+    """Verify that AgenticLoop.shutdown() cleans up resources."""
 
     def _make_loop(
         self,
