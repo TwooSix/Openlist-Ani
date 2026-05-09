@@ -160,6 +160,7 @@ docker run -d \
   -e ENABLE_ASSISTANT=true \
   -v $(pwd)/config.toml:/config.toml \
   -v $(pwd)/data:/data \
+  -v $(pwd)/skills:/skills \
   twosix26/openlist-ani:latest
 ```
 
@@ -179,6 +180,7 @@ services:
     volumes:
       - ./config.toml:/config.toml
       - ./data:/data
+      - ./skills:/skills
 ```
 
 启动：
@@ -195,6 +197,7 @@ docker compose up -d
 | `-e ENABLE_ASSISTANT=true` | 启用 AI 智能助理（同时运行主程序和助理） |
 | `-v ./config.toml:/config.toml` | 挂载配置文件 |
 | `-v ./data:/data` | 挂载数据目录（持久化数据库、日志等） |
+| `-v ./skills:/skills` | 挂载助理 skills 目录；首次启动助理时自动生成内置 skills，之后可在宿主机修改或新增 |
 
 > `--network host` 的好处：容器与宿主机共享网络，`localhost` 直接指向宿主机，无需额外的网络配置。配置文件和本机运行时完全一致。
 

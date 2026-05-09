@@ -58,6 +58,7 @@ async def run() -> None:
     from .provider.factory import create_provider
     from .session.storage import SessionStorage
     from .skill.catalog import SkillCatalog
+    from .skill.installer import install_bundled_skills_if_missing
     from .tool.builtin.agent_tool import AgentTool
     from .tool.builtin.send_message_tool import SendMessageTool
     from .tool.builtin.skill_tool import SkillTool
@@ -73,6 +74,8 @@ async def run() -> None:
 
     skills_dir = Path(assistant_cfg.skills_dir)
     data_dir = Path(assistant_cfg.data_dir)
+
+    install_bundled_skills_if_missing(skills_dir)
 
     # Create provider (shared across all loops)
     provider = create_provider(

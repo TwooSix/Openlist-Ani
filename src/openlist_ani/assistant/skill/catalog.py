@@ -355,6 +355,9 @@ class SkillCatalog:
         if not self._skills_dir.exists():
             logger.debug(f"Skills directory does not exist: {self._skills_dir}")
             return
+        if not self._skills_dir.is_dir():
+            logger.warning(f"Skills path is not a directory: {self._skills_dir}")
+            return
 
         for skill_dir in sorted(self._skills_dir.iterdir()):
             if not skill_dir.is_dir():

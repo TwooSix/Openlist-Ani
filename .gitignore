@@ -12,6 +12,7 @@ wheels/
 # data
 logs/
 data/
+/skills/
 
 # config
 *.toml
