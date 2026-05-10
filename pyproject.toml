@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "TwoSix", email = "nitiaob@qq.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "aiohttp>=3.13.3",
+    "aiohttp>=3.13.4",
     "aiosqlite>=0.22.1",
     "anthropic>=0.52.0",
     "beautifulsoup4>=4.14.3",
