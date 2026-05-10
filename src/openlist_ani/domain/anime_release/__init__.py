@@ -1,5 +1,6 @@
 """Anime release domain models."""
 
+from .collection import detect_collection
 from .model import AnimeRelease, LanguageType, VideoQuality
 from .naming import (
     ReleaseDirectoryPlanner,
@@ -18,6 +19,7 @@ __all__ = [
     "ReleaseDirectoryPlanner",
     "ReleaseFilenamePlanner",
     "VideoQuality",
+    "detect_collection",
     "format_anime_episode",
     "format_release_stem",
     "release_anime_name",

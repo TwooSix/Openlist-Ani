@@ -54,6 +54,22 @@ async def test_regex_filter_excludes_collection_titles():
     assert [entry.title for entry in result] == ["[Sub_A] Test Anime - 01 [1080p]"]
 
 
+async def test_regex_filter_uses_collection_detector_for_non_regex_collection_titles():
+    result = await RegexTitleFilter().apply(
+        [
+            _release(title="[Sub_A] Test Anime - 01 [1080p]"),
+            _release(
+                title=(
+                    "[VCB-Studio] 青春之旅 / Ao Haru Ride / アオハライド "
+                    "10-bit 1080p HEVC BDRip [TV + OAD Fin]"
+                )
+            ),
+        ]
+    )
+
+    assert [entry.title for entry in result] == ["[Sub_A] Test Anime - 01 [1080p]"]
+
+
 async def test_filter_chain_reports_skipped_counts():
     chain = FilterChain([RegexTitleFilter()])
 
