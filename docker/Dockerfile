@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.11-alpine AS builder
+FROM python:3.14-alpine AS builder
 
 ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/openlist-ani/.venv \
@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     uv sync --frozen --no-dev --no-editable && \
     chmod +x /entrypoint.sh
 
-FROM python:3.11-alpine AS runtime
+FROM python:3.14-alpine AS runtime
 
 ENV PATH="/opt/openlist-ani/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
