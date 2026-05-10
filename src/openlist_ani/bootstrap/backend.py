@@ -93,7 +93,7 @@ async def run() -> None:
     event_manager = OAniEventManager()
     await event_manager.start()
 
-    notification_manager = _setup_notifications()
+    notification_manager = await _setup_notifications()
     task_memento_store = JsonTaskMementoStore("data/task_mementos.json")
     settings = _create_pipeline_settings()
     metadata_parser = _create_metadata_parser()
@@ -212,7 +212,7 @@ def _create_metadata_parser():
     return registry.create(config.metadata_parser.provider)
 
 
-def _setup_notifications() -> NotificationManager | None:
+async def _setup_notifications() -> NotificationManager | None:
     """Start notification manager if configured."""
     notification_manager = NotificationManagerFactory().create(
         NotificationSettings(
@@ -231,7 +231,7 @@ def _setup_notifications() -> NotificationManager | None:
     if not notification_manager:
         return None
 
-    notification_manager.start()
+    await notification_manager.start()
     return notification_manager
 
 

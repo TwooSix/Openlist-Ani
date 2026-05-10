@@ -26,7 +26,7 @@ class PushPlusBot(BotBase):
     async def send_message(self, message: str) -> bool:
         api_url = f"http://www.pushplus.plus/send/{self.user_token}"
         body = {
-            "title": "OpenList-Ani 通知",
+            "title": "OpenList-Ani Notification",
             "content": message,
             "channel": self.channel.value,
             "template": "html",

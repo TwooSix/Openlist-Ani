@@ -34,7 +34,7 @@ class PriorityConfig(BaseModel):
     )  # Fansub group priority, e.g. ["Fansub_A", "Fansub_B"]
     languages: list[str] = Field(
         default_factory=list
-    )  # Language priority, e.g. ["简", "繁"]
+    )  # Language priority labels
     quality: list[str] = Field(
         default_factory=lambda: ["2160p", "1080p", "720p", "480p"]
     )  # Quality priority (high to low); set to [] to disable
@@ -49,13 +49,13 @@ class MetadataFilterConfig(BaseModel):
 
     exclude_fansub: list[str] = Field(
         default_factory=list
-    )  # Fansub groups to exclude, e.g. ["XX字幕组"]
+    )  # Fansub groups to exclude
     exclude_quality: list[str] = Field(
         default_factory=list
     )  # Quality values to exclude, e.g. ["480p"]
     exclude_languages: list[str] = Field(
         default_factory=list
-    )  # Language values to exclude, e.g. ["未知"]
+    )  # Language labels to exclude
     exclude_patterns: list[str] = Field(
         default_factory=list
     )  # Regex patterns to exclude RSS entries by title
@@ -129,8 +129,38 @@ class NotificationConfig(BaseModel):
 class TelegramAssistantConfig(BaseModel):
     """Configuration for Telegram assistant bot."""
 
+    enabled: bool = False
     bot_token: str = ""
     allowed_users: list[int] = Field(default_factory=list)
+
+
+class WechatAssistantConfig(BaseModel):
+    """Configuration for WeChat/iLink assistant bot."""
+
+    enabled: bool = False
+    account_id: str = ""
+    token: str = ""
+    base_url: str = "https://ilinkai.weixin.qq.com"
+    home_channel: str = ""
+    allowed_users: list[str] = Field(default_factory=list)
+    dm_policy: str = "open"
+
+
+class FeishuAssistantConfig(BaseModel):
+    """Configuration for Feishu/Lark assistant bot."""
+
+    enabled: bool = False
+    app_id: str = ""
+    app_secret: str = ""
+    domain: str = "feishu"
+    connection_mode: str = "websocket"
+    webhook_host: str = "127.0.0.1"
+    webhook_port: int = 8765
+    webhook_path: str = "/feishu/webhook"
+    bot_open_id: str = ""
+    require_mention: bool = True
+    state_dir: str = "data/messaging"
+    allowed_users: list[str] = Field(default_factory=list)
 
 
 class AutoDreamConfig(BaseModel):
@@ -149,8 +179,10 @@ class AssistantConfig(BaseModel):
     session_compact_threshold: int = 100_000
     skills_dir: str = "skills"  # Skill search directory
     data_dir: str = "data/assistant"  # Memory file directory
-    telegram: TelegramAssistantConfig = TelegramAssistantConfig()
-    auto_dream: AutoDreamConfig = AutoDreamConfig()
+    telegram: TelegramAssistantConfig = Field(default_factory=TelegramAssistantConfig)
+    wechat: WechatAssistantConfig = Field(default_factory=WechatAssistantConfig)
+    feishu: FeishuAssistantConfig = Field(default_factory=FeishuAssistantConfig)
+    auto_dream: AutoDreamConfig = Field(default_factory=AutoDreamConfig)
 
 
 class LogConfig(BaseModel):
