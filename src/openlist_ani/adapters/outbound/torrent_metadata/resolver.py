@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import aiohttp
 
+from openlist_ani.domain.anime_release import detect_collection
 from openlist_ani.logger import logger
 
 # Cap a downloaded .torrent file at 10 MiB — real torrents are a few KiB
@@ -58,46 +59,6 @@ class ResolveResult:
     files: list[TorrentFile] = field(default_factory=list)
     is_collection: bool = False
     collection_reason: str | None = None
-
-
-# ── Collection keyword detection ─────────────────────────────────────
-
-# Keep each pattern small and well-anchored to keep false positives low.
-# Word-boundary `\b` is unreliable across CJK so the Chinese terms rely on
-# direct substring presence.
-_COLLECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"合集"),
-    re.compile(r"全集"),
-    re.compile(r"总集篇"),
-    re.compile(r"(?i)\bcomplete\b"),
-    re.compile(r"(?i)\bbatch\b"),
-    re.compile(r"(?i)BD\s*BOX"),
-    # Episode ranges like 01-12, 01~24, 01–24.  Require BOTH sides to be
-    # zero-padded 2-3 digit numbers so single-episode titles such as
-    # "Season 2 - 14" (which has a bare "2 - 14") don't trigger.  Real
-    # collection releases conventionally use padded indices ("01-12").
-    re.compile(r"(?<!\d)0\d{1,2}\s*[-~–—]\s*\d{2,3}(?!\d)"),
-    # SxxExx-Eyy
-    re.compile(r"(?i)\bS\d{1,2}E\d{1,3}\s*-\s*E?\d{1,3}\b"),
-    # SxxComplete / SeasonxxComplete
-    re.compile(r"(?i)\bS(?:eason)?\s*\d{1,2}\s*Complete\b"),
-)
-
-
-def detect_collection(title: str) -> tuple[bool, str | None]:
-    """Return ``(is_collection, matched_fragment)`` for ``title``.
-
-    A non-empty match always means the title looks like a collection
-    release; the matched substring is returned so the caller can show it
-    to the user.
-    """
-    if not title:
-        return False, None
-    for pat in _COLLECTION_PATTERNS:
-        m = pat.search(title)
-        if m:
-            return True, m.group(0)
-    return False, None
 
 
 # ── Magnet ``dn`` extraction ─────────────────────────────────────────

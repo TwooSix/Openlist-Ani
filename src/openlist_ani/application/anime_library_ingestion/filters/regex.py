@@ -11,17 +11,15 @@ from __future__ import annotations
 import asyncio
 import re
 
-from openlist_ani.domain.anime_release import AnimeRelease
+from openlist_ani.domain.anime_release import AnimeRelease, detect_collection
 from openlist_ani.logger import logger
-
-# 现阶段不支持合集下载，默认过滤
-_DEFAULT_EXCLUDE_PATTERNS = [r"(\d{2}-\d{2}|合集)"]
 
 
 class RegexTitleFilter:
     """Filter candidates by matching their title against exclusion patterns.
 
-    A built-in pattern excludes titles that look like collections.
+    Built-in collection detection excludes releases that the downloader
+    cannot currently handle, before user-defined regex patterns run.
     """
 
     def __init__(self, exclude_patterns: list[str] | None = None) -> None:
@@ -43,14 +41,18 @@ class RegexTitleFilter:
         if not candidates:
             return []
 
-        patterns = [*_DEFAULT_EXCLUDE_PATTERNS, *self._exclude_patterns]
-        if not patterns:
-            return candidates
-
-        compiled = [re.compile(p) for p in patterns]
+        compiled = [re.compile(p) for p in self._exclude_patterns]
         accepted: list[AnimeRelease] = []
 
         for candidate in candidates:
+            is_collection, reason = detect_collection(candidate.title)
+            if is_collection:
+                logger.debug(
+                    f"Regex filter: excluding collection {candidate.title} "
+                    f"(matched fragment={reason})"
+                )
+                continue
+
             matched = next(
                 (r.pattern for r in compiled if r.search(candidate.title)), None
             )
