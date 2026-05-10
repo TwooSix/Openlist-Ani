@@ -227,7 +227,7 @@ allowed_users = [123456789]   # 你的 Telegram 用户 ID
 openlist-ani-assistant
 ```
 
-> 首次启动助理时，会在当前工作目录生成 `./skills`，内置 skills 会复制到这里。之后可以直接修改或新增其中的 skill；同名文件不会被自动覆盖。
+> 首次启动助理时，会在当前工作目录生成 `./skills`，内置 skills 会复制到这里。
 
 > 主程序和助理需要**同时运行**。可以使用 `tmux`、`screen` 或 systemd 来管理。
 

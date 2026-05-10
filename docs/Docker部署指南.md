@@ -234,6 +234,55 @@ enabled = true
 config = { user_token = "你的Token", channel = "wechat" }
 ```
 
+### 微信 iLink 通知
+
+1. 先执行一次 setup 命令，完成扫码和会话 ID 获取：
+
+```bash
+uv run openlist-ani-wechat-login
+```
+
+如果只使用 Docker 镜像，可以用等价方式运行镜像里的命令，例如：
+
+```bash
+docker run --rm -it --entrypoint openlist-ani-wechat-login twosix26/openlist-ani:latest
+```
+
+命令会在终端打印二维码；微信扫码确认后，继续按提示给机器人发送任意文本消息。命令最后会打印完整 TOML 配置块。
+
+2. 把输出里的内容填入配置：
+
+```toml
+[notification]
+enabled = true
+
+[[notification.bots]]
+type = "wechat"
+enabled = true
+config = { account_id = "bot@im.bot", token = "your_bot_token", base_url = "https://ilinkai.weixin.qq.com", home_channel = "user@im.wechat" }
+```
+
+`home_channel` 就是 setup 命令捕获到的微信 iLink `chat_id`。如果启用了微信通知但缺少这些字段，容器启动时会失败并提示先运行 `openlist-ani-wechat-login`。
+
+微信通知固定发送到配置里的 `home_channel`。如果要改通知目标，重新运行 `openlist-ani-wechat-login`，或把新的 `chat_id` 手动填到 `home_channel`。
+
+### 飞书通知
+
+1. 在飞书开放平台创建自建应用，启用机器人能力，在「凭证与基础信息」中复制 `App ID` 和 `App Secret`。
+2. 同时启用飞书助理和飞书通知，并把同一组 `App ID` / `App Secret` 填入配置。
+3. 启动容器时设置 `ENABLE_ASSISTANT=true`。
+4. 在要接收通知的飞书私聊中发送 `/set-notify-home`；如果是群聊，请先 @机器人 再发送该命令。
+
+```toml
+[notification]
+enabled = true
+
+[[notification.bots]]
+type = "feishu"
+enabled = true
+config = { app_id = "cli_xxx", app_secret = "你的 App Secret" }
+```
+
 修改配置后重启容器：
 
 ```bash
@@ -251,9 +300,41 @@ docker compose restart
 enabled = true
 
 [assistant.telegram]
+enabled = true
 bot_token = "你的Bot Token"
 allowed_users = [123456789]
 ```
+
+微信助理：
+
+```toml
+[assistant]
+enabled = true
+
+[assistant.wechat]
+enabled = true
+account_id = "bot@im.bot"
+token = "your_bot_token"
+base_url = "https://ilinkai.weixin.qq.com"
+home_channel = "user@im.wechat"
+```
+
+微信助理启动前也先执行 `openlist-ani-wechat-login`，并把命令打印的 `account_id/token/base_url/home_channel` 填入配置。微信助理只接受 `home_channel` 这个会话的消息；发送 `/id` 可查看当前 `chat_id`。
+
+飞书助理：
+
+```toml
+[assistant]
+enabled = true
+
+[assistant.feishu]
+enabled = true
+app_id = "cli_xxx"
+app_secret = "你的 App Secret"
+domain = "feishu"
+```
+
+把机器人加入目标私聊或群聊后启动助理。私聊中可直接发送消息；群聊中请 @机器人发送消息。需要接收通知时，在目标会话发送 `/set-notify-home` 完成绑定。
 
 2. 启动时设置 `ENABLE_ASSISTANT=true`（见第四步的启动命令）
 

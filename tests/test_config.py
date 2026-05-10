@@ -22,6 +22,8 @@ from openlist_ani.adapters.outbound.configuration import (
     OpenListConfig,
     ProxyConfig,
     RSSConfig,
+    FeishuAssistantConfig,
+    WechatAssistantConfig,
     UserConfig,
 )
 
@@ -37,7 +39,7 @@ class TestRSSConfig:
         assert cfg.interval_time == 300
 
     def test_custom_values(self):
-        cfg = RSSConfig(urls=["http://feed1", "http://feed2"], interval_time=60)
+        cfg = RSSConfig(urls=["https://feed.example/rss1", "https://feed.example/rss2"], interval_time=60)
         assert len(cfg.urls) == 2
         assert cfg.interval_time == 60
 
@@ -101,8 +103,15 @@ class TestAssistantConfig:
     def test_defaults(self):
         cfg = AssistantConfig()
         assert cfg.enabled is False
+        assert cfg.telegram.enabled is False
         assert cfg.telegram.bot_token == ""
         assert cfg.telegram.allowed_users == []
+        assert isinstance(cfg.wechat, WechatAssistantConfig)
+        assert cfg.wechat.enabled is False
+        assert isinstance(cfg.feishu, FeishuAssistantConfig)
+        assert cfg.feishu.enabled is False
+        assert cfg.feishu.connection_mode == "websocket"
+        assert cfg.feishu.state_dir == "data/messaging"
 
 
 class TestLogConfig:
@@ -135,11 +144,11 @@ class TestUserConfig:
 
     def test_model_validate_from_dict(self):
         data = {
-            "rss": {"urls": ["http://feed1"], "interval_time": 120},
+            "rss": {"urls": ["https://feed.example/rss1"], "interval_time": 120},
             "openlist": {"url": "http://example.com", "token": "abc"},
         }
         cfg = UserConfig.model_validate(data)
-        assert cfg.rss.urls == ["http://feed1"]
+        assert cfg.rss.urls == ["https://feed.example/rss1"]
         assert cfg.rss.interval_time == 120
         assert cfg.openlist.url == "http://example.com"
 
@@ -298,7 +307,7 @@ class TestConfigValidation:
     def test_validate_no_openlist_url(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
+        mgr._config.rss.urls = ["https://feed.example/rss"]
         mgr._config.openlist.url = ""
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
@@ -306,8 +315,8 @@ class TestConfigValidation:
         """Missing token should now be an error (required for auth)."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = ""
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
@@ -316,8 +325,8 @@ class TestConfigValidation:
         """Minimal valid config: rss.urls + openlist.url + openlist.token + llm key."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr.save()
@@ -329,8 +338,8 @@ class TestConfigValidation:
         """Notification enabled but no bots → error."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = []
@@ -343,8 +352,8 @@ class TestConfigValidation:
         """Telegram bot without bot_token → error."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = [
@@ -359,8 +368,8 @@ class TestConfigValidation:
         """Telegram bot without user_id → error."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = [
@@ -373,8 +382,8 @@ class TestConfigValidation:
         """Telegram bot with valid config → pass."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.notification.enabled = True
@@ -390,8 +399,8 @@ class TestConfigValidation:
         """PushPlus bot without user_token → error."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = [BotConfig(type="pushplus", config={})]
@@ -402,13 +411,86 @@ class TestConfigValidation:
         """PushPlus bot with valid config → pass."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.notification.enabled = True
         mgr._config.notification.bots = [
             BotConfig(type="pushplus", config={"user_token": "tok123"})
+        ]
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
+
+    def test_validate_notification_wechat_requires_credentials_and_home_channel(
+        self, tmp_path, monkeypatch
+    ):
+        """WeChat notification must be configured from openlist-ani-wechat-login output."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.notification.enabled = True
+        mgr._config.notification.bots = [BotConfig(type="wechat", config={})]
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+
+    def test_validate_notification_wechat_with_login_output_is_valid(
+        self, tmp_path, monkeypatch
+    ):
+        """WeChat notification accepts credentials and chat_id from setup command."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.notification.enabled = True
+        mgr._config.notification.bots = [
+            BotConfig(
+                type="wechat",
+                config={
+                    "account_id": "bot@im.bot",
+                    "token": "token",
+                    "home_channel": "user@im.wechat",
+                },
+            )
+        ]
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
+
+    def test_validate_notification_feishu_requires_app_credentials(
+        self, tmp_path, monkeypatch
+    ):
+        """Feishu notification needs app credentials even if target is bound later."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.notification.enabled = True
+        mgr._config.notification.bots = [BotConfig(type="feishu", config={})]
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+
+    def test_validate_notification_feishu_target_optional(
+        self, tmp_path, monkeypatch
+    ):
+        """Feishu target can be configured later with /set-notify-home."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.notification.enabled = True
+        mgr._config.notification.bots = [
+            BotConfig(
+                type="feishu",
+                config={"app_id": "cli_xxx", "app_secret": "secret"},
+            )
         ]
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
@@ -419,8 +501,8 @@ class TestConfigValidation:
         """If notification is disabled, bad bot config should not cause failure."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.notification.enabled = False
@@ -434,8 +516,8 @@ class TestConfigValidation:
         """Enabled notification with a disabled bot should skip that bot's check."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.notification.enabled = True
@@ -451,11 +533,11 @@ class TestConfigValidation:
     # -- Assistant dependency checks --
 
     def test_validate_assistant_enabled_no_bot_token(self, tmp_path, monkeypatch):
-        """Assistant enabled without bot token → error."""
+        """Assistant enabled without any frontend → error."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.assistant.enabled = True
@@ -464,15 +546,81 @@ class TestConfigValidation:
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
+    def test_validate_assistant_enabled_with_wechat_frontend(
+        self, tmp_path, monkeypatch
+    ):
+        """WeChat assistant frontend requires QR login credentials in config."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.assistant.enabled = True
+        mgr._config.assistant.wechat.enabled = True
+        mgr._config.assistant.wechat.account_id = "bot@im.bot"
+        mgr._config.assistant.wechat.token = "token"
+        mgr._config.assistant.wechat.home_channel = "user@im.wechat"
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
+
+    def test_validate_assistant_enabled_with_wechat_missing_credentials(
+        self, tmp_path, monkeypatch
+    ):
+        """WeChat assistant blocks startup until setup command output is configured."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.assistant.enabled = True
+        mgr._config.assistant.wechat.enabled = True
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+
+    def test_validate_assistant_enabled_with_feishu_frontend(
+        self, tmp_path, monkeypatch
+    ):
+        """Feishu assistant frontend requires app credentials."""
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.assistant.enabled = True
+        mgr._config.assistant.feishu.enabled = True
+        mgr._config.assistant.feishu.app_id = "cli_xxx"
+        mgr._config.assistant.feishu.app_secret = "secret"
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
+
+    def test_validate_assistant_enabled_feishu_missing_secret(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.llm.openai_api_key = "key"
+        mgr._config.assistant.enabled = True
+        mgr._config.assistant.feishu.enabled = True
+        mgr._config.assistant.feishu.app_id = "cli_xxx"
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+
     def test_validate_assistant_enabled_no_allowed_users(self, tmp_path, monkeypatch):
         """Assistant enabled without allowed_users → warning (not error)."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.assistant.enabled = True
+        mgr._config.assistant.telegram.enabled = True
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = []
         mgr.save()
@@ -483,11 +631,12 @@ class TestConfigValidation:
         """Assistant enabled without LLM key → error (assistant depends on LLM)."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = ""  # Missing
         mgr._config.assistant.enabled = True
+        mgr._config.assistant.telegram.enabled = True
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = [123]
         mgr.save()
@@ -497,11 +646,12 @@ class TestConfigValidation:
         """Assistant with all dependencies → pass."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.assistant.enabled = True
+        mgr._config.assistant.telegram.enabled = True
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = [123]
         mgr.save()
@@ -511,8 +661,8 @@ class TestConfigValidation:
         """Disabled assistant should not trigger its dependency errors."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
-        mgr._config.rss.urls = ["http://feed"]
-        mgr._config.openlist.url = "http://localhost"
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
         mgr._config.assistant.enabled = False

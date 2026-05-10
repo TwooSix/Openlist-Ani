@@ -33,13 +33,24 @@ class NotificationManager:
         self._batch_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._running = False
+        self._started = False
 
     def add_bot(self, bot: BotBase) -> None:
         self._bots.append(bot)
         self._batch_queue.ensure_bot(bot)
 
-    def start(self) -> None:
-        if self._batch_interval > 0 and not self._running:
+    async def start(self) -> None:
+        if self._started:
+            return
+
+        self._started = True
+        try:
+            await asyncio.gather(*(bot.start() for bot in self._bots))
+        except Exception:
+            self._started = False
+            raise
+
+        if self._batch_interval > 0:
             self._running = True
             self._batch_task = asyncio.create_task(self._batch_worker())
             logger.debug(
@@ -48,6 +59,7 @@ class NotificationManager:
             )
 
     async def stop(self) -> None:
+        self._started = False
         self._running = False
         if self._batch_task:
             self._batch_task.cancel()

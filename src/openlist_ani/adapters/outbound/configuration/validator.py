@@ -115,21 +115,86 @@ class ConfigValidator:
     ) -> None:
         bot_label = f"notification.bots[{index}] (type={bot_cfg.type})"
 
-        if bot_cfg.type == "telegram":
-            if not bot_cfg.config.get("bot_token"):
-                errors.append(f"{bot_label}: 'bot_token' is required for Telegram bot.")
-            if not bot_cfg.config.get("user_id"):
-                errors.append(f"{bot_label}: 'user_id' is required for Telegram bot.")
+        bot_type = bot_cfg.type.strip().lower()
+        validators = {
+            "telegram": self._validate_telegram_notification_bot,
+            "pushplus": self._validate_pushplus_notification_bot,
+            "wechat": self._validate_wechat_notification_bot,
+            "feishu": self._validate_feishu_notification_bot,
+        }
+        validator = validators.get(bot_type)
+        if validator is None:
+            warnings.append(f"{bot_label}: Unknown bot type '{bot_cfg.type}'.")
             return
+        validator(bot_label, bot_cfg, errors, warnings)
 
-        if bot_cfg.type == "pushplus":
-            if not bot_cfg.config.get("user_token"):
-                errors.append(
-                    f"{bot_label}: 'user_token' is required for PushPlus bot."
-                )
+    def _require_bot_config(
+        self,
+        bot_label: str,
+        bot_cfg: BotConfig,
+        key: str,
+        bot_name: str,
+        errors: list[str],
+        hint: str = "",
+    ) -> None:
+        if bot_cfg.config.get(key):
             return
+        message = f"{bot_label}: '{key}' is required for {bot_name} bot."
+        errors.append(f"{message} {hint}".rstrip())
 
-        warnings.append(f"{bot_label}: Unknown bot type '{bot_cfg.type}'.")
+    def _validate_telegram_notification_bot(
+        self,
+        bot_label: str,
+        bot_cfg: BotConfig,
+        errors: list[str],
+        _warnings: list[str],
+    ) -> None:
+        self._require_bot_config(bot_label, bot_cfg, "bot_token", "Telegram", errors)
+        self._require_bot_config(bot_label, bot_cfg, "user_id", "Telegram", errors)
+
+    def _validate_pushplus_notification_bot(
+        self,
+        bot_label: str,
+        bot_cfg: BotConfig,
+        errors: list[str],
+        _warnings: list[str],
+    ) -> None:
+        self._require_bot_config(bot_label, bot_cfg, "user_token", "PushPlus", errors)
+
+    def _validate_wechat_notification_bot(
+        self,
+        bot_label: str,
+        bot_cfg: BotConfig,
+        errors: list[str],
+        _warnings: list[str],
+    ) -> None:
+        hint = "Run openlist-ani-wechat-login and copy the printed config."
+        self._require_bot_config(bot_label, bot_cfg, "account_id", "WeChat", errors, hint)
+        self._require_bot_config(bot_label, bot_cfg, "token", "WeChat", errors, hint)
+        if bot_cfg.config.get("chat_id") or bot_cfg.config.get("home_channel"):
+            return
+        errors.append(
+            f"{bot_label}: 'home_channel' or 'chat_id' is required for "
+            "WeChat notification. Run openlist-ani-wechat-login, send "
+            "one message to the bot, and copy the printed config."
+        )
+
+    def _validate_feishu_notification_bot(
+        self,
+        bot_label: str,
+        bot_cfg: BotConfig,
+        errors: list[str],
+        warnings: list[str],
+    ) -> None:
+        self._require_bot_config(bot_label, bot_cfg, "app_id", "Feishu", errors)
+        self._require_bot_config(bot_label, bot_cfg, "app_secret", "Feishu", errors)
+        if bot_cfg.config.get("receive_id"):
+            return
+        warnings.append(
+            f"{bot_label}: 'receive_id' is not set. Start the Feishu "
+            "assistant and send /set-notify-home before notifications "
+            "can be delivered."
+        )
 
     def _validate_assistant_config(
         self, errors: list[str], warnings: list[str]
@@ -149,16 +214,78 @@ class ConfigValidator:
                 "Supported values: 'openai', 'anthropic'."
             )
 
-        if not self._data.assistant.telegram.bot_token:
+        telegram_enabled = self._assistant_telegram_enabled()
+        wechat_enabled = self._data.assistant.wechat.enabled
+        feishu_enabled = self._data.assistant.feishu.enabled
+
+        if not (telegram_enabled or wechat_enabled or feishu_enabled):
             errors.append(
-                "Assistant is enabled but Telegram bot_token is missing. "
+                "Assistant is enabled but no frontend is configured. "
+                "Enable [assistant.telegram], [assistant.wechat], or [assistant.feishu]."
+            )
+            return
+
+        self._validate_telegram_assistant(telegram_enabled, errors, warnings)
+        self._validate_wechat_assistant(wechat_enabled, errors)
+        self._validate_feishu_assistant(feishu_enabled, errors, warnings)
+
+    def _assistant_telegram_enabled(self) -> bool:
+        return bool(
+            self._data.assistant.telegram.enabled
+            or self._data.assistant.telegram.bot_token
+        )
+
+    def _validate_telegram_assistant(
+        self, enabled: bool, errors: list[str], warnings: list[str]
+    ) -> None:
+        if not enabled:
+            return
+        telegram_cfg = self._data.assistant.telegram
+        if not telegram_cfg.bot_token:
+            errors.append(
+                "Telegram assistant is enabled but bot_token is missing. "
                 "Please set [assistant.telegram] bot_token."
             )
-
-        if not self._data.assistant.telegram.allowed_users:
+        if not telegram_cfg.allowed_users:
             warnings.append(
                 "Assistant allowed_users is empty - all Telegram users can interact. "
                 "Consider adding specific user IDs in [assistant.telegram] allowed_users."
+            )
+
+    def _validate_wechat_assistant(self, enabled: bool, errors: list[str]) -> None:
+        if not enabled:
+            return
+        wechat_cfg = self._data.assistant.wechat
+        hint = "Run openlist-ani-wechat-login and copy the printed config."
+        if not wechat_cfg.account_id:
+            errors.append(f"WeChat assistant is enabled but account_id is missing. {hint}")
+        if not wechat_cfg.token:
+            errors.append(f"WeChat assistant is enabled but token is missing. {hint}")
+        if not wechat_cfg.home_channel:
+            errors.append(
+                f"WeChat assistant is enabled but home_channel is missing. {hint}"
+            )
+
+    def _validate_feishu_assistant(
+        self, enabled: bool, errors: list[str], warnings: list[str]
+    ) -> None:
+        if not enabled:
+            return
+        feishu_cfg = self._data.assistant.feishu
+        if not feishu_cfg.app_id:
+            errors.append(
+                "Feishu assistant is enabled but app_id is missing. "
+                "Please set [assistant.feishu] app_id."
+            )
+        if not feishu_cfg.app_secret:
+            errors.append(
+                "Feishu assistant is enabled but app_secret is missing. "
+                "Please set [assistant.feishu] app_secret."
+            )
+        if not feishu_cfg.allowed_users:
+            warnings.append(
+                "Feishu assistant allowed_users is empty - all admitted Feishu "
+                "users can interact."
             )
 
     def _log_validation_results(self, errors: list[str], warnings: list[str]) -> None:

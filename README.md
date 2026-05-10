@@ -20,8 +20,8 @@
 - 📡 **自动追番** — 自动获取 RSS 番剧更新并下载
 - 📦 **多网盘支持** — 基于OpenList实现，支持 PikPak、115 等离线下载
 - 🤖 **AI 重命名** — AI 分析资源名 + TMDB 搜索，精准获取番剧名、季度、集数
-- 💬 **智能助理** — 挂载至 Telegram Bot，通过自然语言让 AI 帮你搜索并下载资源
-- 🔔 **更新通知** — 通过 PushPlus、Telegram 等渠道推送更新
+- 💬 **智能助理** — 挂载至 Telegram / 微信ClawBot / 飞书机器人，通过自然语言让 AI 帮你搜索并下载资源
+- 🔔 **更新通知** — 通过 PushPlus、Telegram、微信ClawBot、飞书等渠道推送更新
 
 ## 📋 准备工作
 
@@ -103,6 +103,7 @@ uv run openlist-ani
 enabled = true
 
 [assistant.telegram]
+enabled = true
 bot_token = ""        # 从 @BotFather 获取
 allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
 ```

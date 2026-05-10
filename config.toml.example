@@ -8,15 +8,15 @@ interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)
 strict = false  # Strict mode: only download entries that can be successfully renamed (requires rename_format)
 
 [rss.filter]
-exclude_patterns = []  # Regex patterns to exclude RSS entries by title (e.g. ["合集", "SP\\d+", "HEVC"])
-exclude_fansub = []  # Blacklist fansub groups (exact match, e.g. ["XX字幕组", "YY字幕组"])
+exclude_patterns = []  # Regex patterns to exclude RSS entries by title (e.g. ["SP\\d+", "HEVC"])
+exclude_fansub = []  # Blacklist fansub groups (exact match, e.g. ["Fansub_A", "Fansub_B"])
 exclude_quality = []  # Blacklist quality levels (e.g. ["480p"])
-exclude_languages = []  # Blacklist languages (e.g. ["未知"]). Available: "简", "繁", "日", "英", "未知"
+exclude_languages = []  # Blacklist language labels. See docs for supported values.
 
 [rss.priority]
 field_order = ["fansub", "quality", "languages"]  # Field comparison order, earlier fields take precedence
 fansub = []  # Fansub group priority, earlier = higher (e.g. ["Fansub_A", "Fansub_B"])
-languages = []  # Language priority, earlier = higher. Single: "简", "繁", "日", "英"; Combo: "简繁" (CHS+CHT dual). E.g. ["简", "简繁", "繁"]
+languages = []  # Language priority, earlier = higher. See docs for supported values.
 quality = ["2160p", "1080p", "720p", "480p"]  # Quality priority, earlier = higher. Set [] to disable
 
 [proxy]
@@ -63,6 +63,20 @@ batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 
 # enabled = true
 # config = { user_token = "your_user_token", channel = "wechat" }  # channel: wechat, webhook, cp, mail
 
+# WeChat iLink bot notification (optional)
+# Run `openlist-ani-wechat-login` first, then copy the printed values here.
+# [[notification.bots]]
+# type = "wechat"
+# enabled = true
+# config = { account_id = "bot@im.bot", token = "your_bot_token", base_url = "https://ilinkai.weixin.qq.com", home_channel = "user@im.wechat" }
+
+# Feishu/Lark bot notification (optional)
+# Start the Feishu assistant and send /set-notify-home in the target chat before notifications can be delivered.
+# [[notification.bots]]
+# type = "feishu"
+# enabled = true
+# config = { app_id = "cli_xxx", app_secret = "your_app_secret" }
+
 [assistant]
 enabled = false  # Enable/disable assistant module
 # max_context_tokens = 128000  # Max context window size
@@ -70,10 +84,36 @@ enabled = false  # Enable/disable assistant module
 # skills_dir = "skills"  # Skill files search directory
 # data_dir = "data/assistant"  # Assistant data/memory directory
 
-# Telegram assistant configuration (required if assistant is enabled)
+# Telegram assistant configuration (optional)
 [assistant.telegram]
+enabled = false
 bot_token = ""  # Telegram bot token from @BotFather
 allowed_users = []  # List of allowed Telegram user IDs (empty = allow all)
+
+# WeChat iLink assistant configuration (optional)
+# Run `openlist-ani-wechat-login` first, then copy account_id/token here.
+[assistant.wechat]
+enabled = false
+account_id = ""
+token = ""
+base_url = "https://ilinkai.weixin.qq.com"
+home_channel = ""  # WeChat chat_id captured by setup; assistant only accepts this conversation
+dm_policy = "open"
+
+# Feishu/Lark assistant configuration (optional)
+[assistant.feishu]
+enabled = false
+app_id = ""        # Feishu/Lark app ID, e.g. cli_xxx
+app_secret = ""    # App Secret from the developer console
+domain = "feishu"  # feishu or lark
+connection_mode = "websocket"  # Keep the default unless you need webhook callbacks
+webhook_host = "127.0.0.1"  # used only when connection_mode = "webhook"
+webhook_port = 8765         # used only when connection_mode = "webhook"
+webhook_path = "/feishu/webhook"  # used only when connection_mode = "webhook"
+bot_open_id = ""   # Optional; improves group @mention detection
+require_mention = true
+state_dir = "data/messaging"  # Directory for /set-notify-home target
+allowed_users = [] # Feishu open_id/user_id allowlist; empty = allow all admitted users
 
 # Auto memory consolidation (optional)
 # [assistant.auto_dream]
