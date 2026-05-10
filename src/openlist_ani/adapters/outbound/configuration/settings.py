@@ -32,9 +32,7 @@ class PriorityConfig(BaseModel):
     fansub: list[str] = Field(
         default_factory=list
     )  # Fansub group priority, e.g. ["Fansub_A", "Fansub_B"]
-    languages: list[str] = Field(
-        default_factory=list
-    )  # Language priority labels
+    languages: list[str] = Field(default_factory=list)  # Language priority labels
     quality: list[str] = Field(
         default_factory=lambda: ["2160p", "1080p", "720p", "480p"]
     )  # Quality priority (high to low); set to [] to disable
@@ -47,9 +45,7 @@ class MetadataFilterConfig(BaseModel):
     metadata matches any value in the corresponding list is filtered out.
     """
 
-    exclude_fansub: list[str] = Field(
-        default_factory=list
-    )  # Fansub groups to exclude
+    exclude_fansub: list[str] = Field(default_factory=list)  # Fansub groups to exclude
     exclude_quality: list[str] = Field(
         default_factory=list
     )  # Quality values to exclude, e.g. ["480p"]
@@ -64,7 +60,9 @@ class MetadataFilterConfig(BaseModel):
 class RSSConfig(BaseModel):
     urls: list[str] = Field(default_factory=list)
     interval_time: int = 300  # RSS fetch interval in seconds (default: 5 minutes)
-    strict: bool = False  # Strict mode: filter entries whose rename stem matches existing downloads
+    strict: bool = (
+        False  # Strict mode: filter entries whose rename stem matches existing downloads
+    )
     filter: MetadataFilterConfig = MetadataFilterConfig()
     priority: PriorityConfig = PriorityConfig()
 
@@ -122,7 +120,9 @@ class NotificationConfig(BaseModel):
     """Configuration for notification system."""
 
     enabled: bool = False
-    batch_interval: float = 300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    batch_interval: float = (
+        300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    )
     bots: list[BotConfig] = Field(default_factory=list)
 
 
@@ -189,7 +189,9 @@ class LogConfig(BaseModel):
     """Configuration for logging."""
 
     level: str = "INFO"  # Log level: DEBUG, INFO, WARNING, ERROR, FATAL
-    rotation: str = "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    rotation: str = (
+        "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    )
     retention: str = "1 week"  # How long to keep old logs
 
 

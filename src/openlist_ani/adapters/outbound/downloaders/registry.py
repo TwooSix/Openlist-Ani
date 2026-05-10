@@ -4,7 +4,6 @@ from collections.abc import Callable
 
 from openlist_ani.application.anime_library_ingestion.ports import DownloaderPort
 
-
 DownloaderFactory = Callable[[], DownloaderPort]
 
 

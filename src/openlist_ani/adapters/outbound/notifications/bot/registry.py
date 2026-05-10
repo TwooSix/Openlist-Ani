@@ -5,7 +5,6 @@ from typing import Any
 
 from .base import BotBase
 
-
 BotBuilder = Callable[[dict[str, Any]], BotBase]
 
 

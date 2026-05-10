@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from openlist_ani.domain.anime_release import AnimeRelease, LanguageType, VideoQuality
 from openlist_ani.domain.download_task.downloader import DownloaderMemento
 
-
 PayloadT = TypeVar("PayloadT")
 
 

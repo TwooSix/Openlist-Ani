@@ -34,9 +34,7 @@ async def test_entries_from_multiple_feeds_are_merged():
     mock_handler = AsyncMock()
     mock_handler.fetch_feed = AsyncMock(side_effect=[[r1], [r2]])
 
-    with (
-        patch.object(reader, "_get_feed_source", return_value=mock_handler),
-    ):
+    with (patch.object(reader, "_get_feed_source", return_value=mock_handler),):
         result = await reader.fetch_new_releases()
 
     assert {entry.title for entry in result} == {"Anime A - 01", "Anime B - 01"}
@@ -53,9 +51,7 @@ async def test_entries_without_download_url_are_skipped():
     mock_handler = AsyncMock()
     mock_handler.fetch_feed = AsyncMock(return_value=[release_no_url, release_good])
 
-    with (
-        patch.object(reader, "_get_feed_source", return_value=mock_handler),
-    ):
+    with (patch.object(reader, "_get_feed_source", return_value=mock_handler),):
         result = await reader.fetch_new_releases()
 
     assert [entry.title for entry in result] == ["Good Anime - 01"]
@@ -66,9 +62,7 @@ async def test_fetch_exception_does_not_crash():
     mock_handler = AsyncMock()
     mock_handler.fetch_feed = AsyncMock(side_effect=Exception("Network error"))
 
-    with (
-        patch.object(reader, "_get_feed_source", return_value=mock_handler),
-    ):
+    with (patch.object(reader, "_get_feed_source", return_value=mock_handler),):
         result = await reader.fetch_new_releases()
 
     assert result == []

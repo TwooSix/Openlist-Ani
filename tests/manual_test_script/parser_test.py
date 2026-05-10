@@ -19,19 +19,21 @@ import asyncio
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_ROOT))
-
-import openlist_ani.adapters.outbound.metadata_parser.parser as parser_module  # noqa: E402
-from openlist_ani.adapters.outbound.configuration import config  # noqa: E402
-from openlist_ani.adapters.outbound.metadata_parser.llm.client import OpenAILLMClient  # noqa: E402
-from openlist_ani.application.anime_library_ingestion.models import ParseResult  # noqa: E402
-from openlist_ani.adapters.outbound.metadata_parser.parser import parse_metadata  # noqa: E402
-from openlist_ani.domain.anime_release import (  # noqa: E402
+import openlist_ani.adapters.outbound.metadata_parser.parser as parser_module
+from openlist_ani.adapters.outbound.metadata_parser import (
+    MetadataParserAdapter,
+    MetadataParserSettings,
+)
+from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.outbound.metadata_parser.llm.client import (
+    OpenAILLMClient,
+)
+from openlist_ani.application.anime_library_ingestion.models import (
+    ParseResult,
+)
+from openlist_ani.domain.anime_release import (
     AnimeRelease,
     LanguageType,
     VideoQuality,
@@ -224,6 +226,17 @@ def make_entry(title: str) -> AnimeRelease:
     return AnimeRelease(title=title, download_url="magnet:?xt=test")
 
 
+def _metadata_parser_settings() -> MetadataParserSettings:
+    return MetadataParserSettings(
+        provider_type=config.llm.provider_type,
+        api_key=config.llm.openai_api_key,
+        base_url=config.llm.openai_base_url,
+        model=config.llm.openai_model,
+        tmdb_api_key=config.llm.tmdb_api_key,
+        tmdb_language=config.llm.tmdb_language,
+    )
+
+
 def _check_field(
     issues: list[str], expected: Any, actual: Any, label: str, fmt: str = "{}"
 ) -> None:
@@ -322,10 +335,14 @@ async def run_parser_validation(
     print()
 
     entries = [make_entry(tc.title) for tc in cases]
+    parser = MetadataParserAdapter.from_settings(_metadata_parser_settings())
 
     print("  ⏳ Running...")
     t0 = time.monotonic()
-    results = await parse_metadata(entries, batch_size=len(entries))
+    try:
+        results = await parser.parse(entries)
+    finally:
+        await parser.close()
     elapsed = time.monotonic() - t0
     print(f"  ✓ Completed in {elapsed:.1f}s")
 
