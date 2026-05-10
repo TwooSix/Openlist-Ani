@@ -36,7 +36,6 @@ from openlist_ani.assistant.skill_support.anime_recommend_scoring import (
 from openlist_ani.assistant.skill_support.bangumi_client import BangumiClient
 from openlist_ani.assistant.skill_support.bangumi_model import UserCollectionEntry
 
-
 # ------------------------------------------------------------------ #
 # Path helpers
 # ------------------------------------------------------------------ #

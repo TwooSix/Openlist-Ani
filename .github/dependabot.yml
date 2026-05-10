@@ -7,7 +7,9 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 5
+    # Disable routine version update PRs. Dependabot security update PRs
+    # are still controlled by the repository security setting.
+    open-pull-requests-limit: 0
     labels:
       - "dependencies"
       - "github-actions"
@@ -21,7 +23,9 @@ updates:
       day: "monday"
       time: "09:30"
       timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 5
+    # Disable routine version update PRs. Dependabot security update PRs
+    # are still controlled by the repository security setting.
+    open-pull-requests-limit: 0
     labels:
       - "dependencies"
       - "python"
@@ -35,7 +39,9 @@ updates:
       day: "monday"
       time: "10:00"
       timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 5
+    # Disable routine version update PRs. Dependabot security update PRs
+    # are still controlled by the repository security setting.
+    open-pull-requests-limit: 0
     labels:
       - "dependencies"
       - "docker"

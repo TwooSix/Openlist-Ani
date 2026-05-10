@@ -39,7 +39,10 @@ class TestRSSConfig:
         assert cfg.interval_time == 300
 
     def test_custom_values(self):
-        cfg = RSSConfig(urls=["https://feed.example/rss1", "https://feed.example/rss2"], interval_time=60)
+        cfg = RSSConfig(
+            urls=["https://feed.example/rss1", "https://feed.example/rss2"],
+            interval_time=60,
+        )
         assert len(cfg.urls) == 2
         assert cfg.interval_time == 60
 
@@ -475,9 +478,7 @@ class TestConfigValidation:
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
-    def test_validate_notification_feishu_target_optional(
-        self, tmp_path, monkeypatch
-    ):
+    def test_validate_notification_feishu_target_optional(self, tmp_path, monkeypatch):
         """Feishu target can be configured later with /set-notify-home."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")

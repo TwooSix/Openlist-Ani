@@ -2,7 +2,9 @@
 
 from openlist_ani.assistant.skill_support.oani_backend_client import BackendClient
 from openlist_ani.adapters.outbound.configuration import config
-from openlist_ani.assistant.skill_support.library_query import SqliteAnimeLibraryQueryAdapter
+from openlist_ani.assistant.skill_support.library_query import (
+    SqliteAnimeLibraryQueryAdapter,
+)
 
 
 async def _url_already_in_library(download_url: str) -> dict | None:

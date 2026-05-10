@@ -44,7 +44,9 @@ def _read_field(value: Any, key: str, default: Any = None) -> Any:
 
 def _sender_user_id(sender: Any) -> str:
     sender_id = _read_field(sender, "sender_id", {}) or {}
-    return str(_read_field(sender_id, "open_id") or _read_field(sender_id, "user_id") or "")
+    return str(
+        _read_field(sender_id, "open_id") or _read_field(sender_id, "user_id") or ""
+    )
 
 
 def _strip_mentions(text: str, mentions: list[Any]) -> str:
@@ -174,7 +176,9 @@ class FeishuMessenger:
         target_receive_id = receive_id
         target_type = receive_id_type
         if not target_receive_id:
-            target = self.store.load_notification_target("feishu") if self.store else None
+            target = (
+                self.store.load_notification_target("feishu") if self.store else None
+            )
             if target:
                 target_receive_id = target.chat_id
                 target_type = target.receive_id_type
@@ -190,7 +194,9 @@ class FeishuMessenger:
                 CreateMessageRequestBody,
             )
         except ImportError as exc:
-            raise RuntimeError("Feishu messaging requires the lark-oapi package") from exc
+            raise RuntimeError(
+                "Feishu messaging requires the lark-oapi package"
+            ) from exc
 
         request = (
             CreateMessageRequest.builder()
@@ -221,7 +227,9 @@ class FeishuMessenger:
         try:
             import lark_oapi as lark
         except ImportError as exc:
-            raise RuntimeError("Feishu messaging requires the lark-oapi package") from exc
+            raise RuntimeError(
+                "Feishu messaging requires the lark-oapi package"
+            ) from exc
 
         self._sdk_client = (
             lark.Client.builder()
@@ -347,9 +355,9 @@ class FeishuMessenger:
     def _build_lark_event_handler(
         self, dispatcher_handler: Any, on_message: Callable[[Any], None]
     ) -> Any:
-        builder = dispatcher_handler.builder(
-            "", ""
-        ).register_p2_im_message_receive_v1(on_message)
+        builder = dispatcher_handler.builder("", "").register_p2_im_message_receive_v1(
+            on_message
+        )
         if hasattr(builder, "register_p2_im_message_message_read_v1"):
             builder = builder.register_p2_im_message_message_read_v1(
                 _ignore_message_read

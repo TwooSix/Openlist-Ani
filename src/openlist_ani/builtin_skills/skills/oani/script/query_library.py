@@ -1,6 +1,8 @@
 """Query the anime resource database with SQL SELECT queries."""
 
-from openlist_ani.assistant.skill_support.library_query import SqliteAnimeLibraryQueryAdapter
+from openlist_ani.assistant.skill_support.library_query import (
+    SqliteAnimeLibraryQueryAdapter,
+)
 
 
 async def run(

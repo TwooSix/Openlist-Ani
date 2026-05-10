@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 from .feed_source import FeedSource
 
-
 FeedSourceFactoryFn = Callable[[], FeedSource]
 
 
