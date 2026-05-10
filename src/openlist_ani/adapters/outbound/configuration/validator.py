@@ -169,7 +169,9 @@ class ConfigValidator:
         _warnings: list[str],
     ) -> None:
         hint = "Run openlist-ani-wechat-login and copy the printed config."
-        self._require_bot_config(bot_label, bot_cfg, "account_id", "WeChat", errors, hint)
+        self._require_bot_config(
+            bot_label, bot_cfg, "account_id", "WeChat", errors, hint
+        )
         self._require_bot_config(bot_label, bot_cfg, "token", "WeChat", errors, hint)
         if bot_cfg.config.get("chat_id") or bot_cfg.config.get("home_channel"):
             return
@@ -258,7 +260,9 @@ class ConfigValidator:
         wechat_cfg = self._data.assistant.wechat
         hint = "Run openlist-ani-wechat-login and copy the printed config."
         if not wechat_cfg.account_id:
-            errors.append(f"WeChat assistant is enabled but account_id is missing. {hint}")
+            errors.append(
+                f"WeChat assistant is enabled but account_id is missing. {hint}"
+            )
         if not wechat_cfg.token:
             errors.append(f"WeChat assistant is enabled but token is missing. {hint}")
         if not wechat_cfg.home_channel:

@@ -175,7 +175,9 @@ def _extract_text(item_list: list[dict[str, Any]]) -> str:
     return "\n".join(parts).strip()
 
 
-def parse_inbound_message(raw: dict[str, Any], *, account_id: str) -> InboundMessage | None:
+def parse_inbound_message(
+    raw: dict[str, Any], *, account_id: str
+) -> InboundMessage | None:
     sender_id = str(raw.get("from_user_id") or "").strip()
     if not sender_id or sender_id == account_id:
         return None

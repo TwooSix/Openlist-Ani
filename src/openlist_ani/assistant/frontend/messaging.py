@@ -173,7 +173,9 @@ class MessagingFrontend(Frontend):
                 await loop.session_storage.start_new_session(
                     metadata=self._session_metadata(message)
                 )
-            await self._messenger.send_text(message.target.chat_id, "New session started.")
+            await self._messenger.send_text(
+                message.target.chat_id, "New session started."
+            )
             return True
 
         if text.startswith("/") and await self._handle_skill_command(message):

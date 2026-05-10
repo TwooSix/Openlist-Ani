@@ -292,9 +292,9 @@ class TestStreaming:
         types = [e.type for e in results]
         # The mock stream yields a text-only delta first, so we must see
         # at least one TEXT_DELTA before the final TEXT_DONE.
-        assert EventType.TEXT_DELTA in types, (
-            f"Expected TEXT_DELTA in events but got: {types}"
-        )
+        assert (
+            EventType.TEXT_DELTA in types
+        ), f"Expected TEXT_DELTA in events but got: {types}"
         assert EventType.TEXT_DONE in types
 
         # Collect all TEXT_DELTA payloads

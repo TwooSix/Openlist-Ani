@@ -72,7 +72,9 @@ def _validate_wechat_frontend_config(wechat_cfg: Any) -> list[str]:
     if not wechat_cfg.token:
         errors.append(f"WeChat assistant is enabled but token is missing. {hint}")
     if not wechat_cfg.home_channel:
-        errors.append(f"WeChat assistant is enabled but home_channel is missing. {hint}")
+        errors.append(
+            f"WeChat assistant is enabled but home_channel is missing. {hint}"
+        )
     return errors
 
 

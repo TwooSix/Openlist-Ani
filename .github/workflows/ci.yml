@@ -38,6 +38,9 @@ jobs:
       - name: Run Ruff
         run: uv run --frozen ruff check .
 
+      - name: Check formatting
+        run: uv run --frozen black --check .
+
   test:
     name: CI / Test
     runs-on: ubuntu-latest
