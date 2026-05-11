@@ -60,8 +60,10 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 git clone https://github.com/TwooSix/Openlist-Ani.git
 cd Openlist-Ani
 
-# 推荐切换到最新 release tag；master 为开发分支，不保证稳定
-git checkout v***    # 替换为最新版本号
+# 推荐切换到最新 Release tag；master 为开发分支，不保证稳定
+# Release 版本以 tag 为准
+git fetch --tags
+git checkout tags/v***    # 将 v*** 替换为 Release 页面中的版本号
 
 uv sync --no-dev --frozen
 ```
