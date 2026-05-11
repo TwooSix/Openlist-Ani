@@ -13,7 +13,7 @@ class FakeTMDBClient:
         return []
 
 
-async def test_episode_mapper_preserves_episode_when_tmdb_season_lags_release():
+async def test_episode_mapper_rejects_episode_beyond_tmdb_season_count():
     mapper = EpisodeMapper()
     mapping = await mapper.map(
         MappingContext(
@@ -29,9 +29,7 @@ async def test_episode_mapper_preserves_episode_when_tmdb_season_lags_release():
         )
     )
 
-    assert mapping is not None
-    assert mapping.season == 1
-    assert mapping.episode == 12
+    assert mapping is None
 
 
 async def test_episode_mapper_maps_absolute_numbering_inside_later_season():

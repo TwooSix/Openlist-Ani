@@ -18,6 +18,8 @@ from openlist_ani.logger import logger
 from ..constants import MAX_TMDB_QUERIES
 from .prompts import QUERY_EXPANSION_SYSTEM_PROMPT, TMDB_SELECTION_SYSTEM_PROMPT
 
+ANIMATION_GENRE_ID = 16
+
 
 class QueryExpander(Protocol):
     async def expand(self, anime_name: str) -> list[str]:
@@ -95,8 +97,16 @@ class HeuristicCandidateSelector:
         await asyncio.sleep(0)
         if not candidates:
             return None
+        anime_candidates = [
+            candidate for candidate in candidates if _is_animation_candidate(candidate)
+        ]
+        if not anime_candidates:
+            logger.debug(
+                f"TMDB heuristic found no animation candidates for '{anime_name}'"
+            )
+            return None
         ranked = sorted(
-            candidates,
+            anime_candidates,
             key=lambda candidate: _candidate_score(anime_name, candidate),
             reverse=True,
         )
@@ -107,7 +117,7 @@ class HeuristicCandidateSelector:
         )
         return TMDBMatch(
             tmdb_id=selected.id,
-            anime_name=_select_output_name(anime_name, selected),
+            anime_name=_select_authoritative_name(anime_name, selected),
             confidence="heuristic",
         )
 
@@ -160,7 +170,7 @@ class LLMCandidateSelector:
             selected = candidate_map[tmdb_id]
             return TMDBMatch(
                 tmdb_id=tmdb_id,
-                anime_name=_select_output_name(anime_name, selected),
+                anime_name=_select_authoritative_name(anime_name, selected),
                 confidence=parsed.get("confidence", "unknown"),
             )
         except Exception as e:
@@ -192,6 +202,11 @@ def _candidate_score(anime_name: str, candidate: TMDBCandidate) -> float:
 
 def _normalize_candidate_name(value: str) -> str:
     return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+def _is_animation_candidate(candidate: TMDBCandidate) -> bool:
+    """TMDB TV genre 16 is Animation; regex mode must not select live action."""
+    return ANIMATION_GENRE_ID in candidate.genre_ids
 
 
 def _static_query_variants(anime_name: str) -> list[str]:
@@ -227,43 +242,6 @@ def _append_unique(values: list[str], value: str) -> None:
         values.append(value)
 
 
-def _select_output_name(anime_name: str, candidate: TMDBCandidate) -> str:
-    """Choose the name written back after TMDB identity validation.
-
-    General case: use the authoritative localized TMDB title. That corrects
-    common title-visible aliases such as regional translations or romaji-only
-    release names.
-
-    Corner case: TMDB and the parsed title can differ only by punctuation, e.g.
-    "妻子变成小学生。" vs "妻子变成小学生" or ASCII hyphen vs em dash. In those
-    cases the release title already carries the user's preferred naming style,
-    so preserving it avoids needless churn while still attaching the TMDB id.
-    Whitespace-only differences still prefer TMDB because historical outputs
-    consistently collapse spaces in mixed CJK/Latin titles.
-    """
-    parsed_name = _normalize_output_punctuation(anime_name)
-    selected_name = _normalize_output_punctuation(
-        candidate.name or candidate.original_name or parsed_name
-    )
-    if _normalize_candidate_name(parsed_name) != _normalize_candidate_name(
-        selected_name
-    ):
-        return selected_name
-
-    if _remove_spaces(parsed_name) == _remove_spaces(selected_name):
-        return selected_name
-    return parsed_name
-
-
-def _remove_spaces(value: str) -> str:
-    return "".join(ch for ch in value if not ch.isspace())
-
-
-def _normalize_output_punctuation(value: str) -> str:
-    return (
-        value.replace("—", "-")
-        .replace("–", "-")
-        .replace("－", "-")
-        .replace("「", "“")
-        .replace("」", "”")
-    )
+def _select_authoritative_name(anime_name: str, candidate: TMDBCandidate) -> str:
+    """Write back the TMDB localized title, matching the pre-PR LLM+TMDB behavior."""
+    return candidate.name or candidate.original_name or anime_name

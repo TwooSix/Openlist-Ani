@@ -33,7 +33,7 @@ class FakeTMDBClient:
                 "original_name": "Gold Chef",
                 "first_air_date": "2025-01-01",
                 "overview": "",
-                "genre_ids": [],
+                "genre_ids": [18],
                 "origin_country": ["JP"],
             },
             {
@@ -42,7 +42,7 @@ class FakeTMDBClient:
                 "original_name": "メダリスト",
                 "first_air_date": "2025-01-05",
                 "overview": "",
-                "genre_ids": [],
+                "genre_ids": [16],
                 "origin_country": ["JP"],
             },
         ]
@@ -112,6 +112,7 @@ async def test_heuristic_candidate_selector_prefers_authoritative_tmdb_name_for_
                 id=249907,
                 name="判处勇者刑：惩罚勇者9004队刑务记录",
                 original_name="勇者刑に処す 懲罰勇者9004隊刑務記録",
+                genre_ids=[16],
             )
         ],
     )
@@ -119,6 +120,53 @@ async def test_heuristic_candidate_selector_prefers_authoritative_tmdb_name_for_
     assert match is not None
     assert match.tmdb_id == 249907
     assert match.anime_name == "判处勇者刑：惩罚勇者9004队刑务记录"
+
+
+async def test_heuristic_candidate_selector_writes_authoritative_name_for_punctuation_alias():
+    selector = HeuristicCandidateSelector()
+
+    match = await selector.select(
+        "我推的孩子",
+        [
+            TMDBCandidate(
+                id=203737,
+                name="【我推的孩子】",
+                original_name="【推しの子】",
+                genre_ids=[16],
+            )
+        ],
+    )
+
+    assert match is not None
+    assert match.tmdb_id == 203737
+    assert match.anime_name == "【我推的孩子】"
+
+
+async def test_heuristic_candidate_selector_rejects_non_animation_candidates():
+    selector = HeuristicCandidateSelector()
+
+    match = await selector.select(
+        "【我推的孩子】",
+        [
+            TMDBCandidate(
+                id=244377,
+                name="【我推的孩子】",
+                original_name="【推しの子】",
+                genre_ids=[18],
+                origin_country=["JP"],
+            ),
+            TMDBCandidate(
+                id=203737,
+                name="【我推的孩子】",
+                original_name="【推しの子】",
+                genre_ids=[16],
+                origin_country=["JP"],
+            ),
+        ],
+    )
+
+    assert match is not None
+    assert match.tmdb_id == 203737
 
 
 async def test_static_query_expander_adds_non_llm_search_variants():
