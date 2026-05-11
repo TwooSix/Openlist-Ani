@@ -10,7 +10,8 @@ video quality) and what has already been downloaded for the same
 previously downloaded version (same anime/season/episode/fansub/languages,
 ignoring quality) is always allowed through.
 
-**Quality default**: quality priority defaults to ``2160p > 1080p > 720p > 480p``.
+**Quality default**: quality priority defaults to
+``2160p > 1080p > 720p > 480p > 360p``.
 All other fields default to no priority (everything passes).
 """
 

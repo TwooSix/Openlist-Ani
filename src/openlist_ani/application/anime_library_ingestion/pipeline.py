@@ -25,6 +25,7 @@ from openlist_ani.application.anime_library_ingestion.ports import (
     FeedReaderPort,
     FileRenamerPort,
     MetadataParserPort,
+    MetadataValidatorPort,
     NotifierPort,
     AnimeLibraryRepositoryPort,
     TaskMementoStorePort,
@@ -66,6 +67,7 @@ class AnimeLibraryIngestionPipeline:
         event_publisher: EventPublisherPort,
         anime_library_repository: AnimeLibraryRepositoryPort,
         metadata_parser: MetadataParserPort,
+        metadata_validator: MetadataValidatorPort,
         settings: AnimeLibraryIngestionSettings,
         feed_reader: FeedReaderPort | None = None,
         notifier: NotifierPort | None = None,
@@ -75,6 +77,7 @@ class AnimeLibraryIngestionPipeline:
         self.event_publisher = event_publisher
         self.anime_library_repository = anime_library_repository
         self.metadata_parser = metadata_parser
+        self.metadata_validator = metadata_validator
         self.settings = settings
         self.feed_reader = feed_reader
         self.notifier = notifier
@@ -223,6 +226,7 @@ class AnimeLibraryIngestionPipeline:
                 RSSStage(
                     self.feed_reader,
                     self.metadata_parser,
+                    self.metadata_validator,
                     self.anime_library_repository,
                     self.download_buffer,
                     self.event_publisher,

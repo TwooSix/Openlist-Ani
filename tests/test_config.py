@@ -18,6 +18,7 @@ from openlist_ani.adapters.outbound.configuration import (
     LogConfig,
     MetadataFilterConfig,
     MetadataParserConfig,
+    MetadataValidatorConfig,
     NotificationConfig,
     OpenListConfig,
     ProxyConfig,
@@ -137,6 +138,7 @@ class TestUserConfig:
         assert isinstance(cfg.downloader, DownloaderConfig)
         assert isinstance(cfg.file_renamer, FileRenamerConfig)
         assert isinstance(cfg.metadata_parser, MetadataParserConfig)
+        assert isinstance(cfg.metadata_validator, MetadataValidatorConfig)
         assert isinstance(cfg.rss, RSSConfig)
         assert isinstance(cfg.openlist, OpenListConfig)
         assert isinstance(cfg.llm, LLMConfig)

@@ -33,7 +33,7 @@ interval_time = 300
 # [rss.priority]
 # field_order = ["fansub", "quality", "languages"]  # 比较顺序
 # fansub = []                # 字幕组优先级（靠前优先）
-# quality = ["2160p", "1080p", "720p", "480p"]  # 清晰度优先级
+# quality = ["2160p", "1080p", "720p", "480p", "360p"]  # 清晰度优先级
 # languages = []             # 语言优先级，可选: "简", "繁", "日", "英"
 
 # ---------- 代理（可选） ----------

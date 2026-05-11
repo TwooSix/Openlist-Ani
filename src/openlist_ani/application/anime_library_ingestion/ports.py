@@ -32,6 +32,10 @@ class MetadataParserPort(Protocol):
     async def parse(self, entries: list[AnimeRelease]) -> list[ParseResult]: ...
 
 
+class MetadataValidatorPort(Protocol):
+    async def validate(self, results: list[ParseResult]) -> list[ParseResult]: ...
+
+
 class DownloaderPort(Protocol):
     @property
     def downloader_type(self) -> str: ...

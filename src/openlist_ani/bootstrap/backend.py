@@ -34,6 +34,14 @@ from openlist_ani.adapters.outbound.metadata_parser import (
     MetadataParserRegistry,
     MetadataParserSettings,
 )
+from openlist_ani.adapters.outbound.metadata_validator import (
+    MetadataValidatorRegistry,
+    MetadataValidatorSettings,
+    NullMetadataValidator,
+)
+from openlist_ani.adapters.outbound.metadata_validator.tmdb import (
+    create_tmdb_metadata_validator,
+)
 from openlist_ani.adapters.outbound.notifications import (
     NotificationManager,
     NotificationManagerFactory,
@@ -60,6 +68,7 @@ from openlist_ani.application.anime_library_ingestion.application_service import
     AnimeLibraryApplicationService,
 )
 from openlist_ani.integrations.openlist import OpenListClient, OpenListHealthCheck
+from openlist_ani.integrations.llm import LLMClientSettings, create_llm_client
 from openlist_ani.logger import FATAL_LEVEL, configure_logger, logger
 
 startup_logger = logger
@@ -97,6 +106,7 @@ async def run() -> None:
     task_memento_store = JsonTaskMementoStore("data/task_mementos.json")
     settings = _create_pipeline_settings()
     metadata_parser = _create_metadata_parser()
+    metadata_validator = _create_metadata_validator()
     downloader = _create_downloader(openlist_client)
     file_renamer = _create_file_renamer(openlist_client)
     pipeline = AnimeLibraryIngestionPipeline(
@@ -106,6 +116,7 @@ async def run() -> None:
         event_publisher=event_manager,
         anime_library_repository=anime_library_repository,
         metadata_parser=metadata_parser,
+        metadata_validator=metadata_validator,
         settings=settings,
         feed_reader=ReleaseFeedReader(list(config.rss.urls)),
         notifier=notification_manager,
@@ -115,6 +126,7 @@ async def run() -> None:
         AnimeLibraryApplicationService(
             pipeline=pipeline,
             metadata_parser=metadata_parser,
+            metadata_validator=metadata_validator,
             anime_library_repository=anime_library_repository,
             settings=settings,
             feed_factory=FeedSourceFactory(),
@@ -149,6 +161,12 @@ async def run() -> None:
             await metadata_parser.close()
         except Exception as e:
             startup_logger.warning(f"Failed to close metadata parser cleanly: {e}")
+        try:
+            close_validator = getattr(metadata_validator, "close", None)
+            if close_validator is not None:
+                await close_validator()
+        except Exception as e:
+            startup_logger.warning(f"Failed to close metadata validator cleanly: {e}")
         if notification_manager:
             await notification_manager.stop()
 
@@ -197,19 +215,57 @@ def _create_file_renamer(openlist_client: OpenListClient):
 def _create_metadata_parser():
     registry = MetadataParserRegistry()
     registry.register(
-        "llm_tmdb",
+        "llm",
         lambda: MetadataParserAdapter.from_settings(
             MetadataParserSettings(
                 provider_type=config.llm.provider_type,
                 api_key=config.llm.openai_api_key,
                 base_url=config.llm.openai_base_url,
                 model=config.llm.openai_model,
-                tmdb_api_key=config.llm.tmdb_api_key,
-                tmdb_language=config.llm.tmdb_language,
+            )
+        ),
+    )
+    registry.register(
+        "regex",
+        lambda: MetadataParserAdapter.from_regex_settings(
+            MetadataParserSettings(
+                provider_type=config.llm.provider_type,
+                api_key=config.llm.openai_api_key,
+                base_url=config.llm.openai_base_url,
+                model=config.llm.openai_model,
             )
         ),
     )
     return registry.create(config.metadata_parser.provider)
+
+
+def _create_metadata_validator():
+    registry = MetadataValidatorRegistry()
+    registry.register(
+        "tmdb",
+        lambda: create_tmdb_metadata_validator(
+            MetadataValidatorSettings(
+                tmdb_api_key=config.llm.tmdb_api_key,
+                tmdb_language=config.llm.tmdb_language,
+            ),
+            llm_client=_create_validator_llm_client(),
+        ),
+    )
+    registry.register("none", NullMetadataValidator)
+    return registry.create(config.metadata_validator.provider)
+
+
+def _create_validator_llm_client():
+    if config.metadata_parser.provider != "llm" or not config.llm.openai_api_key:
+        return None
+    return create_llm_client(
+        LLMClientSettings(
+            provider_type=config.llm.provider_type,
+            api_key=config.llm.openai_api_key,
+            base_url=config.llm.openai_base_url,
+            model=config.llm.openai_model,
+        )
+    )
 
 
 async def _setup_notifications() -> NotificationManager | None:

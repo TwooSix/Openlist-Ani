@@ -21,14 +21,16 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import openlist_ani.adapters.outbound.metadata_parser.parser as parser_module
 from openlist_ani.adapters.outbound.metadata_parser import (
     MetadataParserAdapter,
     MetadataParserSettings,
 )
+import openlist_ani.adapters.outbound.metadata_parser.parser as parser_module
 from openlist_ani.adapters.outbound.configuration import config
-from openlist_ani.adapters.outbound.metadata_parser.llm.client import (
-    OpenAILLMClient,
+from openlist_ani.adapters.outbound.metadata_validator import MetadataValidatorSettings
+import openlist_ani.adapters.outbound.metadata_validator.tmdb.factory as validator_factory_module
+from openlist_ani.adapters.outbound.metadata_validator.tmdb import (
+    create_tmdb_metadata_validator,
 )
 from openlist_ani.application.anime_library_ingestion.models import (
     ParseResult,
@@ -38,6 +40,8 @@ from openlist_ani.domain.anime_release import (
     LanguageType,
     VideoQuality,
 )
+import openlist_ani.integrations.llm.client as llm_client_module
+from openlist_ani.integrations.llm import LLMClientSettings, OpenAILLMClient
 
 
 @dataclass
@@ -70,8 +74,9 @@ class PerfStats:
 
 
 _stats: PerfStats | None = None
-_OriginalCreateLLMClient = parser_module.create_llm_client
-_OriginalGetTMDBClient = parser_module.get_tmdb_client
+_OriginalCreateLLMClient = llm_client_module.create_llm_client
+_OriginalParserCreateLLMClient = parser_module.create_llm_client
+_OriginalGetTMDBClient = validator_factory_module.get_tmdb_client
 
 
 class TrackedOpenAILLMClient(OpenAILLMClient):
@@ -115,8 +120,12 @@ class TrackedTMDBClientProxy:
         return getattr(self._wrapped, name)
 
 
-def _get_tracked_tmdb_client() -> TrackedTMDBClientProxy:
-    return TrackedTMDBClientProxy(_OriginalGetTMDBClient())
+def _get_tracked_tmdb_client(
+    api_key: str = "", language: str = "zh-CN"
+) -> TrackedTMDBClientProxy:
+    return TrackedTMDBClientProxy(
+        _OriginalGetTMDBClient(api_key=api_key, language=language)
+    )
 
 
 def print_perf_stats(stats: PerfStats, elapsed: float) -> None:
@@ -232,8 +241,22 @@ def _metadata_parser_settings() -> MetadataParserSettings:
         api_key=config.llm.openai_api_key,
         base_url=config.llm.openai_base_url,
         model=config.llm.openai_model,
+    )
+
+
+def _metadata_validator_settings() -> MetadataValidatorSettings:
+    return MetadataValidatorSettings(
         tmdb_api_key=config.llm.tmdb_api_key,
         tmdb_language=config.llm.tmdb_language,
+    )
+
+
+def _llm_client_settings() -> LLMClientSettings:
+    return LLMClientSettings(
+        provider_type=config.llm.provider_type,
+        api_key=config.llm.openai_api_key,
+        base_url=config.llm.openai_base_url,
+        model=config.llm.openai_model,
     )
 
 
@@ -336,13 +359,19 @@ async def run_parser_validation(
 
     entries = [make_entry(tc.title) for tc in cases]
     parser = MetadataParserAdapter.from_settings(_metadata_parser_settings())
+    validator = create_tmdb_metadata_validator(
+        _metadata_validator_settings(),
+        llm_client=llm_client_module.create_llm_client(_llm_client_settings()),
+    )
 
     print("  ⏳ Running...")
     t0 = time.monotonic()
     try:
         results = await parser.parse(entries)
+        results = await validator.validate(results)
     finally:
         await parser.close()
+        await validator.close()
     elapsed = time.monotonic() - t0
     print(f"  ✓ Completed in {elapsed:.1f}s")
 
@@ -406,7 +435,12 @@ async def main() -> None:
         _logger.add(
             _sys.stderr,
             level="DEBUG",
-            filter="openlist_ani.adapters.outbound.metadata_parser",
+            filter=lambda record: record["name"].startswith(
+                (
+                    "openlist_ani.adapters.outbound.metadata_parser",
+                    "openlist_ani.adapters.outbound.metadata_validator",
+                )
+            ),
             format="<level>{level: <8}</level> | {message}",
         )
 
@@ -414,15 +448,16 @@ async def main() -> None:
         client = _OriginalCreateLLMClient(llm_config)
         if isinstance(client, OpenAILLMClient):
             tracked = TrackedOpenAILLMClient(
-                api_key=llm_config.openai_api_key,
-                base_url=llm_config.openai_base_url,
-                model=llm_config.openai_model,
+                api_key=llm_config.api_key,
+                base_url=llm_config.base_url,
+                model=llm_config.model,
             )
             return tracked
         return client
 
+    llm_client_module.create_llm_client = _create_tracked_llm_client
     parser_module.create_llm_client = _create_tracked_llm_client
-    parser_module.get_tmdb_client = _get_tracked_tmdb_client
+    validator_factory_module.get_tmdb_client = _get_tracked_tmdb_client
     try:
         _stats = PerfStats()
 
@@ -441,8 +476,9 @@ async def main() -> None:
 
         sys.exit(0 if all_passed else 1)
     finally:
-        parser_module.create_llm_client = _OriginalCreateLLMClient
-        parser_module.get_tmdb_client = _OriginalGetTMDBClient
+        llm_client_module.create_llm_client = _OriginalCreateLLMClient
+        parser_module.create_llm_client = _OriginalParserCreateLLMClient
+        validator_factory_module.get_tmdb_client = _OriginalGetTMDBClient
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ exclude_languages = []  # Blacklist language labels. See docs for supported valu
 field_order = ["fansub", "quality", "languages"]  # Field comparison order, earlier fields take precedence
 fansub = []  # Fansub group priority, earlier = higher (e.g. ["Fansub_A", "Fansub_B"])
 languages = []  # Language priority, earlier = higher. See docs for supported values.
-quality = ["2160p", "1080p", "720p", "480p"]  # Quality priority, earlier = higher. Set [] to disable
+quality = ["2160p", "1080p", "720p", "480p", "360p"]  # Quality priority, earlier = higher. Set [] to disable
 
 [proxy]
 http = ""  # HTTP proxy URL (e.g., "http://127.0.0.1:7890")
@@ -30,7 +30,10 @@ provider = "openlist"  # Download adapter implementation
 provider = "openlist"  # File rename adapter implementation
 
 [metadata_parser]
-provider = "llm_tmdb"  # Metadata parser adapter implementation
+provider = "llm"  # Title parser: "llm" or "regex"
+
+[metadata_validator]
+provider = "tmdb"  # Metadata validator: "tmdb" or "none"
 
 [openlist]
 url = "http://localhost:5244"

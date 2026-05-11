@@ -131,6 +131,21 @@ class CountingMetadataParser(PassingMetadataParser):
         return await super().parse(entries)
 
 
+class PassingMetadataValidator:
+    async def validate(self, results):
+        await asyncio.sleep(0)
+        return [result.model_copy(deep=True) for result in results]
+
+
+class CountingMetadataValidator(PassingMetadataValidator):
+    def __init__(self):
+        self.calls = 0
+
+    async def validate(self, results):
+        self.calls += 1
+        return await super().validate(results)
+
+
 class FakeFeedReader:
     def __init__(self, entries):
         self.entries = entries
@@ -263,6 +278,7 @@ def _runtime(
         event_publisher=event_manager,
         anime_library_repository=repository,
         metadata_parser=FakeMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
         settings=AnimeLibraryIngestionSettings(
             download_path="/anime",
             rename_format="{anime_name} S{season:02d}E{episode:02d}",
@@ -289,6 +305,7 @@ async def test_rss_stage_enqueues_unique_download_candidates(tmp_path, isolated_
     stage = RSSStage(
         feed_reader=FakeFeedReader(entries),
         metadata_parser=PassingMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
         anime_library_repository=isolated_db,
         output_buffer=download_buffer,
         event_publisher=event_manager,
@@ -313,6 +330,63 @@ async def test_rss_stage_enqueues_unique_download_candidates(tmp_path, isolated_
         "/anime",
         "/anime",
     ]
+    await event_manager.stop()
+
+
+async def test_rss_stage_validates_parsed_metadata_before_enrichment(
+    tmp_path, isolated_db
+):
+    await isolated_db.init()
+    event_manager = OAniEventManager()
+    await event_manager.start()
+    download_buffer: PipelineBuffer[PipelineContext[DownloadCandidate]] = (
+        PipelineBuffer("download")
+    )
+
+    class CorrectingMetadataValidator:
+        def __init__(self):
+            self.seen_episodes = []
+
+        async def validate(self, results):
+            await asyncio.sleep(0)
+            validated = [result.model_copy(deep=True) for result in results]
+            for result in results:
+                self.seen_episodes.append(result.result.episode)
+            for result in validated:
+                result.result.episode = 7
+                result.result.tmdb_id = 3822
+            return validated
+
+    validator = CorrectingMetadataValidator()
+    stage = RSSStage(
+        feed_reader=FakeFeedReader(
+            [
+                AnimeRelease(
+                    title="[ANi] Test Anime - 99 [1080p]",
+                    download_url="magnet:?xt=urn:btih:validated",
+                )
+            ]
+        ),
+        metadata_parser=PassingMetadataParser(),
+        metadata_validator=validator,
+        anime_library_repository=isolated_db,
+        output_buffer=download_buffer,
+        event_publisher=event_manager,
+        filter_chain=FilterChain([]),
+        settings=AnimeLibraryIngestionSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=0,
+        ),
+        interval_seconds=0,
+        task_reservation=RecordingTaskReservation(),
+    )
+
+    await stage.process_batch()
+
+    candidates = await _drain_download_candidates(download_buffer)
+    assert validator.seen_episodes == [1]
+    assert candidates[0].release.episode == 7
     await event_manager.stop()
 
 
@@ -348,6 +422,7 @@ async def test_rss_stage_blocks_strict_conflict_with_active_task(tmp_path, isola
             ]
         ),
         metadata_parser=PassingMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
         anime_library_repository=isolated_db,
         output_buffer=download_buffer,
         event_publisher=event_manager,
@@ -406,6 +481,7 @@ async def test_rss_stage_reserves_task_before_download_buffer_is_consumed(
     stage = RSSStage(
         feed_reader=feed_reader,
         metadata_parser=PassingMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
         anime_library_repository=isolated_db,
         output_buffer=download_buffer,
         event_publisher=event_manager,
@@ -483,6 +559,7 @@ async def test_rss_stage_blocks_lower_priority_release_with_active_task(
             ]
         ),
         metadata_parser=PassingMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
         anime_library_repository=isolated_db,
         output_buffer=download_buffer,
         event_publisher=event_manager,
@@ -521,6 +598,7 @@ async def test_rss_stage_reuses_metadata_cache_for_rejected_candidates(
     event_manager = OAniEventManager()
     await event_manager.start()
     parser = CountingMetadataParser()
+    validator = CountingMetadataValidator()
     active_task = TaskMemento(
         task_id="active-a",
         state=DownloadState.DOWNLOADING,
@@ -547,6 +625,7 @@ async def test_rss_stage_reuses_metadata_cache_for_rejected_candidates(
             ]
         ),
         metadata_parser=parser,
+        metadata_validator=validator,
         anime_library_repository=isolated_db,
         output_buffer=download_buffer,
         event_publisher=event_manager,
@@ -574,6 +653,7 @@ async def test_rss_stage_reuses_metadata_cache_for_rejected_candidates(
     await stage.process_batch()
 
     assert parser.calls == 1
+    assert validator.calls == 1
     assert download_buffer.empty()
     await event_manager.stop()
 
@@ -634,6 +714,7 @@ async def test_active_task_query_excludes_failed_tasks(tmp_path, isolated_db):
         event_publisher=event_manager,
         anime_library_repository=isolated_db,
         metadata_parser=FakeMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
         settings=AnimeLibraryIngestionSettings(
             download_path="/anime",
             rename_format="{anime_name} S{season:02d}E{episode:02d}",

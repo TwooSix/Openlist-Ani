@@ -7,6 +7,7 @@ Strategies (in execution order):
    3a. Relative   — fansub resets episode numbering per cour
    3b. Absolute   — fansub keeps accumulating episode numbers across cours
 4. AbsoluteEpisode — fansub stays in S01 but accumulates episodes; TMDB has multiple seasons
+5. SeasonPassthrough — TMDB has the season but episode data lags behind the release
 """
 
 from __future__ import annotations
@@ -16,17 +17,19 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from openlist_ani.logger import logger
-from ..cour.detector import detect_cours_from_episodes
 from openlist_ani.application.anime_library_ingestion.models import (
     EpisodeMapping,
     SeasonInfo,
 )
-from ..utils import parse_json_from_markdown
+from openlist_ani.integrations.llm import parse_json_from_markdown
+from openlist_ani.logger import logger
+
+from ..cour.detector import detect_cours_from_episodes
 
 if TYPE_CHECKING:
-    from ..llm.client import LLMClient
-    from ..tmdb.api import TMDBClient
+    from openlist_ani.integrations.llm import LLMClient
+
+    from .api import TMDBClient
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +283,38 @@ class AbsoluteEpisodeStrategy(MappingStrategy):
 
 
 # ---------------------------------------------------------------------------
+# 5. SeasonPassthroughStrategy — TMDB 集数数据滞后
+# ---------------------------------------------------------------------------
+
+
+class SeasonPassthroughStrategy(MappingStrategy):
+    """TMDB 已有目标季但 episode_count 尚未追上 RSS 发布进度。
+
+    Corner case: currently airing shows can appear in RSS before TMDB fills the
+    new episode rows. After direct/cour/absolute strategies have failed, keeping
+    the title-visible S/E is a better validation result than dropping metadata
+    entirely, while still requiring the show identity and season to exist.
+    """
+
+    async def try_map(self, ctx: MappingContext) -> EpisodeMapping | None:
+        if ctx.fansub_season <= 0 or ctx.fansub_episode <= 0:
+            return None
+
+        target = next(
+            (s for s in ctx.sorted_seasons if s.season_number == ctx.fansub_season),
+            None,
+        )
+        if target is None:
+            return None
+
+        return EpisodeMapping(
+            season=ctx.fansub_season,
+            episode=ctx.fansub_episode,
+            strategy="season_passthrough",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -369,6 +404,7 @@ class EpisodeMapper:
             SpecialEpisodeStrategy(),
             CourMappingStrategy(),
             AbsoluteEpisodeStrategy(),
+            SeasonPassthroughStrategy(),
         ]
 
     async def map(self, ctx: MappingContext) -> EpisodeMapping | None:

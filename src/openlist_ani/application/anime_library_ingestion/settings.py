@@ -19,7 +19,7 @@ class PrioritySettings:
     fansub: list[str] = field(default_factory=list)
     languages: list[str] = field(default_factory=list)
     quality: list[str] = field(
-        default_factory=lambda: ["2160p", "1080p", "720p", "480p"]
+        default_factory=lambda: ["2160p", "1080p", "720p", "480p", "360p"]
     )
 
 
