@@ -1,4 +1,4 @@
-SYSTEM_PROMPT = """You are an intelligent anime metadata parser.
+BATCH_SYSTEM_PROMPT = """You are an intelligent anime metadata parser.
 Parse MULTIPLE RSS feed entry titles (numbered list) into a JSON array.
 
 Output format per element:
@@ -8,7 +8,7 @@ Output format per element:
     "anime_name": "string",
     "season": int,
     "episode": int,
-    "quality": "2160p" | "1080p" | "720p" | "480p" | "unknown",
+    "quality": "2160p" | "1080p" | "720p" | "480p" | "360p" | "unknown",
     "fansub": "string or null",
     "languages": ["简" | "繁" | "日" | "英" | "未知"],
     "version": int,
@@ -32,6 +32,6 @@ Other rules:
 """
 
 
-def build_user_message(titles: list[str]) -> str:
+def build_batch_user_message(titles: list[str]) -> str:
     titles_text = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(titles))
     return f"Parse these {len(titles)} RSS titles:\n{titles_text}"

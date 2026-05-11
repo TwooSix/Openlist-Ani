@@ -16,17 +16,19 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from openlist_ani.logger import logger
-from ..cour.detector import detect_cours_from_episodes
 from openlist_ani.application.anime_library_ingestion.models import (
     EpisodeMapping,
     SeasonInfo,
 )
-from ..utils import parse_json_from_markdown
+from openlist_ani.integrations.llm import parse_json_from_markdown
+from openlist_ani.logger import logger
+
+from ..cour.detector import detect_cours_from_episodes
 
 if TYPE_CHECKING:
-    from ..llm.client import LLMClient
-    from ..tmdb.api import TMDBClient
+    from openlist_ani.integrations.llm import LLMClient
+
+    from .api import TMDBClient
 
 
 # ---------------------------------------------------------------------------

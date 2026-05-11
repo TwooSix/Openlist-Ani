@@ -7,6 +7,7 @@ class VideoQuality(StrEnum):
     Q1080P = "1080p"
     Q720P = "720p"
     Q480P = "480p"
+    Q360P = "360p"
     UNKNOWN = "unknown"
 
 

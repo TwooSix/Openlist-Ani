@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
-from ..constants import LLM_REQUEST_TIMEOUT
-from ..settings import MetadataParserSettings
+LLM_REQUEST_TIMEOUT = 120.0
 
 # Default max_tokens for Anthropic messages API.
 _ANTHROPIC_DEFAULT_MAX_TOKENS = 8192
+
+
+@dataclass(frozen=True)
+class LLMClientSettings:
+    provider_type: str
+    api_key: str
+    base_url: str
+    model: str
 
 
 class LLMClient(ABC):
@@ -86,8 +94,8 @@ class AnthropicLLMClient(LLMClient):
         return ""
 
 
-def create_llm_client(settings: MetadataParserSettings) -> LLMClient:
-    """Create an LLM client for the configured metadata parser provider."""
+def create_llm_client(settings: LLMClientSettings) -> LLMClient:
+    """Create an LLM client for the configured provider."""
     match settings.provider_type:
         case "openai":
             return OpenAILLMClient(

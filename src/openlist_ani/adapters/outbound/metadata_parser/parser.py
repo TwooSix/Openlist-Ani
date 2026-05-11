@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from cachetools import TTLCache
 
 from openlist_ani.application.anime_library_ingestion.models import ParseResult
 from openlist_ani.domain.anime_release import AnimeRelease
+from openlist_ani.integrations.llm import (
+    LLMClient,
+    LLMClientSettings,
+    create_llm_client,
+)
 from openlist_ani.logger import logger
 
+from .base import MetadataParserEngine
 from .constants import DEFAULT_BATCH_SIZE
-from .llm.batch_parser import parse_title_batch_via_llm
-from .llm.client import LLMClient, create_llm_client
+from .llm import LLMTitleExtractEngine
+from .regex import RegexTitleExtractEngine
 from .settings import MetadataParserSettings
-from .tmdb.api import get_tmdb_client
-from .tmdb.resolver import TMDBResolver
 
 
 class ParseCache:
@@ -31,18 +37,20 @@ class ParseCache:
 
 
 class MetadataParserAdapter:
-    """Facade for LLM title parsing plus TMDB validation."""
+    """Facade for release title metadata extraction."""
 
     def __init__(
         self,
-        llm_client: LLMClient | None,
-        tmdb_resolver: TMDBResolver | None,
+        llm_client: LLMClient | None = None,
+        parser_engine: MetadataParserEngine | None = None,
         cache: ParseCache | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
         disabled_reason: str | None = None,
     ) -> None:
         self._llm = llm_client
-        self._tmdb_resolver = tmdb_resolver
+        self._parser_engine = parser_engine
+        if self._parser_engine is None and llm_client is not None:
+            self._parser_engine = LLMTitleExtractEngine(llm_client)
         self._cache = cache or ParseCache()
         self._batch_size = batch_size
         self._disabled_reason = disabled_reason
@@ -52,30 +60,31 @@ class MetadataParserAdapter:
         if not settings.api_key:
             return cls(
                 llm_client=None,
-                tmdb_resolver=None,
                 disabled_reason="OpenAI API key not set",
             )
 
-        llm = create_llm_client(settings)
-        tmdb_client = get_tmdb_client(
-            api_key=settings.tmdb_api_key,
-            language=settings.tmdb_language,
-        )
+        llm = create_llm_client(_llm_client_settings(settings))
         return cls(
             llm_client=llm,
-            tmdb_resolver=TMDBResolver(llm_client=llm, tmdb_client=tmdb_client),
+            parser_engine=LLMTitleExtractEngine(llm),
         )
+
+    @classmethod
+    def from_regex_settings(
+        cls, settings: MetadataParserSettings
+    ) -> MetadataParserAdapter:
+        return cls(parser_engine=RegexTitleExtractEngine())
 
     async def parse(self, entries: list[AnimeRelease]) -> list[ParseResult]:
         if self._disabled_reason:
-            logger.warning(f"{self._disabled_reason}, skipping LLM extraction.")
+            logger.warning(f"{self._disabled_reason}, skipping metadata extraction.")
             return [
                 ParseResult(success=False, error=self._disabled_reason) for _ in entries
             ]
 
         cached_results, to_parse = self._split_cached(entries)
         if not to_parse:
-            logger.debug("All entries parsed from cache, skipping LLM")
+            logger.debug("All entries parsed from cache, skipping metadata extraction")
             return [cached_results[i] for i in range(len(entries))]
 
         miss_entries = [entry for _, entry in to_parse]
@@ -99,8 +108,8 @@ class MetadataParserAdapter:
         ]
 
     async def close(self) -> None:
-        if self._tmdb_resolver is not None:
-            await self._tmdb_resolver.close()
+        await asyncio.sleep(0)
+        return None
 
     def _split_cached(
         self,
@@ -127,7 +136,7 @@ class MetadataParserAdapter:
     async def _parse_misses(
         self, miss_entries: list[AnimeRelease]
     ) -> list[ParseResult]:
-        if self._llm is None or self._tmdb_resolver is None:
+        if self._parser_engine is None:
             reason = self._disabled_reason or "Metadata parser is not configured"
             return [ParseResult(success=False, error=reason) for _ in miss_entries]
 
@@ -137,27 +146,19 @@ class MetadataParserAdapter:
             chunk = miss_entries[chunk_start : chunk_start + self._batch_size]
             chunk_idx = chunk_start // self._batch_size + 1
             titles = [entry.title for entry in chunk]
-            logger.debug(
-                f"[{chunk_idx}/{total_chunks}] LLM parsing {len(chunk)} titles..."
-            )
+            logger.debug(f"[{chunk_idx}/{total_chunks}] Parsing {len(chunk)} titles...")
             logger.debug(
                 f"[{chunk_idx}/{total_chunks}] Title sample: {_sample_titles(titles)}"
             )
-            parsed = await parse_title_batch_via_llm(self._llm, titles)
+            parsed = await self._parser_engine.parse_titles(titles)
             for title, result in zip(titles, parsed):
-                result.release_title = title
+                if not result.release_title:
+                    result.release_title = title
 
-            llm_ok = sum(1 for result in parsed if result.success)
+            parse_ok = sum(1 for result in parsed if result.success)
             logger.debug(
-                f"[{chunk_idx}/{total_chunks}] LLM done: "
-                f"{llm_ok}/{len(chunk)} succeeded, resolving TMDB..."
-            )
-            await self._tmdb_resolver.resolve_and_validate(parsed)
-
-            tmdb_ok = sum(1 for result in parsed if result.success)
-            logger.debug(
-                f"[{chunk_idx}/{total_chunks}] TMDB resolved: "
-                f"{tmdb_ok}/{len(chunk)} succeeded"
+                f"[{chunk_idx}/{total_chunks}] Metadata extraction done: "
+                f"{parse_ok}/{len(chunk)} succeeded"
             )
             logger.debug(
                 f"[{chunk_idx}/{total_chunks}] Failed parse sample: "
@@ -185,3 +186,12 @@ def _sample_failures(results: list[ParseResult], limit: int = 3) -> list[str]:
     if len(failures) > limit:
         sample.append(f"... {len(failures) - limit} more")
     return sample
+
+
+def _llm_client_settings(settings: MetadataParserSettings) -> LLMClientSettings:
+    return LLMClientSettings(
+        provider_type=settings.provider_type,
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        model=settings.model,
+    )

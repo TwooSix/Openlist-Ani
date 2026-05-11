@@ -8,11 +8,13 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from tomlkit import dumps as toml_dumps
 
 from openlist_ani.integrations.openlist import normalize_offline_download_tool_name
 from openlist_ani.logger import FATAL_LEVEL, logger
+
+DEFAULT_TMDB_API_KEY = "8ed20a12d9f37dcf9484a505c8be696c"
 
 
 class PriorityConfig(BaseModel):
@@ -34,7 +36,7 @@ class PriorityConfig(BaseModel):
     )  # Fansub group priority, e.g. ["Fansub_A", "Fansub_B"]
     languages: list[str] = Field(default_factory=list)  # Language priority labels
     quality: list[str] = Field(
-        default_factory=lambda: ["2160p", "1080p", "720p", "480p"]
+        default_factory=lambda: ["2160p", "1080p", "720p", "480p", "360p"]
     )  # Quality priority (high to low); set to [] to disable
 
 
@@ -100,12 +102,23 @@ class LLMConfig(BaseModel):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o"
-    tmdb_api_key: str = "8ed20a12d9f37dcf9484a505c8be696c"
+    tmdb_api_key: str = DEFAULT_TMDB_API_KEY
     tmdb_language: str = "zh-CN"  # TMDB metadata language (zh-CN, en-US, ja-JP, etc.)
+
+    @field_validator("tmdb_api_key", mode="before")
+    @classmethod
+    def _default_tmdb_api_key_when_blank(cls, value: str) -> str:
+        if isinstance(value, str) and not value.strip():
+            return DEFAULT_TMDB_API_KEY
+        return value
 
 
 class MetadataParserConfig(BaseModel):
-    provider: str = "llm_tmdb"
+    provider: str = "regex"
+
+
+class MetadataValidatorConfig(BaseModel):
+    provider: str = "tmdb"
 
 
 class BotConfig(BaseModel):
@@ -228,6 +241,7 @@ class UserConfig(BaseModel):
     downloader: DownloaderConfig = DownloaderConfig()
     file_renamer: FileRenamerConfig = FileRenamerConfig()
     metadata_parser: MetadataParserConfig = MetadataParserConfig()
+    metadata_validator: MetadataValidatorConfig = MetadataValidatorConfig()
     rss: RSSConfig = RSSConfig()
     openlist: OpenListConfig = OpenListConfig()
     llm: LLMConfig = LLMConfig()
@@ -238,6 +252,48 @@ class UserConfig(BaseModel):
     bangumi: BangumiConfig = BangumiConfig()
     mikan: MikanConfig = MikanConfig()
     backend: BackendConfig = BackendConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _prefer_llm_parser_when_llm_key_is_configured(cls, values: Any) -> Any:
+        """Keep regex as the default, but prefer LLM when a key is configured.
+
+        Explicit ``metadata_parser.provider`` always wins so users can keep
+        regex parsing while using LLM for other modules, such as the assistant.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        metadata_parser = values.get("metadata_parser")
+        if cls._has_explicit_metadata_parser_provider(metadata_parser):
+            return values
+
+        if not cls._has_llm_api_key(values.get("llm")):
+            return values
+
+        updated_values = dict(values)
+        parser_config = (
+            dict(metadata_parser) if isinstance(metadata_parser, dict) else {}
+        )
+        parser_config["provider"] = "llm"
+        updated_values["metadata_parser"] = parser_config
+        return updated_values
+
+    @staticmethod
+    def _has_explicit_metadata_parser_provider(metadata_parser: Any) -> bool:
+        if isinstance(metadata_parser, dict):
+            provider = metadata_parser.get("provider")
+        else:
+            provider = getattr(metadata_parser, "provider", None)
+        return isinstance(provider, str) and bool(provider.strip())
+
+    @staticmethod
+    def _has_llm_api_key(llm_config: Any) -> bool:
+        if isinstance(llm_config, dict):
+            api_key = llm_config.get("openai_api_key")
+        else:
+            api_key = getattr(llm_config, "openai_api_key", None)
+        return isinstance(api_key, str) and bool(api_key.strip())
 
 
 class ConfigManager:
@@ -319,6 +375,10 @@ class ConfigManager:
     @property
     def metadata_parser(self) -> MetadataParserConfig:
         return self.data.metadata_parser
+
+    @property
+    def metadata_validator(self) -> MetadataValidatorConfig:
+        return self.data.metadata_validator
 
     @property
     def notification(self) -> NotificationConfig:

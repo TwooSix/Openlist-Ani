@@ -9,5 +9,3 @@ class MetadataParserSettings:
     api_key: str
     base_url: str
     model: str
-    tmdb_api_key: str
-    tmdb_language: str

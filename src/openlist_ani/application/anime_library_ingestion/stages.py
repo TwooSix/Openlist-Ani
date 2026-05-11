@@ -21,6 +21,7 @@ from openlist_ani.application.anime_library_ingestion.ports import (
     FeedReaderPort,
     FileRenamerPort,
     MetadataParserPort,
+    MetadataValidatorPort,
     NotifierPort,
     TaskMementoStorePort,
     TaskRegistryPort,
@@ -70,6 +71,7 @@ class RSSStage(PipelineStage[None]):
         self,
         feed_reader: FeedReaderPort,
         metadata_parser: MetadataParserPort,
+        metadata_validator: MetadataValidatorPort,
         anime_library_repository: AnimeLibraryRepositoryPort,
         output_buffer: PipelineBuffer[PipelineContext[DownloadCandidate]],
         event_publisher: EventPublisherPort,
@@ -81,6 +83,7 @@ class RSSStage(PipelineStage[None]):
         super().__init__("rss", None, event_publisher)
         self._feed_reader = feed_reader
         self._metadata_parser = metadata_parser
+        self._metadata_validator = metadata_validator
         self._anime_library_repository = anime_library_repository
         self._output = output_buffer
         self._filter_chain = filter_chain
@@ -238,7 +241,8 @@ class RSSStage(PipelineStage[None]):
 
         if missing:
             parsed = await self._metadata_parser.parse(missing)
-            for entry, result in zip(missing, parsed):
+            validated = await self._metadata_validator.validate(parsed)
+            for entry, result in zip(missing, validated):
                 key = self._metadata_cache_key(entry)
                 results_by_key[key] = result
                 if result.success and result.result is not None:

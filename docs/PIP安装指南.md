@@ -53,7 +53,7 @@ interval_time = 300   # 抓取间隔，单位秒（默认 5 分钟）
 # [rss.priority]
 # field_order = ["fansub", "quality", "languages"]  # 比较顺序
 # fansub = []                # 字幕组优先级（靠前优先）
-# quality = ["2160p", "1080p", "720p", "480p"]  # 清晰度优先级
+# quality = ["2160p", "1080p", "720p", "480p", "360p"]  # 清晰度优先级
 # languages = []             # 语言优先级，可选: "简", "繁", "日", "英"
 
 # ---------- 代理（可选） ----------
@@ -69,9 +69,16 @@ download_path = "/PikPak/Anime"         # 下载保存路径
 offline_download_tool = "QBITTORRENT"   # 离线下载工具（大小写不敏感）
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
+# ---------- 元数据解析与校验 ----------
+[metadata_parser]
+provider = "llm"      # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+
+[metadata_validator]
+provider = "tmdb"
+
 # ---------- LLM（AI 重命名） ----------
 [llm]
-openai_api_key = ""                       # API Key
+openai_api_key = ""                       # LLM API Key；启用 AI 助理时也必填
 openai_base_url = "https://api.deepseek.com/v1"   # API 地址（支持 OpenAI 兼容接口）
 openai_model = "deepseek-chat"            # 模型名称
 
@@ -121,7 +128,7 @@ rotation = "00:00"       # 日志轮转时间
 retention = "1 week"     # 旧日志保留时长
 ```
 
-## 第三步：配置必填项
+## 第三步：配置必填项与推荐项
 
 以下是**最小必填配置**，让程序能够跑起来：
 
@@ -148,11 +155,17 @@ offline_download_tool = "QBITTORRENT"   # 离线下载工具
 
 > **令牌获取**：登录 Openlist 后台 → 设置 → 其他 → 令牌
 
-### 3. LLM API Key
+### 3. 推荐：LLM + TMDB
 
-配置用于 AI 重命名的 LLM：
+推荐配置 LLM 做标题解析，并继续使用 TMDB 做校验；如果不配置 LLM API Key，主程序会使用默认的 `regex` + `tmdb`，但解析效果通常不如 LLM。
 
 ```toml
+[metadata_parser]
+provider = "llm"
+
+[metadata_validator]
+provider = "tmdb"
+
 [llm]
 openai_api_key = "sk-xxx"
 openai_base_url = "https://api.deepseek.com/v1"
@@ -170,7 +183,7 @@ openlist-ani
 程序启动后会：
 1. 按照 `interval_time` 间隔定期抓取 RSS
 2. 发现新资源后通过 Openlist 离线下载
-3. 下载完成后通过 LLM 分析并重命名
+3. 下载完成后通过配置的 parser + validator 分析并重命名（推荐 LLM + TMDB，默认 regex + TMDB）
 
 ## 第五步（可选）：启用通知
 

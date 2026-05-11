@@ -33,7 +33,7 @@ interval_time = 300
 # [rss.priority]
 # field_order = ["fansub", "quality", "languages"]  # 比较顺序
 # fansub = []                # 字幕组优先级（靠前优先）
-# quality = ["2160p", "1080p", "720p", "480p"]  # 清晰度优先级
+# quality = ["2160p", "1080p", "720p", "480p", "360p"]  # 清晰度优先级
 # languages = []             # 语言优先级，可选: "简", "繁", "日", "英"
 
 # ---------- 代理（可选） ----------
@@ -49,9 +49,16 @@ download_path = "/PikPak/Anime"
 offline_download_tool = "QBITTORRENT"
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
+# ---------- 元数据解析与校验 ----------
+[metadata_parser]
+provider = "llm"      # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+
+[metadata_validator]
+provider = "tmdb"
+
 # ---------- LLM（AI 重命名） ----------
 [llm]
-openai_api_key = ""
+openai_api_key = ""   # 启用 AI 助理时也必填
 openai_base_url = "https://api.deepseek.com/v1"
 openai_model = "deepseek-chat"
 tmdb_api_key = ""
@@ -106,7 +113,7 @@ retention = "1 week"
 mkdir -p data
 ```
 
-## 第三步：配置必填项
+## 第三步：配置必填项与推荐项
 
 ### 1. RSS 订阅链接
 
@@ -127,9 +134,17 @@ offline_download_tool = "QBITTORRENT"
 
 > **令牌获取**：登录 Openlist 后台 → 设置 → 其他 → 令牌
 
-### 3. LLM API Key
+### 3. 推荐：LLM + TMDB
+
+推荐配置 LLM 做标题解析，并继续使用 TMDB 做校验；如果不配置 LLM API Key，主程序会使用默认的 `regex` + `tmdb`。
 
 ```toml
+[metadata_parser]
+provider = "llm"
+
+[metadata_validator]
+provider = "tmdb"
+
 [llm]
 openai_api_key = "sk-xxx"
 openai_base_url = "https://api.deepseek.com/v1"

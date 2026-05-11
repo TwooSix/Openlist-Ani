@@ -1,13 +1,12 @@
 import json
 
+from openlist_ani.integrations.llm import LLMClient, parse_json_array_from_markdown
 from openlist_ani.logger import logger
 from openlist_ani.application.anime_library_ingestion.models import (
     ParseResult,
     ReleaseTitleParseResult,
 )
-from ..prompts import build_batch_user_message, BATCH_SYSTEM_PROMPT
-from ..utils import parse_json_array_from_markdown
-from .client import LLMClient
+from .prompts import BATCH_SYSTEM_PROMPT, build_batch_user_message
 
 
 async def parse_title_batch_via_llm(

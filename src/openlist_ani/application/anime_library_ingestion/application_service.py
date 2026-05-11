@@ -12,6 +12,7 @@ from openlist_ani.application.anime_library_ingestion.pipeline import (
 from openlist_ani.application.anime_library_ingestion.ports import (
     AnimeLibraryRepositoryPort,
     MetadataParserPort,
+    MetadataValidatorPort,
 )
 from openlist_ani.application.anime_library_ingestion.settings import (
     AnimeLibraryIngestionSettings,
@@ -57,6 +58,7 @@ class AnimeLibraryApplicationService:
         self,
         pipeline: AnimeLibraryIngestionPipeline,
         metadata_parser: MetadataParserPort,
+        metadata_validator: MetadataValidatorPort,
         anime_library_repository: AnimeLibraryRepositoryPort,
         settings: AnimeLibraryIngestionSettings,
         feed_factory: ReleaseFeedSourceFactoryPort,
@@ -67,6 +69,7 @@ class AnimeLibraryApplicationService:
     ) -> None:
         self._pipeline = pipeline
         self._metadata_parser = metadata_parser
+        self._metadata_validator = metadata_validator
         self._anime_library_repository = anime_library_repository
         self._settings = settings
         self._feed_factory = feed_factory
@@ -172,7 +175,8 @@ class AnimeLibraryApplicationService:
     async def _enrich_release(self, release: AnimeRelease) -> None:
         try:
             parse_results = await self._metadata_parser.parse([release])
-            parse_result: ParseResult = parse_results[0]
+            validated_results = await self._metadata_validator.validate(parse_results)
+            parse_result: ParseResult = validated_results[0]
             if parse_result.success and parse_result.result:
                 meta = parse_result.result
                 release.anime_name = meta.anime_name
