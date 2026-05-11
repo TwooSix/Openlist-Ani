@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import asyncio
 from dataclasses import dataclass
 
 from openlist_ani.application.anime_library_ingestion.models import (
@@ -34,7 +35,7 @@ _STAR_FANSUB_RE = re.compile(
 )
 
 # General release metadata tags.
-_VERSION_RE = re.compile(r"(?i)(?<![A-Za-z])v(?P<version>\d+)(?!\d)")
+_VERSION_RE = re.compile(r"(?i)(?<![A-Z])v(?P<version>\d+)(?!\d)")
 _QUALITY_RE = re.compile(r"(?i)(?<!\d)(?P<quality>2160p|1080p|720p|480p|360p|4k)(?!\d)")
 _RESOLUTION_RE = re.compile(r"(?i)(?P<width>\d{3,4})\s*[x×]\s*(?P<height>\d{3,4})")
 
@@ -114,12 +115,11 @@ _CHINESE_PHASE_SEASON_RE = re.compile(
 # "番名 2", "番名二期", or "番名 2期". This is deliberately weaker than
 # explicit "第 2 季" and is only used when no explicit season was found.
 _BARE_CHINESE_SEASON_RE = re.compile(
-    r"(?:^|[\s_])(?P<number>[一二三四五六七八九十百两壹贰叁肆陆柒捌玖贰参])\s*(?:期)?$"
+    r"(?:^|[\s_])(?P<number>[一二三四五六七八九十百两壹贰叁肆陆柒捌玖参])\s*(?:期)?$"
 )
 _TRAILING_NUMERIC_KI_SEASON_RE = re.compile(r"(?<!\d)(?P<number>[2-9])\s*期$")
 
 # General cleanup helpers.
-_SPLIT_ALIAS_RE = re.compile(r"\s*(?:/|／|\|)\s*")
 _WHITESPACE_RE = re.compile(r"\s+")
 _INVISIBLE_TEXT_RE = re.compile(r"[\u200b\ufeff]")
 _CJK_RE = re.compile(r"[\u3400-\u9fff\u3040-\u30ff]")
@@ -132,11 +132,8 @@ _REGION_NOTE_RE = re.compile(
 # Corner case: many titles include romanized aliases after the Chinese name,
 # e.g. "百鬼夜行抄 Hyakki Yakoushou". The engine prefers the CJK title for
 # TMDB search, but only trims romanized suffixes when doing so is safe.
-_ROMANIZED_SUFFIX_RE = re.compile(
-    r"\s+(?:[A-Za-z]|\d{2,}-[A-Za-z])[A-Za-z0-9 .,:;'’`()!?&~〜-]*$"
-)
 _ATTACHED_ROMANIZED_SUFFIX_RE = re.compile(
-    r"(?<=[\u3400-\u9fff？?。])(?:[A-Z][a-z][A-Za-z0-9 .:'’`!?&-]*)$"
+    r"(?<=[\u3400-\u9fff？?。])[A-Z][a-z][A-Za-z0-9 .:'’`!?&-]*$"
 )
 
 # Corner case: suffixes like "II", "III", or "S2" are often season markers
@@ -152,7 +149,6 @@ _BARE_NUMERIC_SEASON_RE = re.compile(r"(?<!\d)(?P<number>[2-9])\s*$")
 # - "4月新番" prefixes are release labels, not anime titles.
 # - underscore-separated aliases may include both romaji and CJK names.
 # - bracketed title with a trailing episode index can be mistaken for fansub.
-_ALT_TITLE_SUFFIX_RE = re.compile(r"\s*[「『][^」』]+[」』]\s*[A-Za-z].*$")
 _NEW_SEASON_PREFIX_RE = re.compile(
     r"^[★☆\s]*(?:\d{1,2}|[一二三四五六七八九十]+)月新番[★☆\s]*"
 )
@@ -170,9 +166,7 @@ _BRACKETED_TITLE_WITH_TRAILING_EPISODE_INDEX_RE = re.compile(
 )
 # Corner case: "中文名 19/日文名 - 19" repeats the episode number before
 # the alias separator. Strip the repeated number from the title alias.
-_TRAILING_ALIAS_EPISODE_INDEX_RE = re.compile(r"(?<=[\u3400-\u9fff])\s+\d{2,3}$")
 _SURROUNDING_TITLE_QUOTES_RE = re.compile(r"^[「『](?P<title>[^」』]+)[」』]$")
-_TRAILING_CJK_PAREN_ALIAS_RE = re.compile(r"\s*[（(][\u3400-\u9fff][^）)]*[）)]$")
 _LATIN_DASH_CJK_RE = re.compile(
     r"^(?P<prefix>[A-Za-z0-9][A-Za-z0-9 .:'’`!?&~〜-]{1,})\s+[-–—]\s*"
     r"(?P<title>[\u3400-\u9fff].+)$"
@@ -198,23 +192,23 @@ _PUBLISHER_TAGS = {"代发", "代發"}
 _LANGUAGE_PATTERNS: tuple[tuple[LanguageType, re.Pattern[str]], ...] = (
     (
         LanguageType.CHS,
-        re.compile(r"(?i)(?:(?<![A-Za-z])(?:CHS|GB(?:_CN)?)(?![A-Za-z])|简体|简中|简)"),
+        re.compile(r"(?i)(?:(?<![A-Z])(?:CHS|GB(?:_CN)?)(?![A-Z])|简体|简中|简)"),
     ),
     (
         LanguageType.CHT,
-        re.compile(r"(?i)(?:(?<![A-Za-z])(?:CHT|BIG5)(?![A-Za-z])|繁体|繁中|繁)"),
+        re.compile(r"(?i)(?:(?<![A-Z])(?:CHT|BIG5)(?![A-Z])|繁体|繁中|繁)"),
     ),
     (
         LanguageType.ENG,
         re.compile(
-            r"(?i)(?:(?<![A-Za-z])(?:ENG|ENGLISH)(?![A-Za-z])|"
+            r"(?i)(?:(?<![A-Z])(?:ENG|ENGLISH)(?![A-Z])|"
             r"英(?=文|语|語|字|内|內|双|雙|字幕|[\s_\]&】]))"
         ),
     ),
     (
         LanguageType.JP,
         re.compile(
-            r"(?i)(?:(?<![A-Za-z])(?:JPN|JPSC|JP)(?![A-Za-z])|"
+            r"(?i)(?:(?<![A-Z])(?:JPN|JPSC|JP)(?![A-Z])|"
             r"日(?=语|語|文|字|内|內|英|双|雙|三语|三語|字幕|[\s_\]&】])|"
             r"简体双语|繁体双语|双语内[嵌封])"
         ),
@@ -251,6 +245,7 @@ class RegexTitleExtractEngine:
     """
 
     async def parse_titles(self, titles: list[str]) -> list[ParseResult]:
+        await asyncio.sleep(0)
         return [self.parse_title(title) for title in titles]
 
     def parse_title(self, title: str) -> ParseResult:
@@ -310,27 +305,38 @@ def _strip_leading_fansub(title: str) -> tuple[str, str | None]:
     - "[番名01] Title S01E01" is a title/episode tag, not a fansub tag.
     """
     remaining = title.strip()
-    skipped = False
     while True:
-        match = _LEADING_TAG_RE.match(remaining)
-        if match is not None:
-            fansub = _normalize_text(match.group(1) or match.group(2) or "")
-            next_remaining = remaining[match.end() :].strip()
-            if _looks_like_leading_title_episode_tag(fansub, next_remaining):
-                return remaining, None if skipped else None
+        bracket_result = _strip_one_bracket_fansub(remaining)
+        if bracket_result is None:
+            return _strip_star_fansub(remaining)
+        remaining, fansub, should_skip = bracket_result
+        if should_skip:
+            continue
+        return remaining, fansub or None
 
-            remaining = next_remaining
-            if fansub in _PUBLISHER_TAGS or _is_release_variant_tag(fansub):
-                skipped = True
-                continue
-            return remaining, fansub or None
 
-        star_fansub = _STAR_FANSUB_RE.match(remaining)
-        if star_fansub is None:
-            return remaining, None if skipped else None
+def _strip_one_bracket_fansub(
+    remaining: str,
+) -> tuple[str, str | None, bool] | None:
+    match = _LEADING_TAG_RE.match(remaining)
+    if match is None:
+        return None
 
-        fansub = _normalize_text(star_fansub.group("fansub"))
-        return remaining[star_fansub.end() :].strip(), fansub or None
+    fansub = _normalize_text(match.group(1) or match.group(2) or "")
+    next_remaining = remaining[match.end() :].strip()
+    if _looks_like_leading_title_episode_tag(fansub, next_remaining):
+        return remaining, None, False
+    should_skip = fansub in _PUBLISHER_TAGS or _is_release_variant_tag(fansub)
+    return next_remaining, fansub, should_skip
+
+
+def _strip_star_fansub(remaining: str) -> tuple[str, str | None]:
+    star_fansub = _STAR_FANSUB_RE.match(remaining)
+    if star_fansub is None:
+        return remaining, None
+
+    fansub = _normalize_text(star_fansub.group("fansub"))
+    return remaining[star_fansub.end() :].strip(), fansub or None
 
 
 def _extract_version(title: str) -> int:
@@ -400,101 +406,136 @@ def _extract_episode(title: str) -> _EpisodeMatch:
     if _EPISODE_RANGE_RE.search(title):
         raise _ParseError("Episode range titles require manual review")
 
-    sxx_exx = _SXX_EXX_RE.search(title)
-    if sxx_exx is not None:
-        return _EpisodeMatch(
-            name_part=title[: sxx_exx.start()],
-            season=int(sxx_exx.group("season")),
-            episode_text=sxx_exx.group("episode"),
-        )
-
-    sp_episode = _SP_EPISODE_RE.search(title)
-    if sp_episode is not None:
-        return _EpisodeMatch(
-            name_part=title[: sp_episode.start()],
-            season=0,
-            episode_text="0",
-        )
-
-    ova_episode = _OVA_DASH_EPISODE_RE.search(title)
-    if ova_episode is not None:
-        return _EpisodeMatch(
-            name_part=title[: ova_episode.start()],
-            season=0,
-            episode_text=ova_episode.group("episode"),
-        )
-
-    dash_episode = _DASH_EPISODE_RE.search(title)
-    if dash_episode is not None:
-        return _EpisodeMatch(
-            name_part=title[: dash_episode.start()],
-            season=1,
-            episode_text=dash_episode.group("episode"),
-        )
-
-    ep_prefix = _EP_PREFIX_RE.search(title)
-    if ep_prefix is not None:
-        return _EpisodeMatch(
-            name_part=title[: ep_prefix.start()],
-            season=1,
-            episode_text=ep_prefix.group("episode"),
-        )
-
-    chinese_episode = _CHINESE_INLINE_EPISODE_RE.search(title)
-    if chinese_episode is not None:
-        return _EpisodeMatch(
-            name_part=title[: chinese_episode.start()],
-            season=1,
-            episode_text=chinese_episode.group("episode"),
-        )
-
-    star_episode = _STAR_EPISODE_RE.search(title)
-    if star_episode is not None:
-        name_start = title.rfind("★", 0, star_episode.start())
-        if name_start == -1:
-            name_start = title.rfind("☆", 0, star_episode.start())
-        name_part = (
-            title[name_start + 1 : star_episode.start()]
-            if name_start != -1
-            else title[: star_episode.start()]
-        )
-        return _EpisodeMatch(
-            name_part=name_part,
-            season=1,
-            episode_text=star_episode.group("episode"),
-        )
-
-    bracket_match = _extract_bracket_episode(title)
-    if bracket_match is not None:
-        return bracket_match
-
-    metadata_tail_episode = _NUMBER_BEFORE_TRAILING_METADATA_RE.search(title)
-    if metadata_tail_episode is not None and _has_cjk(
-        title[: metadata_tail_episode.start()]
-    ):
-        return _EpisodeMatch(
-            name_part=title[: metadata_tail_episode.start()],
-            season=1,
-            episode_text=metadata_tail_episode.group("episode"),
-        )
-
-    part_episode = _PART_EPISODE_RE.search(title)
-    if part_episode is not None:
-        return _EpisodeMatch(
-            name_part=title[: part_episode.start()],
-            season=1,
-            episode_text=part_episode.group("episode"),
-        )
-
-    trailing_episode = _TRAILING_NUMBER_EPISODE_RE.search(title)
-    if trailing_episode is not None and _has_cjk(title[: trailing_episode.start()]):
-        return _EpisodeMatch(
-            name_part=title[: trailing_episode.start()],
-            season=1,
-            episode_text=trailing_episode.group("episode"),
-        )
+    for matcher in _EPISODE_MATCHERS:
+        episode_match = matcher(title)
+        if episode_match is not None:
+            return episode_match
 
     raise _ParseError("Episode number not found")
+
+
+def _extract_sxx_exx_episode(title: str) -> _EpisodeMatch | None:
+    sxx_exx = _SXX_EXX_RE.search(title)
+    if sxx_exx is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: sxx_exx.start()],
+        season=int(sxx_exx.group("season")),
+        episode_text=sxx_exx.group("episode"),
+    )
+
+
+def _extract_sp_episode(title: str) -> _EpisodeMatch | None:
+    sp_episode = _SP_EPISODE_RE.search(title)
+    if sp_episode is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: sp_episode.start()],
+        season=0,
+        episode_text="0",
+    )
+
+
+def _extract_ova_episode(title: str) -> _EpisodeMatch | None:
+    ova_episode = _OVA_DASH_EPISODE_RE.search(title)
+    if ova_episode is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: ova_episode.start()],
+        season=0,
+        episode_text=ova_episode.group("episode"),
+    )
+
+
+def _extract_dash_episode(title: str) -> _EpisodeMatch | None:
+    dash_episode = _DASH_EPISODE_RE.search(title)
+    if dash_episode is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: dash_episode.start()],
+        season=1,
+        episode_text=dash_episode.group("episode"),
+    )
+
+
+def _extract_ep_prefix_episode(title: str) -> _EpisodeMatch | None:
+    ep_prefix = _EP_PREFIX_RE.search(title)
+    if ep_prefix is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: ep_prefix.start()],
+        season=1,
+        episode_text=ep_prefix.group("episode"),
+    )
+
+
+def _extract_chinese_inline_episode(title: str) -> _EpisodeMatch | None:
+    chinese_episode = _CHINESE_INLINE_EPISODE_RE.search(title)
+    if chinese_episode is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: chinese_episode.start()],
+        season=1,
+        episode_text=chinese_episode.group("episode"),
+    )
+
+
+def _extract_star_episode(title: str) -> _EpisodeMatch | None:
+    star_episode = _STAR_EPISODE_RE.search(title)
+    if star_episode is None:
+        return None
+    name_start = title.rfind("★", 0, star_episode.start())
+    if name_start == -1:
+        name_start = title.rfind("☆", 0, star_episode.start())
+    name_part = (
+        title[name_start + 1 : star_episode.start()]
+        if name_start != -1
+        else title[: star_episode.start()]
+    )
+    return _EpisodeMatch(
+        name_part=name_part,
+        season=1,
+        episode_text=star_episode.group("episode"),
+    )
+
+
+def _extract_metadata_tail_episode(title: str) -> _EpisodeMatch | None:
+    metadata_tail_episode = _NUMBER_BEFORE_TRAILING_METADATA_RE.search(title)
+    if metadata_tail_episode is None:
+        return None
+    name_part = title[: metadata_tail_episode.start()]
+    if not _has_cjk(name_part):
+        return None
+    return _EpisodeMatch(
+        name_part=name_part,
+        season=1,
+        episode_text=metadata_tail_episode.group("episode"),
+    )
+
+
+def _extract_part_episode(title: str) -> _EpisodeMatch | None:
+    part_episode = _PART_EPISODE_RE.search(title)
+    if part_episode is None:
+        return None
+    return _EpisodeMatch(
+        name_part=title[: part_episode.start()],
+        season=1,
+        episode_text=part_episode.group("episode"),
+    )
+
+
+def _extract_trailing_episode(title: str) -> _EpisodeMatch | None:
+    trailing_episode = _TRAILING_NUMBER_EPISODE_RE.search(title)
+    if trailing_episode is None:
+        return None
+    name_part = title[: trailing_episode.start()]
+    if not _has_cjk(name_part):
+        return None
+    return _EpisodeMatch(
+        name_part=name_part,
+        season=1,
+        episode_text=trailing_episode.group("episode"),
+    )
 
 
 def _extract_bracket_episode(title: str) -> _EpisodeMatch | None:
@@ -525,6 +566,21 @@ def _extract_bracket_episode(title: str) -> _EpisodeMatch | None:
                 episode_text=episode_text,
             )
     return None
+
+
+_EPISODE_MATCHERS = (
+    _extract_sxx_exx_episode,
+    _extract_sp_episode,
+    _extract_ova_episode,
+    _extract_dash_episode,
+    _extract_ep_prefix_episode,
+    _extract_chinese_inline_episode,
+    _extract_star_episode,
+    _extract_bracket_episode,
+    _extract_metadata_tail_episode,
+    _extract_part_episode,
+    _extract_trailing_episode,
+)
 
 
 def _parse_episode_tag(tag: str) -> str | None:
@@ -618,11 +674,7 @@ def _extract_anime_name_and_season(
     cleaned = _REGION_NOTE_RE.sub(" ", cleaned)
     cleaned = cleaned.strip(" _[]")
 
-    aliases = [
-        _normalize_text(alias.strip(" _[]"))
-        for alias in _SPLIT_ALIAS_RE.split(cleaned)
-        if _normalize_text(alias.strip(" _[]"))
-    ]
+    aliases = _split_aliases(cleaned)
     if not aliases:
         return "", season
 
@@ -780,6 +832,25 @@ def _strip_bare_season(alias: str, season: int) -> str:
     return _normalize_title_spacing(_normalize_text(value.strip(" _[]"))) or alias
 
 
+def _split_aliases(value: str) -> list[str]:
+    aliases: list[str] = []
+    current: list[str] = []
+    for char in value:
+        if char in {"/", "／", "|"}:
+            _append_alias(aliases, current)
+            current = []
+            continue
+        current.append(char)
+    _append_alias(aliases, current)
+    return aliases
+
+
+def _append_alias(aliases: list[str], chars: list[str]) -> None:
+    alias = _normalize_text("".join(chars).strip(" _[]"))
+    if alias:
+        aliases.append(alias)
+
+
 def _choose_anime_name_alias(aliases: list[str]) -> str:
     """Choose the title-visible alias that should be sent to TMDB.
 
@@ -822,19 +893,17 @@ def _clean_alias(alias: str) -> str:
     value = _REGION_NOTE_RE.sub(" ", alias)
     value = _NEW_SEASON_PREFIX_RE.sub("", value)
     value = _strip_bracketed_title_episode_index(value)
-    value = re.sub(
-        r"^[（(][^）)]*(?:翻译|翻譯|粤语|粵語|字幕|代理商)[^）)]*[）)]\s*", "", value
-    )
+    value = _strip_leading_release_note(value)
     value = _SPECIAL_VERSION_LABEL_RE.sub(" ", value)
-    value = _TRAILING_CJK_PAREN_ALIAS_RE.sub("", value)
-    value = _TRAILING_ALIAS_EPISODE_INDEX_RE.sub("", value)
+    value = _strip_trailing_cjk_parenthesized_alias(value)
+    value = _strip_trailing_alias_episode_index(value)
     latin_dash_cjk = _LATIN_DASH_CJK_RE.match(value.strip())
     if latin_dash_cjk is not None:
         value = latin_dash_cjk.group("title")
     if _has_cjk(value):
         value = _select_cjk_underscore_alias(value)
         value = _UNDERSCORE_ROMANIZED_SUFFIX_RE.sub("", value)
-    value = _ALT_TITLE_SUFFIX_RE.sub("", value)
+    value = _strip_alt_title_suffix(value)
     value = _ATTACHED_ROMAN_SEASON_RE.sub("", value)
     value = _ATTACHED_S_SEASON_RE.sub("", value)
     value = _normalize_text(value.strip(" _[]"))
@@ -858,14 +927,21 @@ def _trim_romanized_suffix(value: str) -> str:
     current = value
     while previous != current:
         previous = current
-        current = _ROMANIZED_SUFFIX_RE.sub("", current).strip()
+        romanized_suffix = _find_romanized_suffix(current)
+        if romanized_suffix is not None:
+            current = current[: romanized_suffix[0]].strip()
         current = _ATTACHED_ROMANIZED_SUFFIX_RE.sub("", current).strip()
     return current or value
 
 
 def _normalize_title_spacing(value: str) -> str:
-    value = re.sub(r"\s+([「『（(])", r"\1", value)
-    return value
+    normalized: list[str] = []
+    for char in value:
+        if char in {"「", "『", "（", "("}:
+            while normalized and normalized[-1].isspace():
+                normalized.pop()
+        normalized.append(char)
+    return "".join(normalized)
 
 
 def _has_cjk(value: str) -> bool:
@@ -976,12 +1052,12 @@ def _should_keep_latin_suffix(value: str) -> bool:
     special forms like "ACT 2", but lets long all-caps romanized tails be
     removed from CJK titles.
     """
-    suffix_match = _ROMANIZED_SUFFIX_RE.search(value)
-    if suffix_match is None:
+    romanized_suffix = _find_romanized_suffix(value)
+    if romanized_suffix is None:
         return True
 
-    suffix = suffix_match.group(0).strip()
-    prefix = value[: suffix_match.start()].rstrip()
+    suffix_start, suffix = romanized_suffix
+    prefix = value[:suffix_start].rstrip()
     if prefix and prefix[-1].isascii() and prefix[-1].isalpha() and _has_cjk(prefix):
         return True
     compact = re.sub(r"[^A-Za-z0-9]", "", suffix)
@@ -994,3 +1070,93 @@ def _should_keep_latin_suffix(value: str) -> bool:
     if re.search(r"[\u3400-\u9fff][A-Za-z]+(?:\s+[A-Za-z]+){1,3}$", value):
         return True
     return False
+
+
+def _strip_alt_title_suffix(value: str) -> str:
+    for opening, closing in (("「", "」"), ("『", "』")):
+        start = value.find(opening)
+        if start == -1:
+            continue
+        end = value.find(closing, start + 1)
+        if end == -1:
+            continue
+        tail = value[end + 1 :].lstrip()
+        if tail and tail[0].isascii() and tail[0].isalpha():
+            return value[:start].rstrip()
+    return value
+
+
+def _strip_trailing_alias_episode_index(value: str) -> str:
+    stripped = value.rstrip()
+    digit_start = len(stripped)
+    while digit_start > 0 and stripped[digit_start - 1].isdigit():
+        digit_start -= 1
+    if len(stripped) - digit_start not in {2, 3}:
+        return value
+    prefix = stripped[:digit_start].rstrip()
+    if prefix and _has_han(prefix[-1]):
+        return prefix
+    return value
+
+
+def _strip_trailing_cjk_parenthesized_alias(value: str) -> str:
+    stripped = value.rstrip()
+    if not stripped or stripped[-1] not in {"）", ")"}:
+        return value
+    closing = stripped[-1]
+    opening = "（" if closing == "）" else "("
+    start = stripped.rfind(opening)
+    if start == -1:
+        return value
+    content = stripped[start + 1 : -1].strip()
+    if content and _has_han(content[0]):
+        return stripped[:start].rstrip()
+    return value
+
+
+def _strip_leading_release_note(value: str) -> str:
+    stripped = value.lstrip()
+    if not stripped or stripped[0] not in {"（", "("}:
+        return value
+    closing = "）" if stripped[0] == "（" else ")"
+    end = stripped.find(closing, 1)
+    if end == -1:
+        return value
+    content = stripped[1:end]
+    release_keywords = ("翻译", "翻譯", "粤语", "粵語", "字幕", "代理商")
+    if any(keyword in content for keyword in release_keywords):
+        return stripped[end + 1 :].lstrip()
+    return value
+
+
+_ROMANIZED_SUFFIX_ALLOWED_PUNCTUATION = set(" .,:;'’`()!?&~〜-")
+
+
+def _find_romanized_suffix(value: str) -> tuple[int, str] | None:
+    for index, char in enumerate(value):
+        if not char.isspace():
+            continue
+        suffix = value[index:].strip()
+        if _is_romanized_suffix(suffix):
+            return index, suffix
+    return None
+
+
+def _is_romanized_suffix(value: str) -> bool:
+    if not value:
+        return False
+    if not all(
+        (char.isascii() and char.isalnum())
+        or char in _ROMANIZED_SUFFIX_ALLOWED_PUNCTUATION
+        for char in value
+    ):
+        return False
+    if value[0].isalpha():
+        return True
+    return (
+        len(value) >= 4
+        and value[0].isdigit()
+        and value[1].isdigit()
+        and value[2] == "-"
+        and value[3].isalpha()
+    )

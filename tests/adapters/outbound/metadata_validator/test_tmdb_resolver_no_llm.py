@@ -1,3 +1,5 @@
+import asyncio
+
 from openlist_ani.adapters.outbound.metadata_validator.pipeline import (
     MetadataValidationPipeline,
 )
@@ -22,6 +24,7 @@ class FakeTMDBClient:
         self.closed = False
 
     async def search_tv_show(self, query: str):
+        await asyncio.sleep(0)
         self.search_queries.append(query)
         return [
             {
@@ -45,6 +48,7 @@ class FakeTMDBClient:
         ]
 
     async def get_tv_show_details(self, tmdb_id: int):
+        await asyncio.sleep(0)
         self.detail_ids.append(tmdb_id)
         return {
             "seasons": [
@@ -54,9 +58,11 @@ class FakeTMDBClient:
         }
 
     async def get_season_episodes(self, tmdb_id: int, season_number: int):
+        await asyncio.sleep(0)
         return []
 
     async def close(self):
+        await asyncio.sleep(0)
         self.closed = True
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import asyncio
 from difflib import SequenceMatcher
 from typing import Protocol
 
@@ -33,6 +34,7 @@ class StaticQueryExpander:
     """
 
     async def expand(self, anime_name: str) -> list[str]:
+        await asyncio.sleep(0)
         return _static_query_variants(anime_name)
 
 
@@ -90,6 +92,7 @@ class HeuristicCandidateSelector:
         anime_name: str,
         candidates: list[TMDBCandidate],
     ) -> TMDBMatch | None:
+        await asyncio.sleep(0)
         if not candidates:
             return None
         ranked = sorted(
@@ -193,7 +196,7 @@ def _normalize_candidate_name(value: str) -> str:
 
 def _static_query_variants(anime_name: str) -> list[str]:
     variants = [anime_name]
-    normalized = anime_name.replace("／", "/").replace("／", "/")
+    normalized = anime_name.replace("／", "/")
     _append_unique(variants, normalized)
 
     # Corner case: very long Chinese subtitles often differ by one or two words
@@ -204,7 +207,7 @@ def _static_query_variants(anime_name: str) -> list[str]:
 
     # Corner case: some ANi titles omit punctuation in Fate franchise aliases,
     # e.g. "Fatestrange Fake" while TMDB indexes "Fate/strange Fake".
-    fate_spaced = re.sub(r"(?i)^Fate(?=[A-Za-z])", "Fate ", anime_name)
+    fate_spaced = re.sub(r"(?i)^Fate(?=[A-Z])", "Fate ", anime_name)
     _append_unique(variants, fate_spaced)
     _append_unique(variants, fate_spaced.replace("Fate ", "Fate/", 1))
 

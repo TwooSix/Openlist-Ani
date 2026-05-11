@@ -1,3 +1,5 @@
+import asyncio
+
 from openlist_ani.adapters.outbound.metadata_validator.pipeline import (
     MetadataValidationPipeline,
 )
@@ -17,10 +19,12 @@ class FakeIdentityResolver:
         self.closed = False
 
     async def resolve(self, anime_name: str):
+        await asyncio.sleep(0)
         self.names.append(anime_name)
         return self.resolved
 
     async def close(self):
+        await asyncio.sleep(0)
         self.closed = True
 
 
@@ -30,6 +34,7 @@ class FakeEpisodeValidator:
         self.calls = []
 
     async def validate(self, *, tmdb_id, season, episode, anime_name, release_title):
+        await asyncio.sleep(0)
         self.calls.append((tmdb_id, season, episode, anime_name, release_title))
         return self.mapping
 

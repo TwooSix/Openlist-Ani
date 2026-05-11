@@ -1,3 +1,5 @@
+import asyncio
+
 from openlist_ani.adapters.outbound.metadata_validator.tmdb import (
     EpisodeMapper,
     MappingContext,
@@ -7,6 +9,7 @@ from openlist_ani.application.anime_library_ingestion.models import SeasonInfo
 
 class FakeTMDBClient:
     async def get_season_episodes(self, tmdb_id: int, season_number: int):
+        await asyncio.sleep(0)
         return []
 
 

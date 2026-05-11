@@ -69,19 +69,17 @@ class MetadataValidationPipeline:
         successful_items = [
             item for item in validated_results if item.success and item.result
         ]
-        if not successful_items:
-            return validated_results
+        if successful_items:
+            names = {
+                item.result.anime_name.strip()
+                for item in successful_items
+                if item.result and item.result.anime_name.strip()
+            }
+            resolved_map = await self._resolve_identities(names)
+            episode_cache = _EpisodeValidationCache()
 
-        names = {
-            item.result.anime_name.strip()
-            for item in successful_items
-            if item.result and item.result.anime_name.strip()
-        }
-        resolved_map = await self._resolve_identities(names)
-        episode_cache = _EpisodeValidationCache()
-
-        for item in successful_items:
-            await self._validate_item(item, resolved_map, episode_cache)
+            for item in successful_items:
+                await self._validate_item(item, resolved_map, episode_cache)
 
         return validated_results
 
