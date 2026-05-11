@@ -60,7 +60,9 @@ class MetadataFilterConfig(BaseModel):
 class RSSConfig(BaseModel):
     urls: list[str] = Field(default_factory=list)
     interval_time: int = 300  # RSS fetch interval in seconds (default: 5 minutes)
-    strict: bool = False  # Strict mode: filter entries whose rename stem matches existing downloads
+    strict: bool = (
+        False  # Strict mode: filter entries whose rename stem matches existing downloads
+    )
     filter: MetadataFilterConfig = MetadataFilterConfig()
     priority: PriorityConfig = PriorityConfig()
 
@@ -122,7 +124,9 @@ class NotificationConfig(BaseModel):
     """Configuration for notification system."""
 
     enabled: bool = False
-    batch_interval: float = 300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    batch_interval: float = (
+        300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    )
     bots: list[BotConfig] = Field(default_factory=list)
 
 
@@ -189,7 +193,9 @@ class LogConfig(BaseModel):
     """Configuration for logging."""
 
     level: str = "INFO"  # Log level: DEBUG, INFO, WARNING, ERROR, FATAL
-    rotation: str = "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    rotation: str = (
+        "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
+    )
     retention: str = "1 week"  # How long to keep old logs
 
 
