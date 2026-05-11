@@ -12,6 +12,9 @@ from .settings import BotConfig, UserConfig
 _SUPPORTED_RENAME_FIELDS: frozenset[str] = frozenset(
     {"anime_name", "season", "episode", "fansub", "quality", "languages"}
 )
+_SUPPORTED_METADATA_PARSER_PROVIDERS: frozenset[str] = frozenset({"llm", "regex"})
+_SUPPORTED_METADATA_VALIDATOR_PROVIDERS: frozenset[str] = frozenset({"tmdb", "none"})
+_SUPPORTED_LLM_PROVIDER_TYPES: frozenset[str] = frozenset({"openai", "anthropic"})
 
 
 class ConfigValidator:
@@ -29,9 +32,9 @@ class ConfigValidator:
         warnings: list[str] = []
 
         self._validate_core_config(errors)
+        self._validate_metadata_pipeline_config(errors)
         self._validate_rename_format(errors)
         self._validate_exclude_patterns(errors)
-        self._validate_llm_config(errors)
         self._validate_notification_config(errors, warnings)
         self._validate_assistant_config(errors, warnings)
         self._log_validation_results(errors, warnings)
@@ -84,9 +87,44 @@ class ConfigValidator:
                     f"'{pattern}'. Error: {e}"
                 )
 
+    def _validate_metadata_pipeline_config(self, errors: list[str]) -> None:
+        parser_provider = self._normalize_provider(self._data.metadata_parser.provider)
+        validator_provider = self._normalize_provider(
+            self._data.metadata_validator.provider
+        )
+
+        if parser_provider not in _SUPPORTED_METADATA_PARSER_PROVIDERS:
+            errors.append(
+                f"Unknown metadata_parser.provider: "
+                f"'{self._data.metadata_parser.provider}'. Supported values: "
+                f"{sorted(_SUPPORTED_METADATA_PARSER_PROVIDERS)}."
+            )
+
+        if validator_provider not in _SUPPORTED_METADATA_VALIDATOR_PROVIDERS:
+            errors.append(
+                f"Unknown metadata_validator.provider: "
+                f"'{self._data.metadata_validator.provider}'. Supported values: "
+                f"{sorted(_SUPPORTED_METADATA_VALIDATOR_PROVIDERS)}."
+            )
+
+        if parser_provider == "llm":
+            self._validate_llm_config(errors)
+
+    @staticmethod
+    def _normalize_provider(provider: str) -> str:
+        return provider.strip().lower()
+
     def _validate_llm_config(self, errors: list[str]) -> None:
         if not self._data.llm.openai_api_key:
-            errors.append("OpenAI API key is missing in [llm] openai_api_key. ")
+            errors.append(
+                "metadata_parser.provider is 'llm' but [llm] openai_api_key "
+                "is missing."
+            )
+        if self._data.llm.provider_type not in _SUPPORTED_LLM_PROVIDER_TYPES:
+            errors.append(
+                f"Unknown LLM provider_type: '{self._data.llm.provider_type}'. "
+                "Supported values: 'openai', 'anthropic'."
+            )
 
     def _validate_notification_config(
         self, errors: list[str], warnings: list[str]
@@ -210,7 +248,7 @@ class ConfigValidator:
                 "Assistant requires LLM. Please set [llm] openai_api_key."
             )
 
-        if self._data.llm.provider_type not in ("openai", "anthropic"):
+        if self._data.llm.provider_type not in _SUPPORTED_LLM_PROVIDER_TYPES:
             errors.append(
                 f"Unknown LLM provider_type: '{self._data.llm.provider_type}'. "
                 "Supported values: 'openai', 'anthropic'."

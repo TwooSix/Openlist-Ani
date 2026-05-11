@@ -172,11 +172,17 @@ async def run() -> None:
 
 
 def _log_startup_summary() -> None:
+    parser_provider = config.metadata_parser.provider.strip().lower()
+    validator_provider = config.metadata_validator.provider.strip().lower()
     startup_logger.info("=" * 56)
     startup_logger.info("OpenList-Ani starting")
     startup_logger.info(f"RSS sources   : {len(config.rss.urls)} configured")
     startup_logger.info(f"Download path : {config.openlist.download_path}")
-    startup_logger.info(f"LLM model     : {config.llm.openai_model}")
+    startup_logger.info(
+        f"Metadata     : parser={parser_provider}, validator={validator_provider}"
+    )
+    if parser_provider == "llm" or config.assistant.enabled:
+        startup_logger.info(f"LLM model     : {config.llm.openai_model}")
     startup_logger.info(f"OpenList URL  : {config.openlist.url}")
     startup_logger.info(f"Backend API   : {config.backend.host}:{config.backend.port}")
     startup_logger.info("=" * 56)
@@ -256,7 +262,10 @@ def _create_metadata_validator():
 
 
 def _create_validator_llm_client():
-    if config.metadata_parser.provider != "llm" or not config.llm.openai_api_key:
+    if (
+        config.metadata_parser.provider.strip().lower() != "llm"
+        or not config.llm.openai_api_key
+    ):
         return None
     return create_llm_client(
         LLMClientSettings(

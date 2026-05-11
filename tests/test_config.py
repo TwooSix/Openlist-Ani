@@ -79,6 +79,16 @@ class TestLLMConfig:
         assert cfg.tmdb_api_key == "8ed20a12d9f37dcf9484a505c8be696c"
         assert cfg.tmdb_language == "zh-CN"
 
+    def test_blank_tmdb_api_key_uses_builtin_default(self):
+        cfg = LLMConfig(tmdb_api_key="")
+        assert cfg.tmdb_api_key == "8ed20a12d9f37dcf9484a505c8be696c"
+
+
+class TestMetadataParserConfig:
+    def test_default_parser_provider_is_regex(self):
+        cfg = MetadataParserConfig()
+        assert cfg.provider == "regex"
+
 
 class TestBotConfig:
     def test_basic(self):
@@ -169,6 +179,21 @@ class TestUserConfig:
         cfg = UserConfig.model_validate(data)
         assert cfg.notification.enabled is True
         assert len(cfg.notification.bots) == 1
+
+    def test_llm_key_defaults_parser_provider_to_llm(self):
+        cfg = UserConfig.model_validate({"llm": {"openai_api_key": "key"}})
+        assert cfg.metadata_parser.provider == "llm"
+        assert cfg.metadata_validator.provider == "tmdb"
+
+    def test_explicit_regex_parser_wins_over_llm_key(self):
+        cfg = UserConfig.model_validate(
+            {
+                "llm": {"openai_api_key": "key"},
+                "metadata_parser": {"provider": "regex"},
+            }
+        )
+        assert cfg.metadata_parser.provider == "regex"
+        assert cfg.metadata_validator.provider == "tmdb"
 
 
 # ===========================================================================
@@ -327,13 +352,34 @@ class TestConfigValidation:
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_pass_minimal(self, tmp_path, monkeypatch):
-        """Minimal valid config: rss.urls + openlist.url + openlist.token + llm key."""
+        """Minimal valid config uses regex + tmdb and does not require an LLM key."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         mgr._config.rss.urls = ["https://feed.example/rss"]
         mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
-        mgr._config.llm.openai_api_key = "key"
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
+
+    def test_validate_llm_parser_requires_llm_key(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.metadata_parser.provider = "llm"
+        mgr._config.llm.openai_api_key = ""
+        mgr.save()
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+
+    def test_validate_regex_parser_ignores_missing_llm_key(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        mgr = ConfigManager("config.toml")
+        mgr._config.rss.urls = ["https://feed.example/rss"]
+        mgr._config.openlist.url = "https://localhost"
+        mgr._config.openlist.token = "tok"
+        mgr._config.metadata_parser.provider = "regex"
+        mgr._config.llm.openai_api_key = ""
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 

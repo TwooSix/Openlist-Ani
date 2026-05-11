@@ -30,6 +30,9 @@ provider = "openlist"  # Download adapter implementation
 provider = "openlist"  # File rename adapter implementation
 
 [metadata_parser]
+# Recommended: "llm" + [metadata_validator].provider = "tmdb".
+# Runtime default without an LLM key is "regex" + "tmdb".
+# If openai_api_key is configured and this provider is omitted, "llm" is selected automatically.
 provider = "llm"  # Title parser: "llm" or "regex"
 
 [metadata_validator]
@@ -43,7 +46,7 @@ offline_download_tool = "qBittorrent"  # Supported: aria2, qBittorrent, PikPak, 
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
 [llm]
-openai_api_key = ""
+openai_api_key = ""  # Required for metadata_parser.provider = "llm" and for assistant.enabled = true
 openai_base_url = "https://api.openai.com/v1"
 openai_model = "gpt-4o"
 tmdb_api_key = ""  # Built-in default key provided; only set this to override with your own TMDB key
