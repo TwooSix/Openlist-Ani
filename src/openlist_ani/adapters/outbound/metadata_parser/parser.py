@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from cachetools import TTLCache
 
 from openlist_ani.application.anime_library_ingestion.models import ParseResult
@@ -106,6 +108,7 @@ class MetadataParserAdapter:
         ]
 
     async def close(self) -> None:
+        await asyncio.sleep(0)
         return None
 
     def _split_cached(
