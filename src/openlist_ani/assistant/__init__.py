@@ -426,19 +426,21 @@ def main() -> None:
     # to match the assistant's needs.
     from loguru import logger as loguru_logger
 
-    from openlist_ani.logger import LOG_DIR
+    from openlist_ani.logger import LOG_DIR, file_logging_enabled_from_env
 
     loguru_logger.remove()  # Remove all default handlers
 
-    # Dedicated assistant log file (matches legacy "assistant_xxx.log" naming)
-    loguru_logger.add(
-        LOG_DIR / "assistant_{time:YYYY-MM-DD}.log",
-        rotation="00:00",
-        retention="1 week",
-        level="INFO",
-        encoding="utf-8",
-        mode="a",
-    )
+    if file_logging_enabled_from_env():
+        LOG_DIR.mkdir(exist_ok=True)
+        # Dedicated assistant log file (matches legacy "assistant_xxx.log" naming)
+        loguru_logger.add(
+            LOG_DIR / "assistant_{time:YYYY-MM-DD}.log",
+            rotation="00:00",
+            retention="1 week",
+            level="INFO",
+            encoding="utf-8",
+            mode="a",
+        )
 
     # Console handler - only for Telegram mode.
     # CLI mode uses Rich for terminal output; loguru stdout would

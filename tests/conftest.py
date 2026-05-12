@@ -1,8 +1,11 @@
 """Shared test helpers and fixtures."""
 
+import os
 import sys
 from types import SimpleNamespace
 from pathlib import Path
+
+os.environ.setdefault("OPENLIST_ANI_FILE_LOGGING", "0")
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
