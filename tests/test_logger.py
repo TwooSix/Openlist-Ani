@@ -40,7 +40,7 @@ def test_configure_logger_uses_clickable_source_location(monkeypatch, tmp_path):
     monkeypatch.setattr(logger_module, "LOG_DIR", tmp_path)
     monkeypatch.setattr(logger_module, "stdout", sink)
 
-    logger_module.configure_logger(level="INFO", log_name="test")
+    logger_module.configure_logger(level="INFO", log_name="test", file_logging=True)
     try:
         logger_module.logger.info("compact format")
     finally:
@@ -59,7 +59,7 @@ def test_logger_sanitizes_messages(monkeypatch, tmp_path):
     monkeypatch.setattr(logger_module, "LOG_DIR", tmp_path)
     monkeypatch.setattr(logger_module, "stdout", sink)
 
-    logger_module.configure_logger(level="INFO", log_name="test")
+    logger_module.configure_logger(level="INFO", log_name="test", file_logging=True)
     try:
         logger_module.logger.info(
             "fetch failed: https://example.com/rss?token=plain-secret"
@@ -118,7 +118,7 @@ def test_console_logger_uses_colorized_format(monkeypatch, tmp_path):
     monkeypatch.setattr(logger_module.logger, "add", fake_add)
     monkeypatch.setattr(logger_module.logger, "remove", lambda: None)
 
-    logger_module.configure_logger(level="INFO", log_name="test")
+    logger_module.configure_logger(level="INFO", log_name="test", file_logging=True)
 
     console_call = calls[0]
     file_call = calls[1]
@@ -136,3 +136,21 @@ def test_console_logger_uses_colorized_format(monkeypatch, tmp_path):
         "format"
     ].index("{message}")
     assert "colorize" not in file_call
+
+
+def test_configure_logger_respects_file_logging_env(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_add(*args, **kwargs):
+        calls.append((args, kwargs))
+        return len(calls)
+
+    monkeypatch.setenv("OPENLIST_ANI_FILE_LOGGING", "0")
+    monkeypatch.setattr(logger_module, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(logger_module.logger, "add", fake_add)
+    monkeypatch.setattr(logger_module.logger, "remove", lambda: None)
+
+    logger_module.configure_logger(level="INFO", log_name="test")
+
+    assert len(calls) == 1
+    assert calls[0][0][0] is logger_module.stdout

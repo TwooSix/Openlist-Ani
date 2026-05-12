@@ -1,5 +1,6 @@
 import ast
 from functools import lru_cache
+import os
 from pathlib import Path
 import re
 from sys import stdout
@@ -9,7 +10,6 @@ from loguru import logger as _logger
 
 # Configure logging path
 LOG_DIR = Path.cwd() / "logs"
-LOG_DIR.mkdir(exist_ok=True)
 
 FATAL_LEVEL = "FATAL"
 LOG_FORMAT = (
@@ -136,11 +136,19 @@ logger = _logger.patch(_sanitize_record)
 logger.remove()
 
 
+def file_logging_enabled_from_env() -> bool:
+    value = os.getenv("OPENLIST_ANI_FILE_LOGGING")
+    if value is None:
+        return True
+    return value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+
+
 def configure_logger(
     level: str = "INFO",
     rotation: str = "00:00",
     retention: str = "1 week",
     log_name: str = "openlist_ani",
+    file_logging: bool | None = None,
 ) -> None:
     """Configure logger with given settings.
 
@@ -149,11 +157,11 @@ def configure_logger(
         rotation: Log rotation settings (time like "00:00" or size like "500 MB")
         retention: How long to keep old logs
         log_name: Base name for the log file
+        file_logging: Whether to write logs to files. Defaults to
+            OPENLIST_ANI_FILE_LOGGING when unset.
     """
     # Remove all existing handlers first
     logger.remove()
-
-    log_file = LOG_DIR / f"{log_name}_{{time:YYYY-MM-DD}}.log"
 
     # Add console handler
     logger.add(
@@ -164,6 +172,14 @@ def configure_logger(
         backtrace=False,
         diagnose=False,
     )
+
+    if file_logging is None:
+        file_logging = file_logging_enabled_from_env()
+    if not file_logging:
+        return
+
+    LOG_DIR.mkdir(exist_ok=True)
+    log_file = LOG_DIR / f"{log_name}_{{time:YYYY-MM-DD}}.log"
 
     # Add file handler with rotation and retention
     logger.add(
@@ -187,6 +203,7 @@ __all__ = [
     "FATAL_LEVEL",
     "LOG_FORMAT",
     "configure_logger",
+    "file_logging_enabled_from_env",
     "logger",
     "sanitize_for_log",
 ]
