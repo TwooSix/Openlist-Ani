@@ -330,6 +330,7 @@ class SkillEntry:
     description: str
     when_to_use: str
     base_dir: Path
+    source: str = "user"
     actions: list[SkillAction] = field(default_factory=list)
     included_content: str = ""  # Content from @include directives
     body_content: str = (
@@ -344,22 +345,49 @@ class SkillCatalog:
     Each skill directory may contain script/*.py files as actions.
     """
 
-    def __init__(self, skills_dir: Path) -> None:
+    def __init__(
+        self,
+        skills_dir: Path | None = None,
+        *,
+        builtin_skills_dir: Path | None = None,
+        user_skills_dir: Path | None = None,
+    ) -> None:
+        if skills_dir is not None and (builtin_skills_dir or user_skills_dir):
+            raise ValueError(
+                "Use either skills_dir or builtin_skills_dir/user_skills_dir, not both"
+            )
         self._skills_dir = skills_dir
+        self._builtin_skills_dir = builtin_skills_dir
+        self._user_skills_dir = user_skills_dir
         self._skills: dict[str, SkillEntry] = {}
 
     def discover(self) -> None:
         """Scan the skills directory and build the catalog."""
         self._skills.clear()
 
-        if not self._skills_dir.exists():
-            logger.debug(f"Skills directory does not exist: {self._skills_dir}")
+        for root, source in self._iter_roots():
+            self._discover_root(root, source)
+
+    def _iter_roots(self) -> list[tuple[Path, str]]:
+        if self._skills_dir is not None:
+            return [(self._skills_dir, "user")]
+
+        roots: list[tuple[Path, str]] = []
+        if self._builtin_skills_dir is not None:
+            roots.append((self._builtin_skills_dir, "builtin"))
+        if self._user_skills_dir is not None:
+            roots.append((self._user_skills_dir, "user"))
+        return roots
+
+    def _discover_root(self, skills_dir: Path, source: str) -> None:
+        if not skills_dir.exists():
+            logger.debug(f"Skills directory does not exist: {skills_dir}")
             return
-        if not self._skills_dir.is_dir():
-            logger.warning(f"Skills path is not a directory: {self._skills_dir}")
+        if not skills_dir.is_dir():
+            logger.warning(f"Skills path is not a directory: {skills_dir}")
             return
 
-        for skill_dir in sorted(self._skills_dir.iterdir()):
+        for skill_dir in sorted(skills_dir.iterdir()):
             if not skill_dir.is_dir():
                 continue
 
@@ -368,14 +396,26 @@ class SkillCatalog:
                 continue
 
             try:
-                entry = self._parse_skill(skill_md, skill_dir)
+                entry = self._parse_skill(skill_md, skill_dir, source)
                 if entry:
-                    self._skills[entry.name] = entry
-                    logger.debug(
-                        f"Discovered skill: {entry.name} ({len(entry.actions)} actions)"
-                    )
+                    self._record_skill(entry)
             except Exception as e:
                 logger.warning(f"Failed to parse skill at {skill_dir}: {e}")
+
+    def _record_skill(self, entry: SkillEntry) -> None:
+        previous = self._skills.get(entry.name)
+        self._skills[entry.name] = entry
+        if previous is not None and previous.source != entry.source:
+            logger.info(
+                f"Skill '{entry.name}' from {entry.source} overrides "
+                f"{previous.source} skill"
+            )
+            return
+
+        logger.debug(
+            f"Discovered skill: {entry.name} "
+            f"({len(entry.actions)} actions, source={entry.source})"
+        )
 
     def get_skill(self, name: str) -> SkillEntry | None:
         """Look up a skill by name."""
@@ -593,7 +633,12 @@ class SkillCatalog:
 
         return result
 
-    def _parse_skill(self, skill_md: Path, skill_dir: Path) -> SkillEntry | None:
+    def _parse_skill(
+        self,
+        skill_md: Path,
+        skill_dir: Path,
+        source: str = "user",
+    ) -> SkillEntry | None:
         """Parse a SKILL.md file with YAML frontmatter.
 
         Supports @include directives: the body content (after frontmatter) is
@@ -647,6 +692,7 @@ class SkillCatalog:
             description=description,
             when_to_use=when_to_use,
             base_dir=skill_dir,
+            source=source,
             actions=actions,
             included_content=included_content,
             body_content=resolved_body,

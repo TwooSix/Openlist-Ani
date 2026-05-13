@@ -266,7 +266,10 @@ async def run() -> None:
     from .provider.factory import create_provider
     from .session.storage import SessionStorage
     from .skill.catalog import SkillCatalog
-    from .skill.installer import install_bundled_skills_if_missing
+    from .skill.installer import (
+        migrate_legacy_copied_builtin_skills,
+        prepare_builtin_skills_cache,
+    )
     from .tool.builtin.agent_tool import AgentTool
     from .tool.builtin.send_message_tool import SendMessageTool
     from .tool.builtin.skill_tool import SkillTool
@@ -288,7 +291,8 @@ async def run() -> None:
     skills_dir = Path(assistant_cfg.skills_dir)
     data_dir = Path(assistant_cfg.data_dir)
 
-    install_bundled_skills_if_missing(skills_dir)
+    builtin_skills_dir = prepare_builtin_skills_cache(data_dir)
+    migrate_legacy_copied_builtin_skills(skills_dir, builtin_skills_dir)
 
     # Create provider (shared across all loops)
     provider = create_provider(
@@ -322,7 +326,10 @@ async def run() -> None:
     )
 
     # Discover skills
-    catalog = SkillCatalog(skills_dir)
+    catalog = SkillCatalog(
+        builtin_skills_dir=builtin_skills_dir,
+        user_skills_dir=skills_dir,
+    )
     catalog.discover()
 
     sessions_dir = data_dir / "sessions"

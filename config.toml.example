@@ -87,7 +87,7 @@ batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 
 enabled = false  # Enable/disable assistant module
 # max_context_tokens = 128000  # Max context window size
 # session_compact_threshold = 100000  # When to compact session history
-# skills_dir = "skills"  # Skill files search directory
+# skills_dir = "skills"  # User skill directory; same-name skills override built-ins
 # data_dir = "data/assistant"  # Assistant data/memory directory
 
 # Telegram assistant configuration (optional)
