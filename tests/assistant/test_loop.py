@@ -19,6 +19,7 @@ from openlist_ani.assistant.core.models import (
     ToolCall,
 )
 from openlist_ani.assistant.memory.manager import MemoryManager
+from openlist_ani.assistant.tool.builtin.send_message_tool import SendMessageTool
 from openlist_ani.assistant.tool.registry import ToolRegistry
 
 from .conftest import MockProvider, ReadOnlyTool, WriteTool
@@ -199,6 +200,39 @@ class TestAgenticLoop:
         tool_messages = [m for m in second_call_messages if m.role == Role.TOOL]
         assert len(tool_messages) >= 1
         assert tool_messages[-1].tool_results[0].content == "found matches"
+
+    @pytest.mark.asyncio
+    async def test_send_message_tool_emits_intermediate_message_event(self, memory):
+        """send_message should be visible to frontends as a consumable event."""
+        registry = ToolRegistry()
+        registry.register(SendMessageTool())
+        provider = MockProvider(
+            [
+                ProviderResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="tc_send",
+                            name="send_message",
+                            arguments={"message": "Still working..."},
+                        )
+                    ],
+                ),
+                ProviderResponse(text="Done."),
+            ]
+        )
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(provider, registry, context, memory)
+
+        events = []
+        async for event in loop.process("long task"):
+            events.append(event)
+
+        assert any(
+            event.type == EventType.INTERMEDIATE_MESSAGE
+            and event.text == "Still working..."
+            for event in events
+        )
+        assert _collect_text(events) == "Done."
 
     @pytest.mark.asyncio
     async def test_session_persistence(self, memory, registry, tmp_path):

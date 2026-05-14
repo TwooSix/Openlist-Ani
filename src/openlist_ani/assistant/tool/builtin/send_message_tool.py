@@ -18,7 +18,7 @@ MessageCallback = Callable[[str], None]
 class SendMessageTool(BaseTool):
     """Tool that sends intermediate messages to the user."""
 
-    def __init__(self, callback: MessageCallback) -> None:
+    def __init__(self, callback: MessageCallback | None = None) -> None:
         self._callback = callback
 
     @property
@@ -53,5 +53,6 @@ class SendMessageTool(BaseTool):
         if not message:
             return "Error: message is required."
 
-        self._callback(message)
+        if self._callback is not None:
+            self._callback(message)
         return "Message sent."

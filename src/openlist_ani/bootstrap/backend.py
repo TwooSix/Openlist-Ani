@@ -49,8 +49,8 @@ from openlist_ani.adapters.outbound.notifications import (
     NotificationSettings,
 )
 from openlist_ani.adapters.outbound.persistence import (
-    JsonTaskMementoStore,
     SqliteAnimeLibraryRepository,
+    SqliteTaskMementoStore,
 )
 from openlist_ani.adapters.outbound.torrent_metadata import (
     resolve_magnet,
@@ -103,7 +103,10 @@ async def run() -> None:
     await event_manager.start()
 
     notification_manager = await _setup_notifications()
-    task_memento_store = JsonTaskMementoStore("data/task_mementos.json")
+    task_memento_store = SqliteTaskMementoStore(
+        "data/task_mementos.db",
+        legacy_json_path="data/task_mementos.json",
+    )
     settings = _create_pipeline_settings()
     metadata_parser = _create_metadata_parser()
     metadata_validator = _create_metadata_validator()

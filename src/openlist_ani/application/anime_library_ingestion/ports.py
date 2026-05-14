@@ -78,11 +78,13 @@ class DownloadTaskReservationPort(Protocol):
 class AnimeLibraryRepositoryPort(Protocol):
     async def is_downloaded(self, title: str) -> bool: ...
 
+    async def find_existing_titles(self, candidate_titles: list[str]) -> set[str]: ...
+
     async def add_release(self, release: AnimeRelease) -> None: ...
 
-    async def find_releases_by_episode(
-        self, anime_name: str, season: int, episode: int
-    ) -> list[dict]: ...
+    async def find_releases_by_episodes(
+        self, keys: list[tuple[str, int, int]]
+    ) -> dict[tuple[str, int, int], list[dict]]: ...
 
 
 class NotifierPort(Protocol):

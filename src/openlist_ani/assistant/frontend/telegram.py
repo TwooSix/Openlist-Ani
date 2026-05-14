@@ -438,6 +438,7 @@ class TelegramFrontend(Frontend):
             EventType.TOOL_START: self._on_tool_start,
             EventType.TOOL_END: self._on_tool_end,
             EventType.TEXT_DELTA: self._on_text_delta,
+            EventType.INTERMEDIATE_MESSAGE: self._on_intermediate_message,
             EventType.ERROR: self._on_error,
             EventType.USER_MESSAGE_INJECTED: self._on_injected,
         }
@@ -452,6 +453,12 @@ class TelegramFrontend(Frontend):
         if args_str:
             tool_line += f"({args_str})"
         lines.append(tool_line)
+        await self._debounced_edit(status_msg, lines, edit_state)
+
+    async def _on_intermediate_message(
+        self, event, status_msg, lines, edit_state, _final_parts
+    ):
+        lines.append(f"💬 {event.text}")
         await self._debounced_edit(status_msg, lines, edit_state)
 
     async def _on_tool_end(self, event, status_msg, lines, edit_state, _final_parts):

@@ -13,6 +13,8 @@ class FeedSource(ABC):
     Abstract base class for RSS feed sources.
     """
 
+    entry_concurrency: int | None = None
+
     async def fetch_feed(self, url: str) -> list[AnimeRelease]:
         """Fetch and parse RSS feed from a URL.
 
@@ -34,18 +36,7 @@ class FeedSource(ABC):
 
                     feed = feedparser.parse(content)
 
-                    tasks = [self.parse_entry(entry, session) for entry in feed.entries]
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    entries: list[AnimeRelease] = []
-                    for res in results:
-                        if isinstance(res, Exception):
-                            logger.warning(f"Failed to parse RSS entry: {res}")
-                            continue
-                        if res:
-                            entries.append(res)
-
-                    return entries
+                    return await self._parse_entries(feed.entries, session)
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             logger.warning(f"RSS fetch failed for {url}: {e}")
             return []
@@ -67,3 +58,34 @@ class FeedSource(ABC):
             Parsed AnimeRelease or None if parsing fails
         """
         pass
+
+    async def _parse_entries(
+        self,
+        entries,
+        session: aiohttp.ClientSession,
+    ) -> list[AnimeRelease]:
+        concurrency = self.entry_concurrency
+        semaphore = (
+            asyncio.Semaphore(concurrency)
+            if concurrency is not None and concurrency > 0
+            else None
+        )
+
+        async def parse_one(entry):
+            if semaphore is None:
+                return await self.parse_entry(entry, session)
+            async with semaphore:
+                return await self.parse_entry(entry, session)
+
+        tasks = [parse_one(entry) for entry in entries]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        parsed: list[AnimeRelease] = []
+        for res in results:
+            if isinstance(res, Exception):
+                logger.warning(f"Failed to parse RSS entry: {res}")
+                continue
+            if res:
+                parsed.append(res)
+
+        return parsed

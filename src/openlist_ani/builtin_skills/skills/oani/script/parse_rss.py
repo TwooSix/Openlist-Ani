@@ -51,11 +51,9 @@ async def run(
         fansub = e.get("fansub") or "-"
         quality = e.get("quality") or "-"
         langs = ",".join(e.get("languages") or []) or "-"
-        url_short = (e.get("download_url") or "")[:60]
-        if len(e.get("download_url") or "") > 60:
-            url_short += "…"
+        download_url = e.get("download_url") or ""
         lines.append(
-            f"| {idx} | {title} | {fansub} | {quality} | {langs} | {url_short} |"
+            f"| {idx} | {title} | {fansub} | {quality} | {langs} | {download_url} |"
         )
 
     lines += [

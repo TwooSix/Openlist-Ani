@@ -19,6 +19,7 @@ from openlist_ani.integrations.openlist import (
 from openlist_ani.logger import logger
 
 from .file_detection import OpenListFileDetector
+from .task_snapshot_cache import OpenListTaskSnapshotCache
 
 OPENLIST_TEMP_ROOT_DIRECTORY_NAME = ".oani-download-tmp"
 OPENLIST_WORKFLOW_STATE_KEY = "workflow_state"
@@ -105,12 +106,16 @@ class OpenListDownloadWorkflow:
         file_detector: OpenListFileDetector,
         conflict_resolver: OpenListFileConflictResolver,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        task_snapshot_cache: OpenListTaskSnapshotCache | None = None,
     ) -> None:
         self._client = client
         self._offline_download_tool = offline_download_tool
         self._file_detector = file_detector
         self._conflict_resolver = conflict_resolver
         self._sleep = sleep
+        self._task_snapshot_cache = task_snapshot_cache or OpenListTaskSnapshotCache(
+            client
+        )
 
     async def run(
         self,
@@ -216,6 +221,7 @@ class OpenListDownloadWorkflow:
         if not tasks:
             raise DownloadError("Failed to create offline download task")
 
+        self._task_snapshot_cache.invalidate()
         task.downloader_data["task_id"] = tasks[0].id
         logger.debug(f"OpenList task created: {tasks[0].id}")
 
@@ -246,7 +252,7 @@ class OpenListDownloadWorkflow:
             raise DownloadError(f"Task {task_id} not found in undone or done lists")
 
     async def _find_undone_download_task(self, task_id: str) -> OpenlistTask | None:
-        undone = await self._client.get_offline_download_undone()
+        undone = await self._task_snapshot_cache.get_offline_download_undone()
         if undone is None:
             raise DownloadError("Failed to fetch undone download tasks")
         return next((t for t in undone if t.id == task_id), None)
@@ -269,7 +275,7 @@ class OpenListDownloadWorkflow:
         return False
 
     async def _download_task_is_done(self, task_id: str) -> bool:
-        done = await self._client.get_offline_download_done()
+        done = await self._task_snapshot_cache.get_offline_download_done()
         if done is None:
             raise DownloadError("Failed to fetch done download tasks")
 
@@ -282,13 +288,13 @@ class OpenListDownloadWorkflow:
 
     async def _transfer_task_exists(self, task: DownloadTask) -> bool:
         task_uuid = task.id
-        undone = await self._client.get_offline_download_transfer_undone()
+        undone = await self._task_snapshot_cache.get_offline_download_transfer_undone()
         if undone is None:
             logger.debug("Could not probe undone transfer tasks")
         elif any(task_uuid in transfer.name for transfer in undone):
             return True
 
-        done = await self._client.get_offline_download_transfer_done()
+        done = await self._task_snapshot_cache.get_offline_download_transfer_done()
         if done is None:
             logger.debug("Could not probe done transfer tasks")
             return False
@@ -303,7 +309,9 @@ class OpenListDownloadWorkflow:
         not_found_count = 0
 
         while True:
-            undone = await self._client.get_offline_download_transfer_undone()
+            undone = (
+                await self._task_snapshot_cache.get_offline_download_transfer_undone()
+            )
             if undone is None:
                 raise DownloadError("Failed to fetch undone transfer tasks")
 
@@ -319,7 +327,7 @@ class OpenListDownloadWorkflow:
                 await self._sleep(self._TRANSFER_CHECK_INTERVAL_SECONDS)
                 continue
 
-            done = await self._client.get_offline_download_transfer_done()
+            done = await self._task_snapshot_cache.get_offline_download_transfer_done()
             if done is None:
                 raise DownloadError("Failed to fetch done transfer tasks")
 

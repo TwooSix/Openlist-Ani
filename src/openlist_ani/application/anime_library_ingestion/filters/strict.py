@@ -128,6 +128,9 @@ class StrictRenameFilter:
             return []
 
         groups = group_by_episode(candidates)
+        episode_keys = [key for key in groups if key is not None]
+        records_by_key = await self._records_by_episode(episode_keys)
+        active_stems_by_key = self._active_stems_by_episode()
         accepted: list[AnimeRelease] = []
 
         for key, group in groups.items():
@@ -135,7 +138,13 @@ class StrictRenameFilter:
                 # Not enough metadata to compute a stem — bypass.
                 accepted.extend(group)
                 continue
-            filtered = await self._filter_group(self._rename_format, key, group)
+            filtered = self._filter_group(
+                self._rename_format,
+                key,
+                group,
+                records_by_key.get(key, []),
+                active_stems_by_key.get(key, []),
+            )
             accepted.extend(filtered)
 
         skipped = len(candidates) - len(accepted)
@@ -145,18 +154,17 @@ class StrictRenameFilter:
 
     # ── per-group filtering ──────────────────────────────────────────
 
-    async def _filter_group(
+    def _filter_group(
         self,
         rename_format: str,
         key: EpisodeKey,
         group: list[AnimeRelease],
+        db_records: list[dict],
+        active_stems: list[tuple[str, str, int]],
     ) -> list[AnimeRelease]:
         """Filter a single episode group against DB stems + intra-batch dedup."""
         anime_name, season, episode = key
 
-        db_records = await self._anime_library_repository.find_releases_by_episode(
-            anime_name, season, episode
-        )
         db_stems: list[tuple[str, int]] = [
             (
                 _stem_from_db_record(rename_format, anime_name, season, episode, rec),
@@ -164,7 +172,6 @@ class StrictRenameFilter:
             )
             for rec in db_records
         ]
-        active_stems = self._active_stems_for_episode(key)
 
         # Phase 1: filter against DB records and active downloads.
         after_db: list[AnimeRelease] = []
@@ -188,24 +195,32 @@ class StrictRenameFilter:
         # Phase 2: intra-batch dedup — same stem keeps highest version only.
         return self._dedup_batch(rename_format, after_db)
 
-    def _active_stems_for_episode(
+    async def _records_by_episode(
         self,
-        key: EpisodeKey,
-    ) -> list[tuple[str, str, int]]:
-        if self._active_task_query is None:
-            return []
+        keys: list[EpisodeKey],
+    ) -> dict[EpisodeKey, list[dict]]:
+        if not keys:
+            return {}
 
-        anime_name, season, episode = key
-        stems: list[tuple[str, str, int]] = []
+        return dict(
+            await self._anime_library_repository.find_releases_by_episodes(keys)
+        )
+
+    def _active_stems_by_episode(
+        self,
+    ) -> dict[EpisodeKey, list[tuple[str, str, int]]]:
+        if self._active_task_query is None:
+            return {}
+
+        stems: dict[EpisodeKey, list[tuple[str, str, int]]] = {}
         for task in self._active_task_query.list_active_tasks():
             release = task.release
-            if (
-                release.anime_name != anime_name
-                or release.season != season
-                or release.episode != episode
-            ):
+            if release.anime_name is None or release.season is None:
                 continue
-            stems.append(
+            if release.episode is None:
+                continue
+            key = (release.anime_name, release.season, release.episode)
+            stems.setdefault(key, []).append(
                 (
                     self._directory_planner.target_directory_path(
                         task.base_path,

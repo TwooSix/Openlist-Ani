@@ -21,6 +21,7 @@ from openlist_ani.integrations.openlist import (
 )
 
 from .file_detection import OpenListFileDetector
+from .task_snapshot_cache import OpenListTaskSnapshotCache
 from .workflow import OpenListDownloadWorkflow
 
 
@@ -43,6 +44,7 @@ class OpenListDownloader:
         )
         self._client = client
         self._sleep = sleep
+        self._task_snapshot_cache = OpenListTaskSnapshotCache(client)
 
     @property
     def downloader_type(self) -> str:
@@ -77,6 +79,7 @@ class OpenListDownloader:
             file_detector=OpenListFileDetector(self._client, self._sleep),
             conflict_resolver=OpenListFileConflictResolver(self._client, self._sleep),
             sleep=self._sleep,
+            task_snapshot_cache=self._task_snapshot_cache,
         )
 
     def _task_from_request(

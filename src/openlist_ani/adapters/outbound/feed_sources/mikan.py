@@ -10,6 +10,8 @@ from openlist_ani.domain.anime_release import AnimeRelease
 
 
 class MikanFeedSource(FeedSource):
+    entry_concurrency = 5
+
     _CN_NUM_MAP = {
         "一": 1,
         "二": 2,

@@ -119,6 +119,7 @@ class EventType(str, Enum):
     THINKING = "thinking"
     TEXT_DELTA = "text_delta"
     TEXT_DONE = "text_done"
+    INTERMEDIATE_MESSAGE = "intermediate_message"
     TOOL_START = "tool_start"
     TOOL_END = "tool_end"
     ERROR = "error"
