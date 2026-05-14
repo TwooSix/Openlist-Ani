@@ -345,12 +345,7 @@ async def run() -> None:
         registry = ToolRegistry()
         registry.register(SkillTool(catalog))
 
-        intermediate_messages: list[str] = []
-
-        def send_message_callback(message: str) -> None:
-            intermediate_messages.append(message)
-
-        registry.register(SendMessageTool(send_message_callback))
+        registry.register(SendMessageTool())
         registry.register(AgentTool(provider, registry))
         registry.register(WebFetchTool(provider, registry))
         registry.register(MemoryTool(memory.memory_dir))
@@ -383,6 +378,7 @@ async def run() -> None:
     # Select frontend
     is_cli = "--cli" in sys.argv
     is_resume = "--resume" in sys.argv
+    frontends: list[Any] = []
 
     if is_cli:
         frontend = await _create_cli_frontend(
@@ -415,6 +411,10 @@ async def run() -> None:
             await asyncio.gather(*(frontend.run() for frontend in frontends))
     finally:
         logger.info("Shutting down assistant - cleaning up resources")
+        for running_frontend in frontends:
+            shutdown = getattr(running_frontend, "shutdown", None)
+            if shutdown is not None:
+                await shutdown()
         await loop.shutdown()
         await provider.close()
 

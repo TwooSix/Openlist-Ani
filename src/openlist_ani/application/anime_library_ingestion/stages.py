@@ -202,11 +202,15 @@ class RSSStage(PipelineStage[None]):
     ) -> tuple[list[AnimeRelease], str]:
         accepted: list[AnimeRelease] = []
         reasons: dict[str, int] = {}
+        downloadable_titles = [entry.title for entry in entries if entry.download_url]
+        downloaded_titles = await self._anime_library_repository.find_existing_titles(
+            downloadable_titles
+        )
         for entry in entries:
             reason: str | None = None
             if not entry.download_url:
                 reason = "missing_url"
-            elif await self._anime_library_repository.is_downloaded(entry.title):
+            elif entry.title in downloaded_titles:
                 reason = "already_downloaded"
 
             if reason is None:

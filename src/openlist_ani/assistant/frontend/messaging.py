@@ -81,6 +81,12 @@ class MessagingFrontend(Frontend):
     async def run(self) -> None:
         await self._messenger.listen(self.handle_inbound)
 
+    async def shutdown(self) -> None:
+        loops = list(dict.fromkeys(self._chat_loops.values()))
+        for loop in loops:
+            await loop.shutdown()
+        self._chat_loops.clear()
+
     async def send_response(self, text: str) -> None:
         raise NotImplementedError("MessagingFrontend sends through inbound targets")
 
@@ -109,6 +115,8 @@ class MessagingFrontend(Frontend):
                     final_parts.append(event.text)
                 elif event.type == EventType.ERROR and event.text:
                     final_parts.append(f"Error: {event.text}")
+                elif event.type == EventType.INTERMEDIATE_MESSAGE and event.text:
+                    await self._messenger.send_text(message.target.chat_id, event.text)
             response = "\n".join(final_parts).strip() or "No response."
             await self._messenger.send_text(message.target.chat_id, response)
         except Exception as exc:  # noqa: BLE001

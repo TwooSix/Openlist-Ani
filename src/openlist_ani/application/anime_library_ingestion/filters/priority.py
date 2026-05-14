@@ -70,12 +70,17 @@ class PriorityFilter:
 
         # Group by (anime_name, season, episode).
         groups = group_by_episode(candidates)
+        episode_keys = [key for key in groups if key is not None]
+        records_by_key = await self._records_by_episode(episode_keys)
+        active_records_by_key = self._active_records_by_episode()
         accepted: list[AnimeRelease] = []
 
         for key, group in groups.items():
-            filtered = await self._filter_group(
+            filtered = self._filter_group(
                 key,
                 group,
+                records_by_key.get(key, []),
+                active_records_by_key.get(key, []),
                 fansub_list,
                 language_list,
                 quality_list,
@@ -92,10 +97,12 @@ class PriorityFilter:
 
     # ── per-group filtering ──────────────────────────────────────────
 
-    async def _filter_group(
+    def _filter_group(
         self,
         key: EpisodeKey | None,
         group: list[AnimeRelease],
+        episode_records: list[dict],
+        active_records: list[dict],
         fansub_list: list[str],
         language_list: list[str],
         quality_list: list[str],
@@ -106,14 +113,7 @@ class PriorityFilter:
         if key is None:
             return group
 
-        anime_name, season, episode = key
-        known = await self._anime_library_repository.find_releases_by_episode(
-            anime_name, season, episode
-        )
-        known = [
-            *known,
-            *self._active_records_for_episode(anime_name, season, episode),
-        ]
+        known = [*episode_records, *active_records]
 
         accepted: list[AnimeRelease] = []
         remaining: list[AnimeRelease] = []
@@ -154,25 +154,30 @@ class PriorityFilter:
 
         return accepted
 
-    def _active_records_for_episode(
+    async def _records_by_episode(
         self,
-        anime_name: str,
-        season: int,
-        episode: int,
-    ) -> list[dict]:
-        if self._active_task_query is None:
-            return []
+        keys: list[EpisodeKey],
+    ) -> dict[EpisodeKey, list[dict]]:
+        if not keys:
+            return {}
 
-        records: list[dict] = []
+        return dict(
+            await self._anime_library_repository.find_releases_by_episodes(keys)
+        )
+
+    def _active_records_by_episode(self) -> dict[EpisodeKey, list[dict]]:
+        if self._active_task_query is None:
+            return {}
+
+        records: dict[EpisodeKey, list[dict]] = {}
         for task in self._active_task_query.list_active_tasks():
             release = task.release
-            if (
-                release.anime_name != anime_name
-                or release.season != season
-                or release.episode != episode
-            ):
+            if release.anime_name is None or release.season is None:
                 continue
-            records.append(
+            if release.episode is None:
+                continue
+            key = (release.anime_name, release.season, release.episode)
+            records.setdefault(key, []).append(
                 {
                     "fansub": release.fansub,
                     "quality": release.quality.value if release.quality else "",

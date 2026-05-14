@@ -1,11 +1,15 @@
 from datetime import datetime
 from pathlib import Path
+from typing import TypeVar
 
 import aiosqlite
 
 from openlist_ani.domain.anime_release import AnimeRelease
 
 DEFAULT_DB_PATH = Path.cwd() / "data/data.db"
+SQLITE_PARAMETER_CHUNK_SIZE = 900
+SQLITE_EPISODE_KEY_CHUNK_SIZE = SQLITE_PARAMETER_CHUNK_SIZE // 3
+T = TypeVar("T")
 
 
 class SqliteAnimeLibraryRepository:
@@ -48,32 +52,64 @@ class SqliteAnimeLibraryRepository:
             row = await cursor.fetchone()
             return row is not None
 
-    async def find_releases_by_episode(
+    async def find_existing_titles(self, candidate_titles: list[str]) -> set[str]:
+        """Return candidate titles that already exist in the library."""
+        unique_titles = _deduplicate(candidate_titles)
+        if not unique_titles:
+            return set()
+
+        downloaded_titles: set[str] = set()
+        async with aiosqlite.connect(self.db_path) as db:
+            for chunk in _chunks(unique_titles, SQLITE_PARAMETER_CHUNK_SIZE):
+                placeholders = ",".join("?" for _ in chunk)
+                cursor = await db.execute(
+                    f"SELECT title FROM resources WHERE title IN ({placeholders})",
+                    tuple(chunk),
+                )
+                rows = await cursor.fetchall()
+                downloaded_titles.update(row[0] for row in rows)
+        return downloaded_titles
+
+    async def find_releases_by_episodes(
         self,
-        anime_name: str,
-        season: int,
-        episode: int,
-    ) -> list[dict]:
-        """Find all ingested releases for a specific episode.
+        keys: list[tuple[str, int, int]],
+    ) -> dict[tuple[str, int, int], list[dict]]:
+        """Find ingested releases for multiple episode keys."""
+        keys = _deduplicate(keys)
+        records_by_key: dict[tuple[str, int, int], list[dict]] = {
+            key: [] for key in keys
+        }
+        if not keys:
+            return records_by_key
 
-        Args:
-            anime_name: Anime series name.
-            season: Season number.
-            episode: Episode number.
-
-        Returns:
-            List of dicts with keys: fansub, quality, languages, version.
-        """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT fansub, quality, languages, version "
-                "FROM resources "
-                "WHERE anime_name = ? AND season = ? AND episode = ?",
-                (anime_name, season, episode),
+            rows = []
+            for chunk in _chunks(keys, SQLITE_EPISODE_KEY_CHUNK_SIZE):
+                clauses = " OR ".join(
+                    "(anime_name = ? AND season = ? AND episode = ?)" for _ in chunk
+                )
+                params = tuple(value for key in chunk for value in key)
+                cursor = await db.execute(
+                    "SELECT anime_name, season, episode, fansub, quality, "
+                    "languages, version "
+                    "FROM resources "
+                    f"WHERE {clauses}",
+                    params,
+                )
+                rows.extend(await cursor.fetchall())
+
+        for row in rows:
+            key = (row["anime_name"], row["season"], row["episode"])
+            records_by_key.setdefault(key, []).append(
+                {
+                    "fansub": row["fansub"],
+                    "quality": row["quality"],
+                    "languages": row["languages"],
+                    "version": row["version"],
+                }
             )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        return records_by_key
 
     async def remove_release(self, title: str) -> None:
         """Remove a library entry by title."""
@@ -128,3 +164,12 @@ class SqliteAnimeLibraryRepository:
                 await db.commit()
             except aiosqlite.IntegrityError:
                 pass
+
+
+def _deduplicate(items: list[T]) -> list[T]:
+    return list(dict.fromkeys(items))
+
+
+def _chunks(items: list[T], size: int):
+    for index in range(0, len(items), size):
+        yield items[index : index + size]

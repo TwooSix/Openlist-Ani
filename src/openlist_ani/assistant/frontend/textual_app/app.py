@@ -722,6 +722,7 @@ class TextualFrontend(App):
             EventType.THINKING: self._handle_thinking,
             EventType.TEXT_DELTA: self._handle_text_delta,
             EventType.TEXT_DONE: self._handle_text_done,
+            EventType.INTERMEDIATE_MESSAGE: self._handle_intermediate_message,
             EventType.TOOL_START: self._handle_tool_start,
             EventType.TOOL_END: self._handle_tool_end,
             EventType.ERROR: self._handle_error,
@@ -819,6 +820,13 @@ class TextualFrontend(App):
         args_str = self._format_tool_args(event.tool_args)
         chat = self.query_one(_CHAT_VIEW, VerticalScroll)
         block = MessageBlock.tool_start(event.tool_name, args_str)
+        await chat.mount(block)
+        self._scroll_to_bottom()
+
+    async def _handle_intermediate_message(self, event: LoopEvent) -> None:
+        await self._remove_spinner()
+        chat = self.query_one(_CHAT_VIEW, VerticalScroll)
+        block = MessageBlock.command_result(event.text, style="dim")
         await chat.mount(block)
         self._scroll_to_bottom()
 

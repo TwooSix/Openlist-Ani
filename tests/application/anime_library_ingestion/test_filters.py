@@ -18,9 +18,20 @@ class FakeRepository:
     def __init__(self, records=None):
         self.records = records or []
 
-    async def find_releases_by_episode(self, anime_name, season, episode):
+    async def find_releases_by_episodes(self, keys):
         await asyncio.sleep(0)
-        return self.records
+        return {key: self.records for key in keys}
+
+
+class BulkOnlyRepository:
+    def __init__(self, records_by_key=None):
+        self.records_by_key = records_by_key or {}
+        self.batch_calls = []
+
+    async def find_releases_by_episodes(self, keys):
+        await asyncio.sleep(0)
+        self.batch_calls.append(tuple(keys))
+        return {key: self.records_by_key.get(key, []) for key in keys}
 
 
 def _release(
@@ -111,6 +122,29 @@ async def test_priority_filter_skips_lower_priority_existing_episode():
     assert result == []
 
 
+async def test_priority_filter_prefetches_episode_records_in_bulk():
+    repo = BulkOnlyRepository(
+        {
+            ("Test Anime", 1, 1): [
+                {
+                    "fansub": "Sub_A",
+                    "quality": "1080p",
+                    "languages": "简",
+                    "version": 1,
+                }
+            ]
+        }
+    )
+
+    result = await PriorityFilter(
+        PrioritySettings(fansub=["Sub_A", "Sub_B"], quality=[]),
+        repo,
+    ).apply([_release(fansub="Sub_B")])
+
+    assert result == []
+    assert repo.batch_calls == [(("Test Anime", 1, 1),)]
+
+
 async def test_strict_filter_allows_version_upgrade_for_same_rename_stem():
     repo = FakeRepository(
         [
@@ -128,3 +162,26 @@ async def test_strict_filter_allows_version_upgrade_for_same_rename_stem():
     ).apply([_release(version=2)])
 
     assert [entry.version for entry in result] == [2]
+
+
+async def test_strict_filter_prefetches_episode_records_in_bulk():
+    repo = BulkOnlyRepository(
+        {
+            ("Test Anime", 1, 1): [
+                {
+                    "fansub": "Sub_A",
+                    "quality": "1080p",
+                    "languages": "简",
+                    "version": 1,
+                }
+            ]
+        }
+    )
+
+    result = await StrictRenameFilter(
+        "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}",
+        repo,
+    ).apply([_release()])
+
+    assert result == []
+    assert repo.batch_calls == [(("Test Anime", 1, 1),)]

@@ -6,6 +6,9 @@ import pytest
 
 from openlist_ani.application.anime_library_ingestion.models import PipelineContext
 from openlist_ani.adapters.outbound.downloaders import OpenListDownloader
+from openlist_ani.adapters.outbound.downloaders.openlist.task_snapshot_cache import (
+    OpenListTaskSnapshotCache,
+)
 from openlist_ani.domain.anime_release import (
     AnimeRelease,
     LanguageType,
@@ -455,3 +458,108 @@ async def test_download_raises_when_offline_task_fails():
     client.remove_path.assert_awaited_once_with(
         "/anime/.oani-download-tmp", ["workflow-1"]
     )
+
+
+async def test_download_invalidates_stale_task_snapshots_after_submit():
+    downloader, client = _downloader()
+    client.get_offline_download_undone = AsyncMock(return_value=[])
+    client.get_offline_download_done = AsyncMock(return_value=[])
+    await downloader._task_snapshot_cache.get_offline_download_undone()
+    await downloader._task_snapshot_cache.get_offline_download_done()
+
+    client.add_offline_download = AsyncMock(
+        return_value=[
+            OpenlistTask(
+                id="offline-new",
+                name="offline",
+                state=OpenlistTaskState.SUCCEEDED,
+            )
+        ]
+    )
+    client.get_offline_download_undone = AsyncMock(return_value=[])
+    client.get_offline_download_done = AsyncMock(
+        return_value=[
+            OpenlistTask(
+                id="offline-new",
+                name="offline",
+                state=OpenlistTaskState.SUCCEEDED,
+            )
+        ]
+    )
+    client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
+    client.get_offline_download_transfer_done = AsyncMock(
+        return_value=[
+            OpenlistTask(
+                id="transfer-1",
+                name="workflow-1",
+                state=OpenlistTaskState.SUCCEEDED,
+            )
+        ]
+    )
+    client.list_files = AsyncMock(
+        side_effect=[
+            [SimpleNamespace(name="raw episode [1080p].mkv", is_dir=False, size=100)],
+            [],
+        ]
+    )
+
+    result = await downloader.download(
+        PipelineContext(
+            workflow_id="workflow-1",
+            payload=DownloadRequest(
+                release=_resource(),
+                base_path="/anime",
+                target_directory_path="/anime/葬送的芙莉莲/Season 1",
+            ),
+        )
+    )
+
+    assert result.downloader_memento.payload["task_id"] == "offline-new"
+    client.get_offline_download_done.assert_awaited_once()
+
+
+async def test_openlist_task_snapshot_cache_reuses_values_within_short_ttl():
+    now = 10.0
+    client = AsyncMock()
+    task = OpenlistTask(id="offline-1", name="offline")
+    client.get_offline_download_undone = AsyncMock(return_value=[task])
+    cache = OpenListTaskSnapshotCache(
+        client,
+        ttl_seconds=0.25,
+        monotonic=lambda: now,
+    )
+
+    first = await cache.get_offline_download_undone()
+    second = await cache.get_offline_download_undone()
+
+    assert first == [task]
+    assert second == [task]
+    client.get_offline_download_undone.assert_awaited_once()
+
+    now = 10.3
+    await cache.get_offline_download_undone()
+
+    assert client.get_offline_download_undone.await_count == 2
+
+
+async def test_openlist_task_snapshot_cache_does_not_store_in_flight_stale_fetch():
+    release_fetch = asyncio.Event()
+    stale_task = OpenlistTask(id="stale", name="stale")
+    fresh_task = OpenlistTask(id="fresh", name="fresh")
+    client = AsyncMock()
+
+    async def fetch_stale():
+        await release_fetch.wait()
+        return [stale_task]
+
+    client.get_offline_download_undone = AsyncMock(side_effect=fetch_stale)
+    cache = OpenListTaskSnapshotCache(client, ttl_seconds=10)
+
+    in_flight = asyncio.create_task(cache.get_offline_download_undone())
+    await asyncio.sleep(0)
+    cache.invalidate()
+    client.get_offline_download_undone = AsyncMock(return_value=[fresh_task])
+    release_fetch.set()
+
+    assert await in_flight == [stale_task]
+    assert await cache.get_offline_download_undone() == [fresh_task]

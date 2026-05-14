@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -179,3 +180,25 @@ async def test_active_turn_enqueues_pending_message(tmp_path):
     await frontend.handle_inbound(_message("interrupt"))
 
     assert loop.message_queue.has_pending_prompts() is True
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_cached_chat_loops(tmp_path):
+    messenger = FakeMessenger()
+    loop_a = _make_loop(tmp_path / "a")
+    loop_b = _make_loop(tmp_path / "b")
+    closed = []
+
+    loop_a.shutdown = AsyncMock(side_effect=lambda: closed.append("a"))
+    loop_b.shutdown = AsyncMock(side_effect=lambda: closed.append("b"))
+    frontend = MessagingFrontend(
+        platform="wechat",
+        messenger=messenger,
+        loop=loop_a,
+    )
+    frontend._chat_loops = {"chat-a": loop_a, "chat-b": loop_b}
+
+    await frontend.shutdown()
+
+    assert closed == ["a", "b"]
+    assert frontend._chat_loops == {}

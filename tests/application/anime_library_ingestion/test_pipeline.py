@@ -333,6 +333,53 @@ async def test_rss_stage_enqueues_unique_download_candidates(tmp_path, isolated_
     await event_manager.stop()
 
 
+async def test_rss_stage_prefilter_finds_existing_candidate_titles_in_bulk(
+    tmp_path, isolated_db
+):
+    class BulkRepository:
+        def __init__(self):
+            self.calls = []
+
+        def find_existing_titles(self, candidate_titles):
+            self.calls.append(tuple(candidate_titles))
+            return asyncio.sleep(0, {"Already Downloaded"})
+
+        def is_downloaded(self, title):
+            raise AssertionError("single-title lookup should not be used")
+
+    event_manager = OAniEventManager()
+    await event_manager.start()
+    repository = BulkRepository()
+    stage = RSSStage(
+        feed_reader=FakeFeedReader([]),
+        metadata_parser=PassingMetadataParser(),
+        metadata_validator=PassingMetadataValidator(),
+        anime_library_repository=repository,
+        output_buffer=PipelineBuffer("download"),
+        event_publisher=event_manager,
+        filter_chain=FilterChain([]),
+        settings=AnimeLibraryIngestionSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=0,
+        ),
+        interval_seconds=0,
+        task_reservation=RecordingTaskReservation(),
+    )
+
+    accepted, summary = await stage._filter_downloaded(
+        [
+            AnimeRelease(title="Already Downloaded", download_url="magnet:?old"),
+            AnimeRelease(title="New Release", download_url="magnet:?new"),
+        ]
+    )
+
+    assert [entry.title for entry in accepted] == ["New Release"]
+    assert repository.calls == [("Already Downloaded", "New Release")]
+    assert summary == "already_downloaded=1"
+    await event_manager.stop()
+
+
 async def test_rss_stage_validates_parsed_metadata_before_enrichment(
     tmp_path, isolated_db
 ):

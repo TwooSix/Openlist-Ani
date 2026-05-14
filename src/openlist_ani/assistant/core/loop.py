@@ -856,6 +856,7 @@ class AgenticLoop:
                     tool_result_preview=preview,
                 )
             )
+            await self._emit_intermediate_message(response, result, queue)
 
             # Yield to event loop so that any pending background tasks
             # (e.g. frontend enqueuing a user message) get a chance to run.
@@ -875,6 +876,28 @@ class AgenticLoop:
                 return completed_results, executed_tool_ids, True
 
         return completed_results, executed_tool_ids, False
+
+    @staticmethod
+    async def _emit_intermediate_message(
+        response: ProviderResponse,
+        result: ToolResult,
+        queue: asyncio.Queue[LoopEvent | None],
+    ) -> None:
+        if result.name != "send_message" or result.is_error:
+            return
+
+        matching_call = next(
+            (tc for tc in response.tool_calls if tc.id == result.tool_call_id),
+            None,
+        )
+        if matching_call is None:
+            return
+
+        message = matching_call.arguments.get("message")
+        if isinstance(message, str) and message:
+            await queue.put(
+                LoopEvent(type=EventType.INTERMEDIATE_MESSAGE, text=message)
+            )
 
     def _inject_interrupted_tombstones(
         self,
