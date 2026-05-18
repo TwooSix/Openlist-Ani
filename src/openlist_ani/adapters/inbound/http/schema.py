@@ -142,8 +142,6 @@ class ResolveMagnetResponse(BaseModel):
     )
     file_count: int | None = None
     files: list[ResolveMagnetFile] = Field(default_factory=list)
-    is_collection: bool = False
-    collection_reason: str | None = None
 
 
 # ── resolve_torrent ──────────────────────────────────────────────────
@@ -171,5 +169,3 @@ class ResolveTorrentResponse(BaseModel):
     )
     file_count: int | None = None
     files: list[ResolveMagnetFile] = Field(default_factory=list)
-    is_collection: bool = False
-    collection_reason: str | None = None

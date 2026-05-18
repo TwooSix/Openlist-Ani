@@ -1,9 +1,9 @@
-"""Resolve a magnet link to its real title and detect collection releases.
+"""Resolve a magnet link to its real title.
 
 Calls the backend ``/api/resolve_magnet`` endpoint.  The backend tries
 the magnet's ``dn=`` parameter first, then falls back to libtorrent
-metadata (DHT/peers, time-bounded).  The response also flags collection
-torrents — the assistant must NOT enqueue those.
+metadata (DHT/peers, time-bounded).  Collection filtering is handled
+outside the resolver.
 """
 
 from openlist_ani.assistant.skill_support.oani_backend_client import BackendClient
@@ -37,8 +37,6 @@ async def run(
     success = data.get("success", False)
     title = data.get("title")
     source = data.get("source") or "?"
-    is_collection = data.get("is_collection", False)
-    reason = data.get("collection_reason")
     file_count = data.get("file_count")
     msg = data.get("message", "")
 
@@ -55,21 +53,13 @@ async def run(
     if file_count is not None:
         lines.append(f"Files: {file_count}")
 
-    if is_collection:
-        lines += [
-            "",
-            f"COLLECTION DETECTED (matched: '{reason}').",
-            "OpenList-Ani does not currently support downloading collection "
-            "releases. Tell the user and DO NOT call oani/create_download.",
-        ]
-    else:
-        lines += [
-            "",
-            "Next: confirm with the user (download URL + title), check the "
-            "library for duplicates via oani/query_library, then call "
-            "oani/create_download(download_url=<magnet>, title=<Title>). "
-            "Pass the title verbatim — it is used by the backend to rename "
-            "the file. Do NOT modify or fabricate it.",
-        ]
+    lines += [
+        "",
+        "Next: confirm with the user (download URL + title), check the "
+        "library for duplicates via oani/query_library, then call "
+        "oani/create_download(download_url=<magnet>, title=<Title>). "
+        "Pass the title verbatim — it is used by the backend to rename "
+        "the file. Do NOT modify or fabricate it.",
+    ]
 
     return "\n".join(lines)
