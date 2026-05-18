@@ -1,4 +1,4 @@
-"""Resolve a .torrent file URL to its real title and detect collections.
+"""Resolve a .torrent file URL to its real title.
 
 Calls the backend ``/api/resolve_torrent`` endpoint, which downloads
 the .torrent file (size- and time-bounded) and parses its metadata
@@ -36,8 +36,6 @@ async def run(
     success = data.get("success", False)
     title = data.get("title")
     source = data.get("source") or "?"
-    is_collection = data.get("is_collection", False)
-    reason = data.get("collection_reason")
     file_count = data.get("file_count")
     msg = data.get("message", "")
 
@@ -54,21 +52,13 @@ async def run(
     if file_count is not None:
         lines.append(f"Files: {file_count}")
 
-    if is_collection:
-        lines += [
-            "",
-            f"COLLECTION DETECTED (matched: '{reason}').",
-            "OpenList-Ani does not currently support downloading collection "
-            "releases. Tell the user and DO NOT call oani/create_download.",
-        ]
-    else:
-        lines += [
-            "",
-            "Next: check the library for duplicates via oani/query_library, "
-            "confirm with the user (download URL + title), then call "
-            "oani/create_download(download_url=<torrent-url>, title=<Title>). "
-            "Pass the title verbatim — it is used by the backend to rename "
-            "the file. Do NOT modify or fabricate it.",
-        ]
+    lines += [
+        "",
+        "Next: check the library for duplicates via oani/query_library, "
+        "confirm with the user (download URL + title), then call "
+        "oani/create_download(download_url=<torrent-url>, title=<Title>). "
+        "Pass the title verbatim — it is used by the backend to rename "
+        "the file. Do NOT modify or fabricate it.",
+    ]
 
     return "\n".join(lines)

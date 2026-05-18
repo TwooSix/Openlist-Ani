@@ -9,9 +9,9 @@ import re
 _COLLECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"合集"),
     re.compile(r"全集"),
-    re.compile(r"总集篇"),
     re.compile(r"全套"),
     re.compile(r"全\s*[0-9一二三四五六七八九十百两]+\s*(?:集|话|卷|季)"),
+    re.compile(r"(?<![\dA-Za-z])\d{1,3}\s*[~–—-]\s*\d{1,3}.*重新打包"),
     re.compile(r"(?:百度网盘|网盘)?打包下载"),
     re.compile(r"(?i)\bcomplete\b"),
     re.compile(
@@ -24,16 +24,17 @@ _COLLECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bBATCH\b"),
     re.compile(r"(?i)BD[-\s]*BOX"),
     re.compile(r"(?i)\bTV\s*[+＋]\s*(?:OADs?|OVAs?|Movies?|剧场版)\b"),
-    re.compile(r"(?i)\bSeasons?\s*\d{1,2}\s*[~–—-]\s*\d{1,2}\b"),
+    re.compile(r"(?i)\bSeasons\s*\d{1,2}\s*[~–—-]\s*\d{1,2}\b"),
     re.compile(r"(?i)\bS\d{1,2}E\d{1,3}\s*[~–—-]\s*E?\d{1,3}\b"),
     re.compile(r"(?i)\bS(?:eason)?\s*\d{1,2}\s*Complete\b"),
+    re.compile(r"(?i)\bEP\s*0?\d{1,3}\s*[~–—-]\s*(?:EP\s*)?0?\d{1,3}\b"),
     re.compile(r"(?i)\b(?:Ep(?:isodes?)?|Eps?)\s*0?\d{1,3}\s*[~–—-]\s*\d{1,3}\b"),
-    re.compile(r"(?<![\dA-Za-z])\d{2,3}\s*[~–—-]\s*\d{2,3}(?!\d)"),
+    re.compile(r"(?<![0-9A-Za-z])0\d{1,2}\s*[~–—-]\s*0?\d{1,3}(?!\d)"),
+    re.compile(r"[\[【]\s*\d{1,3}\s*[~–—-]\s*\d{1,3}[^]】]*[\]】]"),
     re.compile(
-        r"(?i)(?<![\dA-Za-z])\d{1,3}\s*[~–—-]\s*\d{1,3}\s*\+\s*(?:OVA|OAD|SP|Movies?|剧场版)"
+        r"(?i)(?<![0-9A-Z])\d{1,3}\s*[~–—-]\s*\d{1,3}\s*\+\s*(?:OVA|OAD|SP|Movies?|剧场版)"
     ),
-    re.compile(r"(?i)(?<![\dA-Za-z])\d{1,3}\s*[~–—-]\s*\d{1,3}(?=\s*[\[(（])"),
-    re.compile(r"(?i)(?<![\dA-Za-z])\d{1,3}\s*[~–—-]\s*\d{1,3}\s*(?:end|fin|完)"),
+    re.compile(r"(?i)(?<![0-9A-Z])\d{1,3}\s*\+\s*(?:ES|SP|OVA|OAD)\s*0?\d{1,3}\b"),
 )
 
 

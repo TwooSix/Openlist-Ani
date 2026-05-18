@@ -81,8 +81,6 @@ confirmation message.
    one.
 3. The resolved title plus the original magnet form a single
    candidate.
-4. Trust the resolver's `is_collection` flag — if true, refuse this
-   candidate per *Collection rejection* below.
 
 ### 1b′. User gave a .torrent file URL
 
@@ -95,8 +93,6 @@ A `.torrent` URL looks like `http(s)://…/*.torrent` (e.g. Mikan's
    the resource title.** Do not invent one.
 3. The resolved title plus the original .torrent URL form a single
    candidate.
-4. Trust the resolver's `is_collection` flag — if true, refuse this
-   candidate per *Collection rejection* below.
 
 ### 1c. User gave only a description (anime / episode / fansub / …)
 
@@ -116,17 +112,14 @@ season numbers, or version (v2). Same episode number across releases
 matching the user's preference. Never assume one release equals one
 episode.
 
-### Collection rejection (applies to 1a / 1b / 1c)
+### Collection rejection (applies to 1a / 1b / 1b′ / 1c)
 
-For magnet candidates, trust `oani/resolve_magnet`'s `is_collection`
-field — do not re-derive it from title keywords. For RSS / Mikan
-entries (which lack the flag), only refuse on unambiguous markers:
+Only refuse on unambiguous markers:
 `合集`, `全集`, `Complete`, `Batch`, `BD BOX`, `S\d+ Complete`, or
 zero-padded ranges like `01-12`. Naked numbers such as `Season 2 - 14`
 are NOT collections.
 
-When refusing, quote the resolver's `collection_reason` verbatim (or
-the matched marker for RSS / Mikan) and tell the user:
+When refusing, quote the matched marker and tell the user:
 
 > OpenList-Ani does not currently support downloading collection
 > releases (matched: `<reason>`). Please supply a single-episode link

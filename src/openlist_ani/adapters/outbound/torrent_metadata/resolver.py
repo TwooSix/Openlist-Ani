@@ -1,4 +1,4 @@
-"""Magnet-link resolver: extract title and detect collection torrents.
+"""Magnet-link resolver: extract torrent titles and file metadata.
 
 Two-stage flow:
 
@@ -8,11 +8,6 @@ Two-stage flow:
    via libtorrent (DHT + trackers).  Wrapped in :func:`asyncio.to_thread`
    so the async router stays non-blocking.
 
-The resolver also flags *collection* resources by matching the title
-against a set of well-known keywords (合集 / 全集 / Complete / Batch /
-``\\d+-\\d+`` ranges …).  Callers must surface this to the user and
-abort, because the OpenList-Ani downloader cannot currently rename
-multi-episode payloads.
 """
 
 from __future__ import annotations
@@ -25,7 +20,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import aiohttp
 
-from openlist_ani.domain.anime_release import detect_collection
 from openlist_ani.logger import logger
 
 # Cap a downloaded .torrent file at 10 MiB — real torrents are a few KiB
@@ -57,8 +51,6 @@ class ResolveResult:
     source: str | None = None  # "dn" | "metadata" | None
     file_count: int | None = None
     files: list[TorrentFile] = field(default_factory=list)
-    is_collection: bool = False
-    collection_reason: str | None = None
 
 
 # ── Magnet ``dn`` extraction ─────────────────────────────────────────
@@ -255,11 +247,6 @@ def _fetch_metadata_blocking(
 # ── Resolver collaborators ───────────────────────────────────────────
 
 
-class CollectionDetector:
-    def detect(self, title: str) -> tuple[bool, str | None]:
-        return detect_collection(title)
-
-
 class LibtorrentMetadataClient:
     async def fetch_magnet_metadata(
         self, magnet: str, metadata_timeout: float
@@ -278,10 +265,8 @@ class MagnetResolver:
     def __init__(
         self,
         metadata_client: LibtorrentMetadataClient | None = None,
-        collection_detector: CollectionDetector | None = None,
     ) -> None:
         self._metadata_client = metadata_client or LibtorrentMetadataClient()
-        self._collection_detector = collection_detector or CollectionDetector()
 
     async def resolve(
         self, magnet: str, metadata_timeout: float = 30.0
@@ -294,14 +279,11 @@ class MagnetResolver:
 
         dn_title = _extract_dn(magnet)
         if dn_title:
-            is_coll, reason = self._collection_detector.detect(dn_title)
             return ResolveResult(
                 success=True,
                 message="Resolved title from magnet 'dn=' parameter.",
                 title=dn_title,
                 source="dn",
-                is_collection=is_coll,
-                collection_reason=reason,
             )
 
         logger.debug(
@@ -331,7 +313,6 @@ class MagnetResolver:
                 ),
             )
 
-        is_coll, reason = self._collection_detector.detect(name)
         return ResolveResult(
             success=True,
             message="Resolved title from torrent metadata.",
@@ -339,8 +320,6 @@ class MagnetResolver:
             source="metadata",
             file_count=len(files),
             files=files,
-            is_collection=is_coll,
-            collection_reason=reason,
         )
 
 
@@ -426,10 +405,8 @@ class TorrentFileResolver:
     def __init__(
         self,
         metadata_client: LibtorrentMetadataClient | None = None,
-        collection_detector: CollectionDetector | None = None,
     ) -> None:
         self._metadata_client = metadata_client or LibtorrentMetadataClient()
-        self._collection_detector = collection_detector or CollectionDetector()
 
     async def resolve(self, url: str) -> ResolveResult:
         if not _looks_like_torrent_url(url):
@@ -459,7 +436,6 @@ class TorrentFileResolver:
                 ),
             )
 
-        is_coll, reason = self._collection_detector.detect(name)
         return ResolveResult(
             success=True,
             message="Resolved title from .torrent file metadata.",
@@ -467,8 +443,6 @@ class TorrentFileResolver:
             source="torrent_file",
             file_count=len(files),
             files=files,
-            is_collection=is_coll,
-            collection_reason=reason,
         )
 
 

@@ -54,8 +54,8 @@ def _release(
     )
 
 
-async def test_regex_filter_excludes_collection_titles():
-    result = await RegexTitleFilter().apply(
+async def test_regex_filter_excludes_configured_title_patterns():
+    result = await RegexTitleFilter(["合集"]).apply(
         [
             _release(title="[Sub_A] Test Anime - 01 [1080p]"),
             _release(title="[Sub_A] Test Anime - 01-12 合集 [1080p]"),
@@ -65,7 +65,7 @@ async def test_regex_filter_excludes_collection_titles():
     assert [entry.title for entry in result] == ["[Sub_A] Test Anime - 01 [1080p]"]
 
 
-async def test_regex_filter_uses_collection_detector_for_non_regex_collection_titles():
+async def test_regex_filter_applies_builtin_collection_detection():
     result = await RegexTitleFilter().apply(
         [
             _release(title="[Sub_A] Test Anime - 01 [1080p]"),
@@ -81,8 +81,19 @@ async def test_regex_filter_uses_collection_detector_for_non_regex_collection_ti
     assert [entry.title for entry in result] == ["[Sub_A] Test Anime - 01 [1080p]"]
 
 
+async def test_regex_filter_accepts_season_episode_dash_titles():
+    title = (
+        "[ANi] Tsue to Tsurugi no Wistoria /  杖与剑的魔剑谭 "
+        "Season 2 - 18 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
+    )
+
+    result = await RegexTitleFilter().apply([_release(title=title)])
+
+    assert [entry.title for entry in result] == [title]
+
+
 async def test_filter_chain_reports_skipped_counts():
-    chain = FilterChain([RegexTitleFilter()])
+    chain = FilterChain([RegexTitleFilter(["合集"])])
 
     result = await chain.apply(
         [

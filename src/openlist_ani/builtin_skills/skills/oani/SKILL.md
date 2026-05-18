@@ -29,8 +29,8 @@ Openlist-Ani backend API reference.
 - **parse_rss**: Fetch + parse an RSS feed via the backend, returning each
   entry's `title` + `download_url`. Use when the user supplies an RSS URL.
 - **resolve_magnet**: Resolve a magnet link to its real `title` (via `dn=` or
-  libtorrent metadata) and detect collection releases. Use before calling
-  `create_download` whenever a magnet's real title is not already known.
+  libtorrent metadata). Use before calling `create_download` whenever a
+  magnet's real title is not already known.
 - **resolve_torrent**: Resolve a `.torrent` file URL (http / https) to its
   real `title` and file list by downloading the blob and parsing it with
   libtorrent. Use before calling `create_download` whenever the user

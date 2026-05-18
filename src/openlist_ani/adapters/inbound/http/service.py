@@ -62,8 +62,6 @@ def _build_magnet_response(result) -> ResolveMagnetResponse:
         source=result.source,
         file_count=result.file_count,
         files=[ResolveMagnetFile(name=f.name, size=f.size) for f in result.files],
-        is_collection=result.is_collection,
-        collection_reason=result.collection_reason,
     )
 
 
