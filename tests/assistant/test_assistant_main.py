@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from io import StringIO
+
 from openlist_ani import assistant
+from openlist_ani.assistant.core import loop as loop_module
 
 
 def test_main_handles_keyboard_interrupt_without_reraising(monkeypatch):
@@ -39,3 +42,20 @@ def test_main_respects_disabled_file_logging(monkeypatch):
     assistant.main()
 
     assert add_calls == []
+
+
+def test_agentic_loop_logger_uses_assistant_log_extras():
+    sink = StringIO()
+    handler_id = assistant.logger.add(
+        sink,
+        level="INFO",
+        format=assistant.LOG_FORMAT,
+        colorize=False,
+    )
+
+    try:
+        loop_module.logger.info("AgenticLoop logger smoke test")
+    finally:
+        assistant.logger.remove(handler_id)
+
+    assert "AgenticLoop logger smoke test" in sink.getvalue()

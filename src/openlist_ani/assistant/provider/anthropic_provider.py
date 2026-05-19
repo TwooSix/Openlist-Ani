@@ -28,7 +28,7 @@ from openlist_ani.assistant.tool.base import BaseTool
 
 from .base import Provider
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 def _get_max_tokens_for_model(model: str) -> int:

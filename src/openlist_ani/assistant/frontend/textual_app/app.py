@@ -12,7 +12,7 @@ import asyncio
 import time
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from openlist_ani.logger import logger
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, VerticalScroll
@@ -25,6 +25,7 @@ from openlist_ani.assistant.core.loop import AgenticLoop
 from openlist_ani.assistant.core.message_queue import PendingMessage
 from openlist_ani.assistant.core.models import EventType, LoopEvent
 from openlist_ani.assistant.frontend.textual_app.events import LoopEventMessage
+from openlist_ani.assistant.logging_format import format_log_text
 from openlist_ani.assistant.frontend.textual_app.styles import (
     APP_CSS,
     STATUS_SUCCESS,
@@ -598,6 +599,10 @@ class TextualFrontend(App):
     async def on_input_submitted(self, message: InputSubmitted) -> None:
         """Handle user input from the InputBox."""
         text = message.value
+        active_turn = (
+            self._processing_task is not None and not self._processing_task.done()
+        )
+        logger.info(f"CLI input received: {format_log_text(text)}")
 
         # /quit ALWAYS works, even during execution
         if text.strip().lower() == _CMD_QUIT:
@@ -605,9 +610,20 @@ class TextualFrontend(App):
             return
 
         # If currently processing, enqueue as mid-turn injection
-        if self._processing_task is not None and not self._processing_task.done():
-            self._agentic_loop.message_queue.enqueue(
+        if active_turn:
+            queued = self._agentic_loop.message_queue.enqueue(
                 PendingMessage(content=text),
+            )
+            logger.info(
+                "CLI input received while a reply is running; "
+                f"queued for this conversation: {format_log_text(text)}"
+            )
+            logger.debug(
+                f"CLI queued message: turn={self._turn_number}, "
+                f"seq={queued.seq}, "
+                f"queue_len={len(self._agentic_loop.message_queue)}, "
+                f"pending_prompts="
+                f"{self._agentic_loop.message_queue.pending_prompt_count()}"
             )
             return
 
@@ -665,6 +681,10 @@ class TextualFrontend(App):
         self._turn_start_time = time.monotonic()
         self._turn_tool_count = 0
         self._turn_full_text.clear()
+        logger.debug(
+            f"CLI turn started: turn={self._turn_number}, "
+            f"chars={len(user_input)}, skill_command={skill_command or '-'}"
+        )
 
         # Display user message
         chat = self.query_one(_CHAT_VIEW, VerticalScroll)
@@ -787,6 +807,13 @@ class TextualFrontend(App):
                 )
                 await chat.mount(footer)
                 self._scroll_to_bottom()
+                logger.info("CLI response shown.")
+                logger.debug(
+                    f"CLI turn finished: turn={self._turn_number}, "
+                    f"tools={self._turn_tool_count}, "
+                    f"response_chars={len(full_text)}, "
+                    f"elapsed_ms={int(elapsed * 1000)}"
+                )
             self._processing_task = None
             return
 

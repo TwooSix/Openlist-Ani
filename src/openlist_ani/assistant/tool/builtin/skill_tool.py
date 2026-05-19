@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from openlist_ani.assistant.tool.base import BaseTool
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 if TYPE_CHECKING:
     from openlist_ani.assistant.skill.catalog import SkillCatalog
@@ -170,7 +170,10 @@ class SkillTool(BaseTool):
         if not isinstance(params, dict):
             params = {}
 
-        logger.info(f"Skill call: {skill_name}/{action} params={params}")
+        logger.debug(f"Skill call: skill={skill_name}, action={action}")
+        logger.debug(
+            f"Skill call params: skill={skill_name}, action={action}, params={params}"
+        )
 
         try:
             skill = self._catalog.get_skill(skill_name)

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Protocol
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant.core.message_queue import PendingMessage
 from openlist_ani.assistant.core.models import EventType
 from openlist_ani.assistant.frontend.base import Frontend
+from openlist_ani.assistant.logging_format import format_log_text
 from openlist_ani.integrations.messaging.models import InboundMessage
 from openlist_ani.integrations.messaging.state_store import MessagingStateStore
 
@@ -79,6 +81,7 @@ class MessagingFrontend(Frontend):
         self._active_turns: set[str] = set()
 
     async def run(self) -> None:
+        logger.info(f"Starting {self.platform} assistant frontend...")
         await self._messenger.listen(self.handle_inbound)
 
     async def shutdown(self) -> None:
@@ -91,10 +94,22 @@ class MessagingFrontend(Frontend):
         raise NotImplementedError("MessagingFrontend sends through inbound targets")
 
     async def handle_inbound(self, message: InboundMessage) -> None:
-        if not self._authorizer.is_authorized(message):
+        authorized = self._authorizer.is_authorized(message)
+        if not authorized:
+            logger.warning(
+                f"{self.platform} message rejected: unauthorized sender "
+                f"(chars={len(message.text)})"
+            )
+            logger.debug(
+                f"{self.platform} authorization failed: "
+                f"chat_id={message.target.chat_id}, user_id={message.target.user_id}"
+            )
             await self._messenger.send_text(message.target.chat_id, "Unauthorized.")
             return
 
+        logger.info(
+            f"{self.platform} message received: {format_log_text(message.text)}"
+        )
         if await self._handle_builtin_command(message):
             return
 
@@ -104,10 +119,25 @@ class MessagingFrontend(Frontend):
         session_key = self._session_key(message)
         loop = await self._get_loop(message)
         if session_key in self._active_turns:
-            loop.message_queue.enqueue(PendingMessage(content=text))
+            queued = loop.message_queue.enqueue(PendingMessage(content=text))
+            logger.info(
+                f"{self.platform} message received while a reply is running; "
+                f"queued for this conversation: {format_log_text(text)}"
+            )
+            logger.debug(
+                f"Queued {self.platform} message: session_key={session_key}, "
+                f"seq={queued.seq}, queue_len={len(loop.message_queue)}, "
+                f"pending_prompts={loop.message_queue.pending_prompt_count()}"
+            )
             return
 
         self._active_turns.add(session_key)
+        turn_started_at = time.monotonic()
+        logger.debug(
+            f"{self.platform} turn started: session_key={session_key}, "
+            f"chat_id={message.target.chat_id}, chars={len(text)}, "
+            f"active_turns={len(self._active_turns)}"
+        )
         try:
             final_parts: list[str] = []
             async for event in loop.process(text):
@@ -119,6 +149,13 @@ class MessagingFrontend(Frontend):
                     await self._messenger.send_text(message.target.chat_id, event.text)
             response = "\n".join(final_parts).strip() or "No response."
             await self._messenger.send_text(message.target.chat_id, response)
+            logger.info(f"{self.platform} response sent.")
+            logger.debug(
+                f"{self.platform} turn finished: session_key={session_key}, "
+                f"chat_id={message.target.chat_id}, final_parts={len(final_parts)}, "
+                f"final_chars={sum(len(part) for part in final_parts)}, "
+                f"elapsed_ms={int((time.monotonic() - turn_started_at) * 1000)}"
+            )
         except Exception as exc:  # noqa: BLE001
             logger.error(f"{self.platform} frontend failed: {exc}")
             await self._messenger.send_text(message.target.chat_id, f"Error: {exc}")

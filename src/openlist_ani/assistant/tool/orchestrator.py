@@ -27,7 +27,7 @@ from openlist_ani.assistant.core.models import ToolCall, ToolResult
 
 from .registry import ToolRegistry
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 # Type alias for progress callbacks.
 # Called with (tool_name, activity_description_or_None) before each tool execution.

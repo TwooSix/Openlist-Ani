@@ -12,7 +12,7 @@ from typing import Any
 
 import aiohttp
 from bs4 import BeautifulSoup
-from loguru import logger
+from openlist_ani.logger import logger
 
 _MIKAN_BASE_URL = "https://mikanani.me"
 _USER_AGENT = "openlist-ani/1.0 (https://github.com/Openlist-Ani)"

@@ -64,7 +64,7 @@ if TYPE_CHECKING:
 
 from openlist_ani.assistant.core.message_queue import MessageQueue
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 def _is_prompt_too_long(error: Exception) -> bool:

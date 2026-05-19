@@ -25,6 +25,7 @@ class PendingMessage:
     content: str
     mode: Literal["prompt", "notification"] = "prompt"
     timestamp: float = field(default_factory=time.time)
+    seq: int | None = None
 
 
 class MessageQueue:
@@ -42,15 +43,35 @@ class MessageQueue:
     def __init__(self) -> None:
         self._queue: list[PendingMessage] = []
         self._changed = asyncio.Event()
+        self._next_seq = 1
 
-    def enqueue(self, message: PendingMessage) -> None:
+    def enqueue(self, message: PendingMessage) -> PendingMessage:
         """Add a message to the queue. Non-blocking."""
+        if message.seq is None:
+            message.seq = self._next_seq
+            self._next_seq += 1
         self._queue.append(message)
         self._changed.set()
+        return message
 
     def has_pending_prompts(self) -> bool:
         """Check if there are any pending user prompt messages."""
         return any(m.mode == "prompt" for m in self._queue)
+
+    def pending_prompt_count(self) -> int:
+        """Return the number of queued prompt messages."""
+        return sum(1 for m in self._queue if m.mode == "prompt")
+
+    def pending_prompt_seqs(self) -> list[int]:
+        """Return sequence ids for queued prompt messages."""
+        return [m.seq for m in self._queue if m.mode == "prompt" and m.seq is not None]
+
+    def oldest_prompt_age_ms(self) -> int | None:
+        """Return the oldest queued prompt age in milliseconds."""
+        prompt_timestamps = [m.timestamp for m in self._queue if m.mode == "prompt"]
+        if not prompt_timestamps:
+            return None
+        return max(0, int((time.time() - min(prompt_timestamps)) * 1000))
 
     def drain_prompts(self) -> list[PendingMessage]:
         """Remove and return all pending user prompt messages.

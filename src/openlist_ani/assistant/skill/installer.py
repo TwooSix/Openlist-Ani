@@ -10,7 +10,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 BUILTIN_CACHE_DIR_NAME = ".builtin_skills"
 LEGACY_MANIFEST_FILENAME = ".openlist-ani-builtin-skills.json"

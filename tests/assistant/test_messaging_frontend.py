@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from openlist_ani.logger import logger
 from openlist_ani.assistant.core.context import ContextBuilder
 from openlist_ani.assistant.core.loop import AgenticLoop
 from openlist_ani.assistant.core.models import ProviderResponse
@@ -14,6 +18,7 @@ from openlist_ani.assistant.frontend.messaging import (
     AllowedChatAuthorizer,
     MessagingFrontend,
 )
+from openlist_ani.assistant.frontend.telegram import TelegramFrontend
 from openlist_ani.assistant.memory.manager import MemoryManager
 from openlist_ani.assistant.session.storage import SessionStorage
 from openlist_ani.assistant.tool.registry import ToolRegistry
@@ -37,6 +42,29 @@ class FakeMessenger:
         await asyncio.sleep(0)
         self.sent.append((chat_id or "", text))
         return True
+
+
+class FakeTelegramMessage:
+    def __init__(self, text: str, *, user_id: int = 2, chat_id: int = 123) -> None:
+        self.text = text
+        self.chat_id = chat_id
+        self.from_user = SimpleNamespace(id=user_id)
+        self.replies: list[str] = []
+
+    async def reply_text(self, text: str):
+        await asyncio.sleep(0)
+        self.replies.append(text)
+        return SimpleNamespace()
+
+
+@contextmanager
+def _captured_log_messages():
+    sink = StringIO()
+    handler_id = logger.add(sink, level="INFO", format="{message}")
+    try:
+        yield sink
+    finally:
+        logger.remove(handler_id)
 
 
 def _make_loop(tmp: Path, response: str = "assistant reply") -> AgenticLoop:
@@ -163,6 +191,63 @@ async def test_wechat_rejects_messages_outside_home_channel(tmp_path):
     await frontend.handle_inbound(_message("hi", chat_id="chat-2"))
 
     assert messenger.sent[-1] == ("chat-2", "Unauthorized.")
+
+
+@pytest.mark.asyncio
+async def test_rejected_wechat_message_does_not_log_content(tmp_path):
+    messenger = FakeMessenger()
+    frontend = MessagingFrontend(
+        platform="wechat",
+        messenger=messenger,
+        loop=_make_loop(tmp_path),
+        loop_factory=lambda: _make_loop(tmp_path),
+        authorizer=AllowedChatAuthorizer(["chat-1"]),
+    )
+    secret = "private unauthorized content"
+
+    with _captured_log_messages() as logs:
+        await frontend.handle_inbound(_message(secret, chat_id="chat-2"))
+
+    assert secret not in logs.getvalue()
+    assert "unauthorized sender" in logs.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_rejected_telegram_message_does_not_log_content(tmp_path):
+    frontend = TelegramFrontend(
+        loop=_make_loop(tmp_path),
+        bot_token="token",
+        allowed_users=[1],
+    )
+    secret = "private telegram message"
+    message = FakeTelegramMessage(secret, user_id=2)
+    update = SimpleNamespace(message=message)
+
+    with _captured_log_messages() as logs:
+        await frontend._handle_text(update, SimpleNamespace())
+
+    assert secret not in logs.getvalue()
+    assert "unauthorized user" in logs.getvalue()
+    assert message.replies == ["Unauthorized."]
+
+
+@pytest.mark.asyncio
+async def test_rejected_telegram_command_does_not_log_content(tmp_path):
+    frontend = TelegramFrontend(
+        loop=_make_loop(tmp_path),
+        bot_token="token",
+        allowed_users=[1],
+    )
+    secret = "/mikan private command"
+    message = FakeTelegramMessage(secret, user_id=2)
+    update = SimpleNamespace(message=message)
+
+    with _captured_log_messages() as logs:
+        await frontend._handle_command_fallback(update, SimpleNamespace())
+
+    assert secret not in logs.getvalue()
+    assert "unauthorized user" in logs.getvalue()
+    assert message.replies == ["Unauthorized."]
 
 
 @pytest.mark.asyncio

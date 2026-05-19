@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant.memory.memory_dir import MemoryDir
 

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant.core.models import Message, Role
 from openlist_ani.assistant.session.models import SessionEntry, SessionInfo
@@ -47,7 +47,8 @@ class SessionStorage:
 
         # Record session_start entry
         await self._record_session_start(metadata or {})
-        logger.info(f"Started new session: {self._session_id}")
+        logger.info("New conversation session created.")
+        logger.debug(f"Started new session: {self._session_id}")
         return self._session_id
 
     async def switch_session(self, session_id: str) -> None:
@@ -62,7 +63,8 @@ class SessionStorage:
         else:
             self._last_uuid = None
 
-        logger.info(f"Switched to session: {session_id}")
+        logger.info("Conversation session resumed.")
+        logger.debug(f"Switched to session: {session_id}")
 
     @property
     def session_id(self) -> str:
