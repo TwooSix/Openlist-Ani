@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant.core.subagent import (
     BUILTIN_AGENT_CONFIGS,
@@ -154,7 +154,7 @@ Fetches web content and processes it with a focused sub-agent.
         # 2. Check cache
         cached = get_cached(url)
         if cached is not None:
-            logger.info(f"WebFetch cache hit: {url}")
+            logger.debug(f"WebFetch cache hit: {url}")
             elapsed = time.monotonic() - start_time
             return await self._process_and_format(
                 content=cached.content,

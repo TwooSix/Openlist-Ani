@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+from openlist_ani.logger import logger
 from openlist_ani.adapters.outbound.configuration import config
 
 # ------------------------------------------------------------------ #

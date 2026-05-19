@@ -13,7 +13,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant._constants import (
     MAX_ENTRYPOINT_BYTES,

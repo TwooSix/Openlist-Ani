@@ -10,7 +10,7 @@ import importlib.util
 import inspect
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 async def load_and_run(script_path: Path, params: dict) -> str:

@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 import aiohttp
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 class BackendClient:

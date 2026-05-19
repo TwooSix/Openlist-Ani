@@ -13,7 +13,7 @@ from typing import Any
 
 import aiohttp
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from .cache import clear_cache, ttl_cached
 from .bangumi_model import (

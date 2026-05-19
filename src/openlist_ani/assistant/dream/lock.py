@@ -13,7 +13,7 @@ import os
 import time
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant._constants import DREAM_LOCK_STALE_SECONDS
 

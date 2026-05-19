@@ -11,7 +11,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant.tool.base import BaseTool
 

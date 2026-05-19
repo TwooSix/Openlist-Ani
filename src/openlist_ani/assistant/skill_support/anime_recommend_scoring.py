@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 # Prior weight: how many votes a title needs before we trust its score.
 # With m=50, a title with 6 votes is pulled ~89% toward the global mean.

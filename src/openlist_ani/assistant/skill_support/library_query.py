@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 import aiosqlite
-from loguru import logger
+from openlist_ani.logger import logger
 
 DEFAULT_DB_PATH = Path.cwd() / "data/data.db"
 _DANGEROUS_KEYWORD_RE = re.compile(

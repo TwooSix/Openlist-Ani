@@ -23,7 +23,47 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+from openlist_ani.logger import (
+    CONSOLE_LOG_FORMAT,
+    FATAL_LEVEL,
+    LOG_DIR,
+    LOG_FORMAT,
+    file_logging_enabled_from_env,
+    logger,
+)
+
+
+def _configure_assistant_logger(*, is_cli: bool, level: str = "INFO") -> None:
+    """Configure assistant logs to match project logging format.
+
+    For compatibility with the TUI/CLI flow, logs are written to file by
+    default and console logging is only enabled for non-CLI mode.
+    """
+    logger.remove()
+
+    if file_logging_enabled_from_env():
+        LOG_DIR.mkdir(exist_ok=True)
+        logger.add(
+            LOG_DIR / "assistant_{time:YYYY-MM-DD}.log",
+            rotation="00:00",
+            retention="1 week",
+            level=level,
+            encoding="utf-8",
+            mode="a",
+            format=LOG_FORMAT,
+            backtrace=False,
+            diagnose=False,
+        )
+
+    if not is_cli:
+        logger.add(
+            sys.stderr,
+            level=level,
+            format=CONSOLE_LOG_FORMAT,
+            colorize=True,
+            backtrace=False,
+            diagnose=False,
+        )
 
 
 def _platform_frontends_enabled(assistant_cfg: Any) -> dict[str, bool]:
@@ -32,6 +72,14 @@ def _platform_frontends_enabled(assistant_cfg: Any) -> dict[str, bool]:
         "wechat": assistant_cfg.wechat.enabled,
         "feishu": assistant_cfg.feishu.enabled,
     }
+
+
+def _enabled_frontend_names(assistant_cfg: Any) -> list[str]:
+    return [
+        name
+        for name, enabled in _platform_frontends_enabled(assistant_cfg).items()
+        if enabled
+    ]
 
 
 def _telegram_frontend_enabled(assistant_cfg: Any) -> bool:
@@ -285,7 +333,7 @@ async def run() -> None:
     frontend_errors = _validate_frontend_config(assistant_cfg)
     if frontend_errors:
         for error in frontend_errors:
-            logger.error(error)
+            logger.log(FATAL_LEVEL, error)
         sys.exit(1)
 
     skills_dir = Path(assistant_cfg.skills_dir)
@@ -395,14 +443,16 @@ async def run() -> None:
             catalog=catalog,
         )
         if not frontends:
-            logger.error(
+            logger.log(
+                FATAL_LEVEL,
                 "Assistant enabled but no frontend is configured. "
-                "Enable [assistant.telegram], [assistant.wechat], or [assistant.feishu]."
+                "Enable [assistant.telegram], [assistant.wechat], or [assistant.feishu].",
             )
             sys.exit(1)
 
     logger.info(
-        f"Starting assistant ({llm_cfg.provider_type} / {llm_cfg.openai_model})"
+        f"Starting assistant ({llm_cfg.provider_type} / {llm_cfg.openai_model}); "
+        f"frontends={_enabled_frontend_names(assistant_cfg)}"
     )
     try:
         if is_cli:
@@ -427,38 +477,12 @@ def main() -> None:
     for noisy_logger in ("httpx", "httpcore", "urllib3", "asyncio"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
-    # Configure loguru: single source of truth for all logging.
-    # The project-wide loguru logger (openlist_ani.logger) adds both a
-    # stdout handler and a file handler by default. We reconfigure here
-    # to match the assistant's needs.
-    from loguru import logger as loguru_logger
-
-    from openlist_ani.logger import LOG_DIR, file_logging_enabled_from_env
-
-    loguru_logger.remove()  # Remove all default handlers
-
-    if file_logging_enabled_from_env():
-        LOG_DIR.mkdir(exist_ok=True)
-        # Dedicated assistant log file (matches legacy "assistant_xxx.log" naming)
-        loguru_logger.add(
-            LOG_DIR / "assistant_{time:YYYY-MM-DD}.log",
-            rotation="00:00",
-            retention="1 week",
-            level="INFO",
-            encoding="utf-8",
-            mode="a",
-        )
-
-    # Console handler - only for Telegram mode.
-    # CLI mode uses Rich for terminal output; loguru stdout would
-    # pollute the spinner and prompt_toolkit rendering.
-    if not is_cli:
-        loguru_logger.add(
-            sys.stderr,
-            level="INFO",
-        )
+    _configure_assistant_logger(is_cli=is_cli)
 
     try:
         asyncio.run(run())
     except KeyboardInterrupt:
-        loguru_logger.info("Assistant interrupted by user.")
+        logger.info("Assistant interrupted by user.")
+    except Exception as exc:
+        logger.opt(exception=True).log(FATAL_LEVEL, f"Assistant crashed: {exc}")
+        raise
