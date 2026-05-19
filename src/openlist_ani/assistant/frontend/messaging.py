@@ -139,28 +139,51 @@ class MessagingFrontend(Frontend):
             f"active_turns={len(self._active_turns)}"
         )
         try:
-            final_parts: list[str] = []
-            async for event in loop.process(text):
-                if event.type == EventType.TEXT_DONE and event.text:
-                    final_parts.append(event.text)
-                elif event.type == EventType.ERROR and event.text:
-                    final_parts.append(f"Error: {event.text}")
-                elif event.type == EventType.INTERMEDIATE_MESSAGE and event.text:
-                    await self._messenger.send_text(message.target.chat_id, event.text)
-            response = "\n".join(final_parts).strip() or "No response."
-            await self._messenger.send_text(message.target.chat_id, response)
-            logger.info(f"{self.platform} response sent.")
-            logger.debug(
-                f"{self.platform} turn finished: session_key={session_key}, "
-                f"chat_id={message.target.chat_id}, final_parts={len(final_parts)}, "
-                f"final_chars={sum(len(part) for part in final_parts)}, "
-                f"elapsed_ms={int((time.monotonic() - turn_started_at) * 1000)}"
-            )
+            pending_texts = [text]
+            while pending_texts:
+                current_text = pending_texts.pop(0)
+                await self._process_single_turn(
+                    message,
+                    loop,
+                    current_text,
+                    session_key=session_key,
+                    turn_started_at=turn_started_at,
+                )
+                pending_texts.extend(
+                    pending.content for pending in loop.message_queue.drain_prompts()
+                )
         except Exception as exc:  # noqa: BLE001
             logger.error(f"{self.platform} frontend failed: {exc}")
             await self._messenger.send_text(message.target.chat_id, f"Error: {exc}")
         finally:
             self._active_turns.discard(session_key)
+
+    async def _process_single_turn(
+        self,
+        message: InboundMessage,
+        loop: AgenticLoop,
+        text: str,
+        *,
+        session_key: str,
+        turn_started_at: float,
+    ) -> None:
+        final_parts: list[str] = []
+        async for event in loop.process(text):
+            if event.type == EventType.TEXT_DONE and event.text:
+                final_parts.append(event.text)
+            elif event.type == EventType.ERROR and event.text:
+                final_parts.append(f"Error: {event.text}")
+            elif event.type == EventType.INTERMEDIATE_MESSAGE and event.text:
+                await self._messenger.send_text(message.target.chat_id, event.text)
+        response = "\n".join(final_parts).strip() or "No response."
+        await self._messenger.send_text(message.target.chat_id, response)
+        logger.info(f"{self.platform} response sent.")
+        logger.debug(
+            f"{self.platform} turn finished: session_key={session_key}, "
+            f"chat_id={message.target.chat_id}, final_parts={len(final_parts)}, "
+            f"final_chars={sum(len(part) for part in final_parts)}, "
+            f"elapsed_ms={int((time.monotonic() - turn_started_at) * 1000)}"
+        )
 
     async def _get_loop(self, message: InboundMessage) -> AgenticLoop:
         session_key = self._session_key(message)

@@ -645,6 +645,27 @@ class TelegramFrontend(Frontend):
             return
 
         self._active_turns.add(chat_id)
+        try:
+            pending_texts = [message_text]
+            while pending_texts:
+                current_text = pending_texts.pop(0)
+                await self._process_single_turn(update, loop, current_text)
+                pending_texts.extend(
+                    pending.content for pending in loop.message_queue.drain_prompts()
+                )
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            await update.message.reply_text(f"Error: {e}")
+        finally:
+            self._active_turns.discard(chat_id)
+
+    async def _process_single_turn(
+        self,
+        update: Update,
+        loop: AgenticLoop,
+        message_text: str,
+    ) -> None:
+        chat_id = update.message.chat_id
         turn_started_at = time.monotonic()
         logger.debug(
             f"Telegram turn started: chat_id={chat_id}, chars={len(message_text)}, "
@@ -663,13 +684,11 @@ class TelegramFrontend(Frontend):
                 f"final_parts={len(final_parts)}, final_chars={final_chars}, "
                 f"elapsed_ms={elapsed_ms}"
             )
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
+        except Exception:
             await self._cleanup_status_message(status_msg)
-            await update.message.reply_text(f"Error: {e}")
+            raise
         finally:
             await self._stop_typing_indicator(typing_task)
-            self._active_turns.discard(chat_id)
 
     @staticmethod
     def _build_skill_message(
