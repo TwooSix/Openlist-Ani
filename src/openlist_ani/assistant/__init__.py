@@ -83,11 +83,7 @@ def _enabled_frontend_names(assistant_cfg: Any) -> list[str]:
 
 
 def _telegram_frontend_enabled(assistant_cfg: Any) -> bool:
-    non_telegram_enabled = assistant_cfg.wechat.enabled or assistant_cfg.feishu.enabled
-    return bool(
-        assistant_cfg.telegram.enabled
-        or (assistant_cfg.telegram.bot_token and not non_telegram_enabled)
-    )
+    return bool(assistant_cfg.telegram.enabled or assistant_cfg.telegram.bot_token)
 
 
 def _validate_frontend_config(assistant_cfg: Any) -> list[str]:
