@@ -1,5 +1,6 @@
 """Tests for the core agentic loop."""
 
+from collections.abc import AsyncGenerator
 import pytest
 from pathlib import Path
 
@@ -11,7 +12,9 @@ from openlist_ani.assistant.core.loop import (
     _is_transient,
 )
 from openlist_ani.assistant.core.cancellation import CancellationToken
+from openlist_ani.assistant.core.message_queue import MessageQueue, PendingMessage
 from openlist_ani.assistant.core.models import (
+    Message,
     EventType,
     LoopEvent,
     ProviderResponse,
@@ -23,6 +26,33 @@ from openlist_ani.assistant.tool.builtin.send_message_tool import SendMessageToo
 from openlist_ani.assistant.tool.registry import ToolRegistry
 
 from .conftest import MockProvider, ReadOnlyTool, WriteTool
+
+
+class QueueingTextProvider(MockProvider):
+    """Provider that queues a prompt while streaming a text-only response."""
+
+    def __init__(self, message_queue: MessageQueue) -> None:
+        super().__init__()
+        self._message_queue = message_queue
+        self._stream_call_count = 0
+
+    async def chat_completion_stream(
+        self,
+        messages: list[Message],
+        tools: list[dict] | None = None,
+        max_tokens_override: int | None = None,
+        temperature: float | None = None,
+    ) -> AsyncGenerator[ProviderResponse, None]:
+        self._calls.append((messages, tools))
+        self._stream_call_count += 1
+        if self._stream_call_count == 1:
+            self._message_queue.enqueue(
+                PendingMessage(content="queued while streaming")
+            )
+            yield ProviderResponse(text="The answer is ready.")
+        else:
+            yield ProviderResponse(text="Follow-up handled.")
+        yield ProviderResponse(stop_reason="stop")
 
 
 def _collect_text(events: list[LoopEvent]) -> str:
@@ -71,6 +101,32 @@ class TestAgenticLoop:
         types = [e.type for e in results]
         assert EventType.THINKING in types
         assert EventType.TEXT_DONE in types
+
+    @pytest.mark.asyncio
+    async def test_text_response_leaves_late_pending_prompt_for_followup(
+        self, memory, registry
+    ):
+        """Late prompts after the last tool checkpoint should remain queued."""
+        message_queue = MessageQueue()
+        provider = QueueingTextProvider(message_queue)
+        context = ContextBuilder(memory)
+        loop = AgenticLoop(
+            provider,
+            registry,
+            context,
+            memory,
+            message_queue=message_queue,
+        )
+
+        results = []
+        async for event in loop.process("What is the answer?"):
+            results.append(event)
+
+        assert [e.text for e in results if e.type == EventType.TEXT_DONE] == [
+            "The answer is ready."
+        ]
+        assert message_queue.has_pending_prompts()
+        assert len(provider._calls) == 1
 
     @pytest.mark.asyncio
     async def test_single_tool_call_round(self, memory, registry):

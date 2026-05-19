@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from contextlib import contextmanager
 from io import StringIO
 from pathlib import Path
@@ -69,6 +68,10 @@ def _captured_log_messages():
 
 def _make_loop(tmp: Path, response: str = "assistant reply") -> AgenticLoop:
     provider = MockProvider([ProviderResponse(text=response)])
+    return _make_loop_with_provider(tmp, provider)
+
+
+def _make_loop_with_provider(tmp: Path, provider: MockProvider) -> AgenticLoop:
     registry = ToolRegistry()
     memory = MemoryManager(data_dir=tmp / "data", project_root=tmp / "proj")
     (tmp / "proj").mkdir(exist_ok=True)
@@ -80,6 +83,20 @@ def _make_loop(tmp: Path, response: str = "assistant reply") -> AgenticLoop:
         memory,
         session_storage=SessionStorage(tmp / "sessions"),
     )
+
+
+class BlockingProvider(MockProvider):
+    def __init__(self, responses: list[ProviderResponse]) -> None:
+        super().__init__(responses)
+        self.first_call_started = asyncio.Event()
+        self.release_first_call = asyncio.Event()
+
+    async def chat_completion_stream(self, *args, **kwargs):
+        if self._call_count == 0:
+            self.first_call_started.set()
+            await self.release_first_call.wait()
+        async for chunk in super().chat_completion_stream(*args, **kwargs):
+            yield chunk
 
 
 def _message(text: str, chat_id: str = "chat-1") -> InboundMessage:
@@ -251,20 +268,37 @@ async def test_rejected_telegram_command_does_not_log_content(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_active_turn_enqueues_pending_message(tmp_path):
+async def test_queued_message_after_final_text_is_processed_as_next_turn(tmp_path):
     messenger = FakeMessenger()
-    loop = _make_loop(Path(tempfile.mkdtemp()), response="first")
+    provider = BlockingProvider(
+        [
+            ProviderResponse(text="first reply"),
+            ProviderResponse(text="second reply"),
+        ]
+    )
+    loop = _make_loop_with_provider(tmp_path, provider)
     frontend = MessagingFrontend(
         platform="wechat",
         messenger=messenger,
         loop=loop,
         loop_factory=lambda: loop,
     )
-    frontend._active_turns.add("wechat:chat-1:user-1")
 
-    await frontend.handle_inbound(_message("interrupt"))
+    first_task = asyncio.create_task(frontend.handle_inbound(_message("first")))
+    await asyncio.wait_for(provider.first_call_started.wait(), timeout=1)
 
-    assert loop.message_queue.has_pending_prompts() is True
+    await frontend.handle_inbound(_message("second"))
+    provider.release_first_call.set()
+    await asyncio.wait_for(first_task, timeout=1)
+
+    assert messenger.sent == [
+        ("chat-1", "first reply"),
+        ("chat-1", "second reply"),
+    ]
+    assert not loop.message_queue.has_pending_prompts()
+    assert len(provider._calls) == 2
+    second_call_messages = provider._calls[1][0]
+    assert any(m.content == "second" for m in second_call_messages)
 
 
 @pytest.mark.asyncio

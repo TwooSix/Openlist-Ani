@@ -814,7 +814,13 @@ class TextualFrontend(App):
                     f"response_chars={len(full_text)}, "
                     f"elapsed_ms={int(elapsed * 1000)}"
                 )
+            pending = self._agentic_loop.message_queue.drain_prompts()
             self._processing_task = None
+            if pending:
+                next_message = pending[0]
+                for queued in pending[1:]:
+                    self._agentic_loop.message_queue.enqueue(queued)
+                await self._start_turn(next_message.content)
             return
 
         if not event.text:
