@@ -22,7 +22,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from telegram import BotCommand, Message as TGMessage, Update
 from telegram.constants import ChatAction, ParseMode
@@ -37,6 +37,7 @@ from telegram.ext import (
 from openlist_ani.assistant.core.message_queue import PendingMessage
 from openlist_ani.assistant.core.models import EventType
 from openlist_ani.assistant.frontend.base import Frontend
+from openlist_ani.assistant.logging_format import format_log_text
 
 if TYPE_CHECKING:
     from openlist_ani.assistant.core.loop import AgenticLoop
@@ -164,7 +165,8 @@ class TelegramFrontend(Frontend):
         if matching:
             latest = matching[0]  # sorted by mtime desc
             await loop.resume(latest.session_id)
-            logger.info(f"Resumed session {latest.session_id} for chat {chat_id}")
+            logger.info("Telegram conversation session resumed.")
+            logger.debug(f"Resumed session {latest.session_id} for chat {chat_id}")
         else:
             await storage.start_new_session(
                 metadata={
@@ -172,7 +174,8 @@ class TelegramFrontend(Frontend):
                     "chat_id": chat_id,
                 }
             )
-            logger.info(f"Created new session for chat {chat_id}")
+            logger.info("Telegram conversation session created.")
+            logger.debug(f"Created new session for chat {chat_id}")
 
     async def run(self) -> None:
         """Start the Telegram bot in polling mode."""
@@ -377,10 +380,22 @@ class TelegramFrontend(Frontend):
             return
 
         user_id = update.message.from_user.id if update.message.from_user else 0
-        if not self._is_authorized(user_id):
+        authorized = self._is_authorized(user_id)
+        if not authorized:
+            logger.warning(
+                "Telegram message rejected: unauthorized user "
+                f"(chars={len(update.message.text)})"
+            )
+            logger.debug(
+                f"Telegram authorization failed: chat_id={update.message.chat_id}, "
+                f"user_id={user_id}"
+            )
             await update.message.reply_text("Unauthorized.")
             return
 
+        logger.info(
+            f"Telegram message received: {format_log_text(update.message.text)}"
+        )
         await self._process_user_turn(update, update.message.text)
 
     async def _stream_events(
@@ -561,11 +576,21 @@ class TelegramFrontend(Frontend):
             return
 
         user_id = update.message.from_user.id if update.message.from_user else 0
-        if not self._is_authorized(user_id):
+        authorized = self._is_authorized(user_id)
+        if not authorized:
+            logger.warning(
+                "Telegram command rejected: unauthorized user "
+                f"(chars={len(update.message.text)})"
+            )
+            logger.debug(
+                f"Telegram authorization failed: chat_id={update.message.chat_id}, "
+                f"user_id={user_id}"
+            )
             await update.message.reply_text("Unauthorized.")
             return
 
         text = update.message.text
+        logger.info(f"Telegram command received: {format_log_text(text)}")
         # Parse: "/mikan search frieren" -> cmd_name="mikan", user_msg="search frieren"
         # Telegram may append @botname: "/mikan@mybot search frieren"
         parts = text.strip().split(None, 1)
@@ -607,22 +632,63 @@ class TelegramFrontend(Frontend):
         loop = await self._get_loop(chat_id)
 
         if chat_id in self._active_turns:
-            loop.message_queue.enqueue(PendingMessage(content=message_text))
+            queued = loop.message_queue.enqueue(PendingMessage(content=message_text))
+            logger.info(
+                "Telegram message received while a reply is running; "
+                f"queued for this conversation: {format_log_text(message_text)}"
+            )
+            logger.debug(
+                f"Queued Telegram message: chat_id={chat_id}, "
+                f"seq={queued.seq}, queue_len={len(loop.message_queue)}, "
+                f"pending_prompts={loop.message_queue.pending_prompt_count()}"
+            )
             return
 
         self._active_turns.add(chat_id)
+        try:
+            pending_texts = [message_text]
+            while pending_texts:
+                current_text = pending_texts.pop(0)
+                await self._process_single_turn(update, loop, current_text)
+                pending_texts.extend(
+                    pending.content for pending in loop.message_queue.drain_prompts()
+                )
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            await update.message.reply_text(f"Error: {e}")
+        finally:
+            self._active_turns.discard(chat_id)
+
+    async def _process_single_turn(
+        self,
+        update: Update,
+        loop: AgenticLoop,
+        message_text: str,
+    ) -> None:
+        chat_id = update.message.chat_id
+        turn_started_at = time.monotonic()
+        logger.debug(
+            f"Telegram turn started: chat_id={chat_id}, chars={len(message_text)}, "
+            f"active_turns={len(self._active_turns)}"
+        )
         status_msg = await update.message.reply_text(_STATUS_THINKING)
         typing_task = self._start_typing_indicator(chat_id)
         try:
             final_parts = await self._stream_events(loop, message_text, status_msg)
             await self._send_final_result(update, status_msg, final_parts)
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            final_chars = sum(len(part) for part in final_parts)
+            elapsed_ms = int((time.monotonic() - turn_started_at) * 1000)
+            logger.info("Telegram response sent.")
+            logger.debug(
+                f"Telegram response sent: chat_id={chat_id}, "
+                f"final_parts={len(final_parts)}, final_chars={final_chars}, "
+                f"elapsed_ms={elapsed_ms}"
+            )
+        except Exception:
             await self._cleanup_status_message(status_msg)
-            await update.message.reply_text(f"Error: {e}")
+            raise
         finally:
             await self._stop_typing_indicator(typing_task)
-            self._active_turns.discard(chat_id)
 
     @staticmethod
     def _build_skill_message(

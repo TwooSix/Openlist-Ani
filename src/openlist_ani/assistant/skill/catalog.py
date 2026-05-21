@@ -31,7 +31,7 @@ from openlist_ani.assistant._constants import (
 
 from .loader import load_and_run
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 MAX_INCLUDE_DEPTH = 5
 
@@ -481,7 +481,7 @@ class SkillCatalog:
 
         if max_desc_len < MIN_DESC_LENGTH:
             # Extreme case: names-only listing
-            logger.info(
+            logger.debug(
                 f"Skill listing budget exhausted ({full_total} > {budget}), "
                 f"falling back to names-only"
             )
@@ -498,9 +498,9 @@ class SkillCatalog:
             truncated_entries.append(f"- {skill.name}: {desc}")
 
         if truncated_count > 0:
-            logger.info(
+            logger.debug(
                 f"Skill listing: truncated {truncated_count}/{len(entries)} "
-                f"descriptions to fit budget ({full_total} → ~{budget} chars)"
+                f"descriptions to fit budget ({full_total} -> ~{budget} chars)"
             )
 
         return "\n".join(truncated_entries)
@@ -583,7 +583,7 @@ class SkillCatalog:
         safe_params = dict(params) if params else {}
         offset = int(safe_params.pop("_offset", 0))
 
-        logger.info(
+        logger.debug(
             f"Skill action: {skill_name}/{action} "
             f"(params={safe_params}, offset={offset})"
         )

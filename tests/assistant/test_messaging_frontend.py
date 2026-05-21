@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
+from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from openlist_ani.logger import logger
 from openlist_ani.assistant.core.context import ContextBuilder
 from openlist_ani.assistant.core.loop import AgenticLoop
 from openlist_ani.assistant.core.models import ProviderResponse
@@ -14,6 +17,7 @@ from openlist_ani.assistant.frontend.messaging import (
     AllowedChatAuthorizer,
     MessagingFrontend,
 )
+from openlist_ani.assistant.frontend.telegram import TelegramFrontend
 from openlist_ani.assistant.memory.manager import MemoryManager
 from openlist_ani.assistant.session.storage import SessionStorage
 from openlist_ani.assistant.tool.registry import ToolRegistry
@@ -39,8 +43,35 @@ class FakeMessenger:
         return True
 
 
+class FakeTelegramMessage:
+    def __init__(self, text: str, *, user_id: int = 2, chat_id: int = 123) -> None:
+        self.text = text
+        self.chat_id = chat_id
+        self.from_user = SimpleNamespace(id=user_id)
+        self.replies: list[str] = []
+
+    async def reply_text(self, text: str):
+        await asyncio.sleep(0)
+        self.replies.append(text)
+        return SimpleNamespace()
+
+
+@contextmanager
+def _captured_log_messages():
+    sink = StringIO()
+    handler_id = logger.add(sink, level="INFO", format="{message}")
+    try:
+        yield sink
+    finally:
+        logger.remove(handler_id)
+
+
 def _make_loop(tmp: Path, response: str = "assistant reply") -> AgenticLoop:
     provider = MockProvider([ProviderResponse(text=response)])
+    return _make_loop_with_provider(tmp, provider)
+
+
+def _make_loop_with_provider(tmp: Path, provider: MockProvider) -> AgenticLoop:
     registry = ToolRegistry()
     memory = MemoryManager(data_dir=tmp / "data", project_root=tmp / "proj")
     (tmp / "proj").mkdir(exist_ok=True)
@@ -52,6 +83,20 @@ def _make_loop(tmp: Path, response: str = "assistant reply") -> AgenticLoop:
         memory,
         session_storage=SessionStorage(tmp / "sessions"),
     )
+
+
+class BlockingProvider(MockProvider):
+    def __init__(self, responses: list[ProviderResponse]) -> None:
+        super().__init__(responses)
+        self.first_call_started = asyncio.Event()
+        self.release_first_call = asyncio.Event()
+
+    async def chat_completion_stream(self, *args, **kwargs):
+        if self._call_count == 0:
+            self.first_call_started.set()
+            await self.release_first_call.wait()
+        async for chunk in super().chat_completion_stream(*args, **kwargs):
+            yield chunk
 
 
 def _message(text: str, chat_id: str = "chat-1") -> InboundMessage:
@@ -166,20 +211,94 @@ async def test_wechat_rejects_messages_outside_home_channel(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_active_turn_enqueues_pending_message(tmp_path):
+async def test_rejected_wechat_message_does_not_log_content(tmp_path):
     messenger = FakeMessenger()
-    loop = _make_loop(Path(tempfile.mkdtemp()), response="first")
+    frontend = MessagingFrontend(
+        platform="wechat",
+        messenger=messenger,
+        loop=_make_loop(tmp_path),
+        loop_factory=lambda: _make_loop(tmp_path),
+        authorizer=AllowedChatAuthorizer(["chat-1"]),
+    )
+    secret = "private unauthorized content"
+
+    with _captured_log_messages() as logs:
+        await frontend.handle_inbound(_message(secret, chat_id="chat-2"))
+
+    assert secret not in logs.getvalue()
+    assert "unauthorized sender" in logs.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_rejected_telegram_message_does_not_log_content(tmp_path):
+    frontend = TelegramFrontend(
+        loop=_make_loop(tmp_path),
+        bot_token="token",
+        allowed_users=[1],
+    )
+    secret = "private telegram message"
+    message = FakeTelegramMessage(secret, user_id=2)
+    update = SimpleNamespace(message=message)
+
+    with _captured_log_messages() as logs:
+        await frontend._handle_text(update, SimpleNamespace())
+
+    assert secret not in logs.getvalue()
+    assert "unauthorized user" in logs.getvalue()
+    assert message.replies == ["Unauthorized."]
+
+
+@pytest.mark.asyncio
+async def test_rejected_telegram_command_does_not_log_content(tmp_path):
+    frontend = TelegramFrontend(
+        loop=_make_loop(tmp_path),
+        bot_token="token",
+        allowed_users=[1],
+    )
+    secret = "/mikan private command"
+    message = FakeTelegramMessage(secret, user_id=2)
+    update = SimpleNamespace(message=message)
+
+    with _captured_log_messages() as logs:
+        await frontend._handle_command_fallback(update, SimpleNamespace())
+
+    assert secret not in logs.getvalue()
+    assert "unauthorized user" in logs.getvalue()
+    assert message.replies == ["Unauthorized."]
+
+
+@pytest.mark.asyncio
+async def test_queued_message_after_final_text_is_processed_as_next_turn(tmp_path):
+    messenger = FakeMessenger()
+    provider = BlockingProvider(
+        [
+            ProviderResponse(text="first reply"),
+            ProviderResponse(text="second reply"),
+        ]
+    )
+    loop = _make_loop_with_provider(tmp_path, provider)
     frontend = MessagingFrontend(
         platform="wechat",
         messenger=messenger,
         loop=loop,
         loop_factory=lambda: loop,
     )
-    frontend._active_turns.add("wechat:chat-1:user-1")
 
-    await frontend.handle_inbound(_message("interrupt"))
+    first_task = asyncio.create_task(frontend.handle_inbound(_message("first")))
+    await asyncio.wait_for(provider.first_call_started.wait(), timeout=1)
 
-    assert loop.message_queue.has_pending_prompts() is True
+    await frontend.handle_inbound(_message("second"))
+    provider.release_first_call.set()
+    await asyncio.wait_for(first_task, timeout=1)
+
+    assert messenger.sent == [
+        ("chat-1", "first reply"),
+        ("chat-1", "second reply"),
+    ]
+    assert not loop.message_queue.has_pending_prompts()
+    assert len(provider._calls) == 2
+    second_call_messages = provider._calls[1][0]
+    assert any(m.content == "second" for m in second_call_messages)
 
 
 @pytest.mark.asyncio

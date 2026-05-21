@@ -21,7 +21,7 @@ import os
 import re
 from pathlib import Path
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 # ── Whitelist ────────────────────────────────────────────────────────
 

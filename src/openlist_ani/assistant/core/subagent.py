@@ -33,13 +33,14 @@ from openlist_ani.assistant.core.models import (
     Role,
     ToolResult,
 )
+from openlist_ani.assistant.logging_format import format_tool_call
 from openlist_ani.assistant.tool.orchestrator import ToolOrchestrator
 from openlist_ani.assistant.tool.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from openlist_ani.assistant.provider.base import Provider
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 # ── Constants ────────────────────────────────────────────────────
 
@@ -239,7 +240,7 @@ async def _run_subagent_loop(
     orchestrator = ToolOrchestrator(sub_registry)
     tool_defs = provider.format_tool_definitions(sub_registry.all_tools())
 
-    logger.info(
+    logger.debug(
         f"SubAgent[{config.agent_type}] starting "
         f"(max_rounds={config.max_rounds}, timeout={config.timeout_seconds}s, "
         f"tools={[t.name for t in sub_registry.all_tools()]})"
@@ -248,7 +249,7 @@ async def _run_subagent_loop(
     # Independent agentic loop
     final_text = ""
     for round_num in range(config.max_rounds):
-        logger.info(
+        logger.debug(
             f"SubAgent[{config.agent_type}] round {round_num + 1}/{config.max_rounds}: "
             f"calling provider..."
         )
@@ -270,7 +271,7 @@ async def _run_subagent_loop(
 
         if not response.tool_calls:
             final_text = response.text
-            logger.info(
+            logger.debug(
                 f"SubAgent[{config.agent_type}] completed in "
                 f"{round_num + 1} round(s) (text response, no tool calls)"
             )
@@ -290,7 +291,8 @@ async def _run_subagent_loop(
         # Execute tool calls via orchestrator (parallel/serial)
         results: list[ToolResult] = []
         for tc in response.tool_calls:
-            logger.info(
+            logger.info(format_tool_call(tc.name, tc.arguments))
+            logger.debug(
                 f"SubAgent[{config.agent_type}] round {round_num + 1}: "
                 f"executing tool '{tc.name}'"
             )

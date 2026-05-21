@@ -10,7 +10,7 @@ from openlist_ani.assistant.core.models import ToolCall, ToolResult
 
 from .base import BaseTool
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 def _validate_tool_input(

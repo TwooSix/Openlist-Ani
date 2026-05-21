@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant.memory.memory_dir import ENTRYPOINT_NAME
 from openlist_ani.assistant.tool.base import BaseTool

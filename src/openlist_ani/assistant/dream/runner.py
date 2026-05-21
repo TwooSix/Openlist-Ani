@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 from openlist_ani.assistant._constants import (
     DREAM_MAX_ROUNDS,

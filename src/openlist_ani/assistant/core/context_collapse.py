@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from openlist_ani.assistant.core.models import Message
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 class ContextCollapseStats:

@@ -25,7 +25,7 @@ from openlist_ani.assistant.core.models import Message, Role
 if TYPE_CHECKING:
     from openlist_ani.assistant.provider.base import Provider
 
-from loguru import logger
+from openlist_ani.logger import logger
 
 
 class ReadFileTracker:
@@ -289,7 +289,8 @@ class AutoCompactor:
         if total_chars <= self._threshold:
             return None
 
-        logger.info(
+        logger.info("Conversation is getting long; compacting memory.")
+        logger.debug(
             f"Autocompact triggered: {total_chars} chars > threshold {self._threshold}"
         )
 
@@ -320,7 +321,8 @@ class AutoCompactor:
         Returns:
             New message list if compacted, None on failure.
         """
-        logger.info("Reactive compact (forced): bypassing threshold check")
+        logger.info("Compacting memory before retrying the model request.")
+        logger.debug("Reactive compact (forced): bypassing threshold check")
 
         try:
             result = await self._perform_compaction(messages)
@@ -393,7 +395,8 @@ class AutoCompactor:
             logger.debug("No non-system messages to compact in head")
             return None
 
-        logger.info(
+        logger.info("Conversation is getting long; compacting older messages.")
+        logger.debug(
             f"Partial compact: summarizing {len(head)} head messages, "
             f"preserving {len(tail)} tail messages"
         )
@@ -405,8 +408,9 @@ class AutoCompactor:
             # Append the preserved tail
             result = compacted_head + tail
             self._consecutive_failures = 0
-            logger.info(
-                f"Partial compact complete: {len(messages)} → {len(result)} messages"
+            logger.info("Older conversation messages compacted.")
+            logger.debug(
+                f"Partial compact complete: {len(messages)} -> {len(result)} messages"
             )
             return result
         except Exception as e:
@@ -447,9 +451,10 @@ class AutoCompactor:
         )
 
         post_chars = _estimate_chars(new_messages)
-        logger.info(
-            f"Autocompact complete: {pre_chars} → {post_chars} chars "
-            f"({len(messages)} → {len(new_messages)} messages)"
+        logger.info("Conversation memory compacted.")
+        logger.debug(
+            f"Autocompact complete: {pre_chars} -> {post_chars} chars "
+            f"({len(messages)} -> {len(new_messages)} messages)"
         )
 
         return new_messages
