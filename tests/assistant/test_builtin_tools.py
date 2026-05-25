@@ -88,6 +88,7 @@ class TestSkillTool:
         assert tool.is_concurrency_safe({"action": "search"}) is True
         assert tool.is_concurrency_safe({"action": "query"}) is True
         assert tool.is_concurrency_safe({"action": "calendar"}) is True
+        assert tool.is_concurrency_safe({"action": "latest_episode"}) is True
         assert tool.is_concurrency_safe({"action": "subgroups"}) is True
         assert tool.is_concurrency_safe({"action": "default"}) is True
         # Write actions

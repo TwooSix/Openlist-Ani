@@ -16,6 +16,7 @@ Bangumi (bgm.tv) API reference.
 
 - **search**: Search anime/manga by keyword with filters (type, tag, date, rating).
 - **subject_detail**: Get full details for a specific Bangumi subject.
+- **latest_episode**: Get the latest aired main-story episode for a subject.
 - **calendar**: View the weekly anime airing schedule.
 - **related_subjects**: Find sequels, prequels, and related works.
 - **reviews**: Fetch community discussion topics and blog reviews for a subject.
@@ -38,3 +39,15 @@ Tell the user to set `[bangumi] access_token` in config.toml.
 
 Collection types: 1=wish(想看), 2=done(看过), 3=doing(在看), 4=on_hold(搁置), 5=dropped(抛弃)
 Subject types: 1=book, 2=anime, 3=music, 4=game, 6=real
+
+## Latest aired episode
+
+Use **latest_episode** when the user asks which episode of an anime is the
+latest/current aired episode. It needs a Bangumi subject ID. If the user gives
+only a title, call **search** first and then call **latest_episode** with the
+selected `subject_id`.
+
+This action uses Bangumi episode `airdate` and only considers main-story
+episodes (`type=0`). Bangumi provides date precision only, so it cannot
+distinguish whether today's episode has already reached its exact broadcast
+time.
