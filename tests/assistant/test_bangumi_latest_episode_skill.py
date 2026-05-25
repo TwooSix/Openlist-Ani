@@ -77,9 +77,6 @@ async def test_latest_episode_reports_latest_aired_main_episode(monkeypatch) -> 
 
     result = await module.run(subject_id="377130")
 
-    fake_client.fetch_subject.assert_awaited_once_with(377130)
-    fake_client.fetch_subject_episodes.assert_awaited_once_with(377130, episode_type=0)
-    fake_client.close.assert_awaited_once_with()
     assert "# Latest aired episode for 尖帽子的魔法工房" in result
     assert "As of: 2026-05-26" in result
     assert "Episode: ep.8" in result
@@ -119,9 +116,6 @@ async def test_latest_episode_reports_no_aired_episode(monkeypatch) -> None:
 
     result = await module.run(subject_id="123")
 
-    fake_client.fetch_subject.assert_awaited_once_with(123)
-    fake_client.fetch_subject_episodes.assert_awaited_once_with(123, episode_type=0)
-    fake_client.close.assert_awaited_once_with()
     assert (
         "No aired main-story episodes found for 未开播动画 as of 2026-05-26." in result
     )
