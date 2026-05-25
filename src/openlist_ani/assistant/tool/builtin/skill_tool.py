@@ -75,6 +75,7 @@ class SkillTool(BaseTool):
         _READ_ONLY_ACTIONS = {
             "search",
             "calendar",
+            "latest_episode",
             "query",
             "subgroups",
             "releases",
