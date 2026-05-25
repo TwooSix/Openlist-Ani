@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from openlist_ani.assistant.skill_support.bangumi_client import BangumiClient
@@ -19,14 +19,9 @@ def _parse_date(value: str) -> date | None:
         return None
 
 
-def _parse_as_of_date(value: str) -> date:
-    """Parse the optional reference date for deterministic latest-episode lookup."""
-    if not value:
-        return date.today()
-    parsed = _parse_date(value)
-    if parsed is None:
-        raise ValueError("as_of_date must use YYYY-MM-DD format")
-    return parsed
+def _today_utc8() -> date:
+    """Return today's date in Bangumi's fixed UTC+8 reference timezone."""
+    return datetime.now(timezone(timedelta(hours=8))).date()
 
 
 def _numeric(value: Any) -> float:
@@ -124,14 +119,12 @@ def _format_latest_episode(
 
 async def run(
     subject_id: str = "",
-    as_of_date: str = "",
     **kwargs,
 ) -> str:
     """Fetch the latest aired main-story episode for a Bangumi subject.
 
     Args:
         subject_id: Bangumi subject ID (required).
-        as_of_date: Optional reference date in YYYY-MM-DD format; defaults to today.
     """
     if not subject_id:
         return "Error: 'subject_id' parameter is required."
@@ -141,10 +134,7 @@ async def run(
     except ValueError:
         return "Error: 'subject_id' must be an integer."
 
-    try:
-        as_of = _parse_as_of_date(as_of_date)
-    except ValueError as exc:
-        return f"Error: {exc}"
+    as_of = _today_utc8()
 
     client = BangumiClient(access_token=config.bangumi_token)
     try:

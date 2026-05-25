@@ -50,4 +50,4 @@ selected `subject_id`.
 This action uses Bangumi episode `airdate` and only considers main-story
 episodes (`type=0`). Bangumi provides date precision only, so it cannot
 distinguish whether today's episode has already reached its exact broadcast
-time.
+time. The action treats "today" as the current UTC+8 date.

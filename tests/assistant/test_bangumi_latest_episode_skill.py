@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -29,21 +31,15 @@ async def test_latest_episode_reports_latest_aired_main_episode(monkeypatch) -> 
         "openlist_ani.builtin_skills.skills.bangumi.script.latest_episode",
     )
 
-    class FakeBangumiClient:
-        def __init__(self, access_token: str = "") -> None:
-            self.access_token = access_token
-
-        async def fetch_subject(self, subject_id: int):
-            assert subject_id == 377130
-            return SimpleNamespace(
-                id=subject_id,
+    fake_client = SimpleNamespace(
+        fetch_subject=AsyncMock(
+            return_value=SimpleNamespace(
+                id=377130,
                 display_name="尖帽子的魔法工房",
-            )
-
-        async def fetch_subject_episodes(self, subject_id: int, episode_type: int = 0):
-            assert subject_id == 377130
-            assert episode_type == 0
-            return [
+            ),
+        ),
+        fetch_subject_episodes=AsyncMock(
+            return_value=[
                 {
                     "id": 1656038,
                     "type": 0,
@@ -71,15 +67,19 @@ async def test_latest_episode_reports_latest_aired_main_episode(monkeypatch) -> 
                     "ep": 8,
                     "airdate": "2026-05-25",
                 },
-            ]
+            ],
+        ),
+        close=AsyncMock(),
+    )
 
-        async def close(self) -> None:
-            return None
+    monkeypatch.setattr(module, "BangumiClient", lambda access_token="": fake_client)
+    monkeypatch.setattr(module, "_today_utc8", lambda: date(2026, 5, 26))
 
-    monkeypatch.setattr(module, "BangumiClient", FakeBangumiClient)
+    result = await module.run(subject_id="377130")
 
-    result = await module.run(subject_id="377130", as_of_date="2026-05-26")
-
+    fake_client.fetch_subject.assert_awaited_once_with(377130)
+    fake_client.fetch_subject_episodes.assert_awaited_once_with(377130, episode_type=0)
+    fake_client.close.assert_awaited_once_with()
     assert "# Latest aired episode for 尖帽子的魔法工房" in result
     assert "As of: 2026-05-26" in result
     assert "Episode: ep.8" in result
@@ -95,15 +95,12 @@ async def test_latest_episode_reports_no_aired_episode(monkeypatch) -> None:
         "openlist_ani.builtin_skills.skills.bangumi.script.latest_episode",
     )
 
-    class FakeBangumiClient:
-        def __init__(self, access_token: str = "") -> None:
-            pass
-
-        async def fetch_subject(self, subject_id: int):
-            return SimpleNamespace(id=subject_id, display_name="未开播动画")
-
-        async def fetch_subject_episodes(self, subject_id: int, episode_type: int = 0):
-            return [
+    fake_client = SimpleNamespace(
+        fetch_subject=AsyncMock(
+            return_value=SimpleNamespace(id=123, display_name="未开播动画"),
+        ),
+        fetch_subject_episodes=AsyncMock(
+            return_value=[
                 {
                     "id": 1,
                     "type": 0,
@@ -112,15 +109,19 @@ async def test_latest_episode_reports_no_aired_episode(monkeypatch) -> None:
                     "ep": 1,
                     "airdate": "2026-06-01",
                 },
-            ]
+            ],
+        ),
+        close=AsyncMock(),
+    )
 
-        async def close(self) -> None:
-            return None
+    monkeypatch.setattr(module, "BangumiClient", lambda access_token="": fake_client)
+    monkeypatch.setattr(module, "_today_utc8", lambda: date(2026, 5, 26))
 
-    monkeypatch.setattr(module, "BangumiClient", FakeBangumiClient)
+    result = await module.run(subject_id="123")
 
-    result = await module.run(subject_id="123", as_of_date="2026-05-26")
-
+    fake_client.fetch_subject.assert_awaited_once_with(123)
+    fake_client.fetch_subject_episodes.assert_awaited_once_with(123, episode_type=0)
+    fake_client.close.assert_awaited_once_with()
     assert (
         "No aired main-story episodes found for 未开播动画 as of 2026-05-26." in result
     )
